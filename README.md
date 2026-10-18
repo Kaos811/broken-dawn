@@ -1,4 +1,4 @@
-# Broken Dawn: Stage 4 (Research & Troop Tiers)
+# Broken Dawn: Stage 5 (Sound, Polish & Tutorial)
 
 Broken Dawn is a sci-fi idle base-builder with auto-battle. It's a mobile web game built with
 [Phaser 3](https://phaser.io) and [Vite](https://vitejs.dev), and it uses only free, open-source tools.
@@ -9,7 +9,9 @@ upgrades, Base Power and passive Energy. Stage 2 adds the army: troop training, 
 and the Armory with leaders, gear and a recruitment gacha. Stage 3 adds a separate **World Map**: creatures by level
 in rings around your base, squad marches and auto-battles, troop losses with an **Infirmary**, stamina, and an
 **Auto** hunt mode that keeps going while you're offline. Stage 4 adds the **Archive** research tree (Economy,
-Military, Healing and World branches) and **troop tiers** T1–T3, with promotion in the Barracks.
+Military, Healing and World branches) and **troop tiers** T1–T3, with promotion in the Barracks. Stage 5 adds
+**sound** (generated music + effects), **polish** (juice, transitions, loading screen, rotation re-layout) and a
+skippable 8-step **tutorial** for new players.
 
 ## Run it
 
@@ -19,7 +21,7 @@ npm run dev        # dev server at http://localhost:5173 (with --host, so phones
 npm run build      # -> dist/ (multi-file) AND broken-dawn.html (single self-contained file)
 npm run preview    # serve dist/
 npm test           # headless Chromium e2e test (needs a build; CHROME_PATH=/path/to/chrome to override)
-                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=1|2|3 runs one suite, QUICK=1 skips the dist/ pass
+                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=1…5 runs one suite, QUICK=1 skips the dist/ pass
 ```
 
 `broken-dawn.html` has everything inlined, so you can open it directly from disk or host it
@@ -273,6 +275,55 @@ T1 keeps the old class id (`sentinel`, `bearer`, `voyager`), so old saves and fo
   The Archive is added (sealed or Lv 1), research starts empty, and Barracks lanes gain a unit field.
   Invalid or impossible research/lane jobs are refunded on load.
 
+## Stage 5: Sound, polish & tutorial
+
+### Sound (no audio files)
+- Everything you hear is synthesized at runtime with WebAudio (`src/audio/audio.js`): no downloads, nothing to
+  license, and about 10 KB of code. Sound effects are small jsfxr-style recipes; music is a tiny step sequencer.
+- **Music per screen**, crossfading over 0.5 s: calm detuned pads + bells on the **Base**, arpeggios + light
+  drums on the **World map**, full drums + bass during a **battle replay**.
+- **Effects:** button taps (and a dull "nope" on disabled buttons), screen open, build start, level-up, training,
+  research done, per-card recruit reveal (bigger for Epic/Legendary), march out, hits/crits in replays,
+  victory/defeat, healing, rewards/Cores, toasts. Bursts are de-duplicated so offline catch-up stays quiet.
+- **Settings:** Music and Effects volume (10% steps), Mute, and Haptics. Defaults: music 70%, effects 90%,
+  haptics on. Saved per device.
+- **Browser rules:** audio starts on the first tap (mobile autoplay unlock) and the context is suspended while
+  the page is hidden, then resumed.
+- **Haptics** use `navigator.vibrate` where supported (Android Chrome; iOS Safari ignores it): button taps,
+  level-ups, Epic+ reveals, crits, tutorial steps.
+
+### Polish
+- **Buttons** squash on press and spring back; floating numbers pop for rewards, Cores and troop power.
+- **Level-ups:** spark burst, ground shockwave ring, light column and a small camera shake.
+- **Construction:** buildings being upgraded get scaffolding (poles, hazard-striped planks, braces, a blinking
+  beacon) with welding sparks, on top of the countdown bar.
+- **Battle replay:** hit numbers pop in (crits bigger), impact sparks, row flashes, kill flashes on icons,
+  camera shake on crits/big kills, round counter pulse, a victory burst and an Energy pop-up. Speed 1x/2x/4x + Skip.
+- **Report card:** rewards count up, with +Energy / +Core pop-ups for fresh reports.
+- **Transitions:** screens fade in (no sliding, so taps always land on what's drawn); Base ↔ World fades.
+- **Loading screen** (pure CSS, in `index.html`) until the game is ready; it never blocks input.
+- **Squads** now label both numbers: **Squad Power · Base** (feeds Base Power) and **Combat Power · Hunts**.
+- **Rotation:** if the screen shape changes a lot (phone rotated, window resized), the game saves and reloads
+  itself after 0.6 s so it's laid out for the new shape.
+- **Phones:** after 8 s without input (and nothing animating) the game drops to ~30 fps; any tap restores full rate.
+- **Text overlap sweep:** the stage 5 test walks every screen and overlay and fails if any two labels overlap or
+  a label runs under a button.
+
+### Tutorial (new players)
+Eight action-driven steps, each advancing only when you actually do it, with a coach card and a pulsing gold
+pointer (the camera glides to off-screen buildings):
+
+1. **Beacon:** tap it. 2. **Build:** tap the Barracks, then Upgrade. 3. **Train:** Troops → x10 Sentinels.
+4. **Squad:** Squads → Edit Formation → Max → Save (the first batch is rushed for you). 5. **Recruit:** Armory → Pull x1.
+6. **Hunt:** World → tap a creature → Attack. 7. **Infirmary:** open it from the Base. 8. **Research:** tap the Archive.
+
+- If a step could get stuck it tops you up quietly (Energy for the upgrade/training, a Core for the pull,
+  stamina for the hunt). Finishing pays **+500 Energy and +2 Beacon Cores** once.
+- **Skip** on every step; **Replay Tutorial** in Settings.
+- **Saves (v8):** v7 saves migrate automatically (backup `brokenDawn.save.v1.backup-v7`), get the default audio
+  settings, and have the tutorial marked **done**, so existing players aren't interrupted; they get a one-time
+  toast pointing to Replay in Settings. New games start the tutorial.
+
 ## Code layout
 
 ```
@@ -295,9 +346,11 @@ src/
   scenes/UIScene.js    HUD, bottom nav, info panel, move banner, screens, overlays, gacha reveal, toasts, game tick
   ui/world.js          World HUD (stamina, Auto, Reports, squad chips), creature sheet, report card, replay player
   art/creatures.js     procedural creature / world-base / march textures
-  ui/widgets.js        buttons, panels, number formatting
+  ui/widgets.js        buttons (with press juice + click sound), panels, number formatting
+  audio/audio.js       WebAudio engine: synthesized SFX recipes, generated per-screen music, crossfade, unlock, haptics
+  tutorial/tutorial.js 8-step guided tutorial: coach card, pointer, step detection, assists, skip/replay
   ui/screens/          archive.js (research tree), troops.js (Barracks, tiers, promote), squads.js (details, edit formation, pickers), armory.js, infirmary.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–4 suites × 2 builds (610 checks)
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–5 suites × 2 builds (TOTAL checks)
 screens/               screenshots from the test run
 ```
 
@@ -305,22 +358,21 @@ screens/               screenshots from the test run
 - PvP: see **PvP path** above. Player bases are already world entities with an owner.
 - Balance knobs for hunts are all in `src/config.js`: `WORLD`, `CREATURES` (incl. per-type `calib`), `BATTLE`,
   `CASUALTIES`, `INFIRMARY`, `STAMINA`, `HUNT_REWARDS`, `CORES.battle`, and for stage 4 `RESEARCH`,
-  `RESEARCH_TUNING`, `TIERS`, `PROMOTE`.
+  `RESEARCH_TUNING`, `TIERS`, `PROMOTE`, and for stage 5 `AUDIO`, `PERF`, `TUTORIAL`.
 
 ## Known gaps
 
-- All art is placeholder (procedural shapes). There's no sound yet.
-- The layout height is set when the page loads. Rotating the phone or resizing the window rescales the
-  game but doesn't re-layout it, so reload after rotating. It's built for portrait.
+- All art is placeholder (procedural shapes). Music and sound effects are generated (synth), not recorded.
+- Rotation re-layout works by saving and reloading the page (about a second). It's built for portrait; landscape
+  works but is letterboxed.
+- Haptics do nothing on iPhones (Safari has no `navigator.vibrate`).
 - Only tested in headless Chromium with phone emulation (390×844, touch and mouse). It hasn't been tried on a real iPhone or Android device yet.
 - Balance numbers are first-pass placeholders. Tune them in `src/config.js`.
 - Gear and leader buffs only change squad HP/ATK/DEF (and so World combat power), not Base Power.
-- The Squads screen shows two numbers: the stage 2 "Squad Power" (soldiers + level) and the stage 3 "Combat Power"
-  used on the World Map. Only Combat Power decides hunts.
 - Wins always cost at least 10% casualties, even against a creature far weaker than the squad.
 - Offline Auto only starts new marches with the stamina you had plus what regenerated (capped at 8 h), so a
   long absence yields at most about 8–10 hunts. Rewards are credited at battle time, not when the squad gets home.
 - The world map is local to this device. Nothing is shared between players yet (see PvP path).
 - Only one research slot, and research can't be sped up with Cores yet (`store.speedUpResearch` exists as a hook).
 - Tier Power (1/2/4) feeds Troop Power; research bonuses don't show up in Base Power.
-- The bundle is about 1.2 MB (330 KB gzipped), almost all of it Phaser.
+- The bundle is about 1.4 MB (395 KB gzipped), almost all of it Phaser. Stage 5 added about 29 KB (≈10 KB gzipped), no asset files.
