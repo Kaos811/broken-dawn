@@ -1,3 +1,10 @@
 node_modules/
+dist/
 dist-single/
 test-results/
+playwright-report/
+*.log
+npm-debug.log*
+.env
+.env.*
+.DS_Store

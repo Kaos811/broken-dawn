@@ -2,6 +2,8 @@
 
 Broken Dawn is a sci-fi idle base-builder with auto-battle. It's a mobile web game built with
 [Phaser 3](https://phaser.io) and [Vite](https://vitejs.dev), and it uses only free, open-source tools.
+**Play it:** https://kaos811.github.io/broken-dawn/ (every push to `main` redeploys automatically via GitHub Actions)
+
 Stage 1 is the playable base: a zoomable top-down map built around **The Beacon**, with buildings you can move,
 upgrades, Base Power, and passive Energy income.
 
