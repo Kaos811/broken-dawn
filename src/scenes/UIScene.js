@@ -8,18 +8,21 @@ import { renderTroops } from '../ui/screens/troops.js';
 import { renderSquads } from '../ui/screens/squads.js';
 import { renderArmory, resultTag, drawCoreIcon } from '../ui/screens/armory.js';
 import { gearTexture } from '../art/portraits.js';
-import { RARITY, LEADERS, GEAR, CORES } from '../config.js';
+import { RARITY, LEADERS, GEAR, CORES, INFIRMARY, STAMINA, CREATURES, SQUADS as SQ } from '../config.js';
+import { renderInfirmary } from '../ui/screens/infirmary.js';
+import { createWorldHud, openReport } from '../ui/world.js';
 
 export const TOP_H = 186;
 const NAV_H = 130;
 const TABS = [
   { id: 'base', label: 'Base' },
+  { id: 'world', label: 'World' },
   { id: 'troops', label: 'Troops' },
   { id: 'armory', label: 'Armory' },
   { id: 'squads', label: 'Squads' },
   { id: 'settings', label: 'Settings' },
 ];
-const SCREENS = { troops: renderTroops, squads: renderSquads, armory: renderArmory };
+const SCREENS = { troops: renderTroops, squads: renderSquads, armory: renderArmory, infirmary: renderInfirmary };
 
 export default class UIScene extends Phaser.Scene {
   constructor() { super('UI'); }
@@ -34,6 +37,9 @@ export default class UIScene extends Phaser.Scene {
     this.createNav();
     this.createPanel();
     this.createBanner();
+    this.worldMode = false;
+    this.replay = null;
+    this.worldHud = createWorldHud(this, TOP_H, H);
     this.createToast();
 
     const ev = this.game.events;
@@ -41,6 +47,8 @@ export default class UIScene extends Phaser.Scene {
     ev.on('base:deselect', () => this.closePanel(false), this);
     ev.on('base:moveMode', (id) => this.showBanner(id), this);
     ev.on('toast', (msg) => this.toast(msg), this);
+    ev.on('world:select', (id) => this.worldHud.openSheet(id), this);
+    ev.on('world:deselect', () => this.worldHud.closeSheet(), this);
     this.unsubs = [
       store.on('upgrade', (id) => {
         this.bump(this.powerText); this.refreshPanel();
@@ -53,6 +61,9 @@ export default class UIScene extends Phaser.Scene {
       store.on('change', () => { this.screenDirty = true; }),
       store.on('trained', (done, d) => { if (d.after > d.before) this.bump(this.powerText); }),
       store.on('squad', (_id, d) => { if (d && d.after !== d.before) this.bump(this.powerText); }),
+      store.on('hunt', (r) => this.onHunt(r)),
+      store.on('marchHome', (m) => { if (!m.meta?.auto) this.toast(`${SQ[m.squadId].name} is back at base`, 1400); }),
+      store.on('healed', (h) => { const n = Object.values(h).reduce((a, b) => a + b, 0); if (n && !this.screen) this.bumpTroops = true; }),
     ];
     this.events.once('shutdown', () => this.unsubs.forEach((u) => u()));
 
@@ -66,7 +77,9 @@ export default class UIScene extends Phaser.Scene {
     if (off && off.energy >= 1) {
       const trained = Object.entries(off.trained ?? {}).map(([t, n]) => `${n} ${TROOP_CLASSES[t].plural}`).join(', ');
       const built = (off.built ?? []).map((b) => `${store.nameOf(b.id)} Lv ${b.level}`).join(', ');
-      this.time.delayedCall(400, () => this.toast(`Welcome back, Commander. Away ${fmtDuration(off.seconds)}${off.capped ? ' (capped)' : ''}: +${fmt(off.energy)} Energy, +${fmt(off.shards)} Shards, +${fmt(off.alloy)} Alloy${trained ? `\nTrained while away: ${trained}` : ''}${built ? `\nUpgrades finished: ${built}` : ''}`, 4600));
+      const hu = off.hunts;
+      const hunts = hu?.fights ? `\nHunts while away: ${hu.wins}/${hu.fights} won${hu.cores ? `, +${hu.cores} Cores` : ''}, ${hu.wounded} wounded, ${hu.dead} fallen` : '';
+      this.time.delayedCall(400, () => this.toast(`Welcome back, Commander. Away ${fmtDuration(off.seconds)}${off.capped ? ' (capped)' : ''}: +${fmt(off.energy)} Energy, +${fmt(off.shards)} Shards, +${fmt(off.alloy)} Alloy${trained ? `\nTrained while away: ${trained}` : ''}${built ? `\nUpgrades finished: ${built}` : ''}${hunts}`, hunts ? 6000 : 4600));
     } else if (store.migratedFrom && store.migratedFrom < 4) {
       this.time.delayedCall(400, () => this.toast(`Recruitment now uses Beacon Cores. Here are ${CORES.migrationGrant} to start. Your Shards stay for upgrades.`, 4600));
     }
@@ -75,8 +88,9 @@ export default class UIScene extends Phaser.Scene {
 
   // Lets BaseScene know a screen point belongs to the UI.
   blocksPointer(x, y) {
-    if (this.modal || this.screen || this.reveal) return true;
+    if (this.modal || this.screen || this.reveal || this.replay) return true;
     if (y < TOP_H || y > H - NAV_H) return true;
+    if (this.worldHud?.blocks(x, y)) return true;
     if (this.panel.visible && Phaser.Geom.Rectangle.Contains(this.panelRect, x, y)) return true;
     if (this.banner.visible && Phaser.Geom.Rectangle.Contains(this.bannerRect, x, y)) return true;
     return false;
@@ -92,7 +106,7 @@ export default class UIScene extends Phaser.Scene {
     this.add.rectangle(W / 2, TOP_H / 2, W, TOP_H, 0, 0.001).setInteractive(); // swallow taps
 
     text(this, 20, 12, 'BROKEN DAWN', 18, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 4 });
-    text(this, W - 20, 12, 'STAGE 2 · ARMY', 16, PALETTE.textDim, { letterSpacing: 2 }).setOrigin(1, 0);
+    text(this, W - 20, 12, 'STAGE 3 · WORLD', 16, PALETTE.textDim, { letterSpacing: 2 }).setOrigin(1, 0);
 
     // Energy pill
     const pill = (x, w) => { panelBg(g, x, 42, w, 96, { accent: null, cut: 12, fill: 0x141922 }); };
@@ -164,11 +178,12 @@ export default class UIScene extends Phaser.Scene {
       const on = t.id === this.activeTab;
       const col = on ? PALETTE.gold : 0x6c788a;
       t.label.setColor(on ? PALETTE.textGold : PALETTE.textDim);
-      if (on) { g.fillStyle(PALETTE.gold, 0.12).fillRect(t.cx - W / 10, H - NAV_H, W / 5, NAV_H); g.fillStyle(PALETTE.gold, 1).fillRect(t.cx - 40, H - NAV_H, 80, 4); }
+      if (on) { g.fillStyle(PALETTE.gold, 0.12).fillRect(t.cx - W / TABS.length / 2, H - NAV_H, W / TABS.length, NAV_H); g.fillStyle(PALETTE.gold, 1).fillRect(t.cx - 36, H - NAV_H, 72, 4); }
       g.lineStyle(3, col, 1); g.fillStyle(col, 1);
       const x = t.cx;
       switch (t.id) {
         case 'base': g.strokePoints([{ x, y: y - 20 }, { x: x + 24, y: y - 6 }, { x, y: y + 8 }, { x: x - 24, y: y - 6 }], true); g.fillCircle(x, y - 22, 5); g.lineBetween(x, y - 18, x, y - 6); break;
+        case 'world': g.strokeCircle(x, y - 6, 16); g.strokeEllipse(x, y - 6, 14, 32); g.lineBetween(x - 16, y - 6, x + 16, y - 6); break;
         case 'troops': g.strokeCircle(x, y - 14, 8); g.strokePoints([{ x: x - 16, y: y + 12 }, { x: x - 12, y: y - 2 }, { x: x + 12, y: y - 2 }, { x: x + 16, y: y + 12 }], false); break;
         case 'armory': g.strokePoints([{ x, y: y - 24 }, { x: x + 12, y: y - 6 }, { x, y: y + 12 }, { x: x - 12, y: y - 6 }], true); break;
         case 'squads': for (const dx of [-14, 0, 14]) g.strokeCircle(x + dx, y - 6 + (dx ? 6 : -4), 7); break;
@@ -180,7 +195,9 @@ export default class UIScene extends Phaser.Scene {
 
   onTab(id) {
     if (this.reveal) return;
-    if (id === 'base') { this.closeModal(); this.closeScreen(); return; }
+    this.closeReplay?.();
+    if (id === 'base') { this.closeModal(); this.closeScreen(); this.hideWorld(); return; }
+    if (id === 'world') { this.closeModal(); this.closeScreen(); this.showWorld(); return; }
     if (id === 'settings') { this.openSettings(); return; }
     this.openScreen(id);
   }
@@ -253,7 +270,37 @@ export default class UIScene extends Phaser.Scene {
     this.screen.container.destroy();
     this.screen = null;
     this.screenState.edit = null;
-    this.activeTab = 'base'; this.drawNav();
+    this.activeTab = this.worldMode ? 'world' : 'base'; this.drawNav();
+  }
+
+  // ------------------------------------------------------- world view -----
+  showWorld() {
+    this.closePanel(true);
+    this.game.events.emit('ui:moveDone');
+    this.worldMode = true;
+    if (this.scene.isSleeping('World')) this.scene.wake('World');
+    else if (!this.scene.isActive('World')) this.scene.run('World');
+    this.scene.sleep('Base');
+    this.worldHud.show();
+    this.activeTab = 'world'; this.drawNav();
+  }
+  hideWorld() {
+    if (!this.worldMode) return;
+    this.worldMode = false;
+    this.scene.get('World')?.select?.(null);
+    this.worldHud.hide();
+    this.scene.sleep('World');
+    this.scene.wake('Base');
+    this.activeTab = this.screen?.id ?? 'base'; this.drawNav();
+  }
+
+  // A hunt finished: manual attacks pop the report card (if nothing else is open), Auto ones just toast.
+  onHunt(r) {
+    const T = CREATURES[r.target.type];
+    if (r.loot.cores) this.bump(this.coreText);
+    const msg = `${SQ[r.squadId].name} ${r.win ? 'defeated' : 'lost to'} Lv ${r.target.level} ${T.short}${r.win ? `  ·  +${fmt(r.loot.energy)} Energy${r.loot.cores ? `  ·  +${r.loot.cores} Core!` : ''}` : ''}  ·  ${r.casualties.woundedTotal ?? 0} wounded, ${r.casualties.deadTotal ?? 0} fallen`;
+    if (!r.auto && this.worldMode && !this.modal && !this.screen && !this.reveal && !this.replay) openReport(this, r);
+    else this.toast(msg, 2600);
   }
 
   // Generic overlay sheet with custom content: build(container, rect) adds objects.
@@ -443,7 +490,7 @@ export default class UIScene extends Phaser.Scene {
           }
         });
         const yb = r.y + 376 + C.milestones.length * 66 + 16;
-        c.add(text(this, x0, yb, 'Stage 3: battle victories will also pay Cores.', 16, PALETTE.textDim));
+        c.add(text(this, x0, yb, `World hunts: the first kill of each creature level pays ${CORES.battle.firstKill} Core (Dusk Wyrms ${CORES.battle.firstKillElite}). Daily login also gives +${STAMINA.dailyBonus} stamina.`, 16, PALETTE.textDim, { wordWrap: { width: r.w - 56 } }));
         const n = store.rewardsReady();
         const all = button(this, r.x + r.w / 2, yb + 66, 320, 64, n ? `Claim all (${n})` : 'Nothing to claim', () => claimed(store.claimAllRewards()), { style: 'cyan', size: 22 });
         all.setEnabled(n > 0); c.add(all);
@@ -472,7 +519,7 @@ export default class UIScene extends Phaser.Scene {
     }, { style: 'cyan', size: 28 });
     this.pOpen = button(this, x + w - 28 - 105, y + h - 146, 210, 70, 'Open', () => {
       const id = this.panelOpenFor;
-      const target = { barracks: 'troops', armory: 'armory', commandCenter: 'squads' }[id];
+      const target = { barracks: 'troops', armory: 'armory', commandCenter: 'squads', infirmary: 'infirmary' }[id];
       if (target) this.openScreen(target);
     }, { style: 'cyan', size: 26 });
     c.add([g, block, this.pTitle, this.pLevel, this.pDesc, this.pStats, this.pReason, this.pBar, close, this.pUpgrade, this.pMove, this.pOpen]);
@@ -522,6 +569,7 @@ export default class UIScene extends Phaser.Scene {
         barracks: `3 lanes · ${BARRACKS.laneCapacity(lv)} → ${BARRACKS.laneCapacity(lv + 1)} each  ·  Speed x${BARRACKS.trainSpeed(lv).toFixed(1)} → x${BARRACKS.trainSpeed(lv + 1).toFixed(1)}`,
         commandCenter: `Squad level cap Lv ${lv}  ·  Alloy ${(store.alloyRate * 3600).toFixed(0)}/h`,
         armory: `Cores ${fmt(s.resources.cores)} (pulls)  ·  Shards ${fmt(s.resources.shards)} (+${(store.shardRate * 3600).toFixed(0)}/h, upgrades)`,
+        infirmary: `Beds ${store.woundedTotal()}/${INFIRMARY.capacity(lv)} → ${INFIRMARY.capacity(lv + 1)}  ·  Heal x${INFIRMARY.healSpeed(lv).toFixed(2)} → x${INFIRMARY.healSpeed(lv + 1).toFixed(2)}`,
       }[id];
       this.pStats.setText([
         `Power contribution:  +${now}   →  +${next} at Lv ${lv + 1}`,
@@ -530,7 +578,7 @@ export default class UIScene extends Phaser.Scene {
         info.job ? `Upgrading to Lv ${info.job.toLevel}:  ${fmtClock(info.job.total - info.job.progress)} left` : `Upgrade:  ${fmt(info.cost)} Energy  ·  takes ${fmtClock(info.seconds)}`,
       ].join('\n'));
       this.pMove.setVisible(true);
-      this.pOpen.setVisible(true).setLabel({ barracks: 'Train', armory: 'Recruit', commandCenter: 'Squads' }[id]);
+      this.pOpen.setVisible(true).setLabel({ barracks: 'Train', armory: 'Recruit', commandCenter: 'Squads', infirmary: 'Heal' }[id]);
       this.pUpgrade.setPosition(this.panelRect.x + 28 + 210, this.pUpgrade.y);
     }
     this.pLevel.setText(`Lv ${lv}`);
@@ -608,14 +656,14 @@ export default class UIScene extends Phaser.Scene {
   }
   closeModal() {
     if (this.modal) { this.modal.destroy(); this.modal = null; }
-    const want = this.screen?.id ?? 'base';
+    const want = this.screen?.id ?? (this.worldMode ? 'world' : 'base');
     if (this.activeTab !== want) { this.activeTab = want; this.drawNav(); }
   }
 
   openSettings() {
     this.openModal({
       title: 'Settings',
-      body: 'Broken Dawn · v0.2 (stage 2)\nProgress saves automatically on this device.\n\nMaps and Battle: coming in stage 3.\n\nReset Save erases everything: base, troops, squads, leaders and gear.',
+      body: 'Broken Dawn · v0.3 (stage 3: World hunts)\nProgress saves automatically on this device.\n\nPvP: coming later.\n\nReset Save erases everything: base, troops, squads, leaders, gear and the world.',
       tab: 'settings',
       buttons: [
         { label: 'Close', style: 'ghost' },
@@ -694,6 +742,7 @@ export default class UIScene extends Phaser.Scene {
         if (this.screenDirty && !this.modal && !this.reveal) this.renderScreen();
         else this.screen.dyn.forEach((fn) => fn());
       }
+      if (this.worldMode) this.worldHud.refresh();
     }
   }
 }

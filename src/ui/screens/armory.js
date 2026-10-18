@@ -58,7 +58,7 @@ function renderRecruit(ui, c, a, api, st, y0) {
     `• Daily login: ${D.base}/day, every ${D.streakEvery}th day in a row +${D.streakBonus} bonus`,
     `• Each Beacon level reached: +${CORES.beaconLevel} (once per level)`,
     `• ${CORES.milestones.length} first-time milestones: ${msTotal} Cores total`,
-    '• Battle rewards arrive in stage 3. Cores can\'t be bought.',
+    '• First kills on the World Map pay Cores (24 in all). Cores can\'t be bought.',
   ].join('\n'), 17, PALETTE.text, { lineSpacing: 7 }));
   const rb = button(ui, 588, ye + 26, 210, 44, 'Rewards', () => ui.openRewards(), { style: 'gold', size: 20 });
   c.add(rb);

@@ -4,6 +4,10 @@ import { store } from './state/store.js';
 import BootScene from './scenes/BootScene.js';
 import BaseScene from './scenes/BaseScene.js';
 import UIScene from './scenes/UIScene.js';
+import WorldScene from './scenes/WorldScene.js';
+import { resolveBattle, combatPower } from './world/battle.js';
+import { creatureArmy, squadArmy } from './world/armies.js';
+import { createWorld, ringLevel, dist } from './world/worldState.js';
 
 store.load();
 
@@ -17,7 +21,7 @@ const game = new Phaser.Game({
   input: { activePointers: 3, mouse: { preventDefaultWheel: true } },
   render: { antialias: true, roundPixels: false },
   disableContextMenu: true,
-  scene: [BootScene, BaseScene, UIScene],
+  scene: [BootScene, BaseScene, WorldScene, UIScene],
 });
 
 // Small debug/testing hook (used by the Playwright smoke test).
@@ -26,6 +30,19 @@ window.__BD = {
   store,
   base: () => game.scene.getScene('Base'),
   ui: () => game.scene.getScene('UI'),
+  world: () => game.scene.getScene('World'),
+  // pure world/battle helpers (tests + debugging)
+  dev: { resolveBattle, combatPower, creatureArmy, squadArmy, createWorld, ringLevel, dist },
+  // creature / tile -> page (CSS px) coordinates on the World map
+  tileToPage(x, y) {
+    const s = game.scene.getScene('World').tileToScreen(x, y);
+    const r = game.canvas.getBoundingClientRect();
+    return { x: r.left + (s.x / GAME_WIDTH) * r.width, y: r.top + (s.y / GAME_HEIGHT) * r.height };
+  },
+  tabToPage(id) {
+    const ui = game.scene.getScene('UI'); const t = ui.tabs.find((x) => x.id === id);
+    return this.gameToPage(t.cx, GAME_HEIGHT - 65);
+  },
   // world point -> page (CSS px) coordinates
   worldToPage(wx, wy) {
     const s = game.scene.getScene('Base').worldToScreen(wx, wy);

@@ -96,18 +96,35 @@ function renderDetails(ui, c, a, api, st, y0) {
     if (l.type) {
       const d = TROOP_CLASSES[l.type];
       const img = ui.add.image(170, ly + 4, `portrait-${l.type}`).setOrigin(0, 0).setScale(0.24); c.add(img);
-      c.add(text(ui, 230, ly + 8, `${d.plural}  ×${l.count}`, 24, d.colorHex, { fontStyle: 'bold' }));
-      c.add(text(ui, 230, ly + 38, d.role, 16, PALETTE.textDim));
+      const short = l.full > l.count;
+      c.add(text(ui, 230, ly + 8, `${d.plural}  ×${l.count}${short ? ` / ${l.full}` : ''}`, 24, short ? '#ff8a95' : d.colorHex, { fontStyle: 'bold' }));
+      c.add(text(ui, 230, ly + 38, short ? `${d.role}  ·  ${l.full - l.count} missing (wounded / fallen)` : d.role, 16, PALETTE.textDim));
       c.add(text(ui, 672, ly + 20, `+${l.count}`, 22, PALETTE.textGold).setOrigin(1, 0));
     } else c.add(text(ui, 170, ly + 20, 'Empty line', 21, '#5d6878'));
   });
 
   const y3 = y2 + fh + 14;
-  c.add(button(ui, 214, y3 + 40, 380, 76, 'Edit Formation', () => {
+  const march = store.squadMarch(id);
+  c.add(button(ui, 154, y3 + 40, 260, 76, 'Edit Formation', () => {
+    if (store.squadMarch(id)) { api.toast(`${SQUADS[id].name} is out on a march. Edit it when it's back.`); return; }
     st.edit = { squadId: id, lines: sq.lines.map((l) => ({ ...l })), leader: sq.leader };
     api.rerender();
-  }, { style: 'gold', size: 26 }));
-  c.add(button(ui, 548, y3 + 40, 288, 76, 'Battle', () => api.modal({ title: 'Battle', body: 'Coming in stage 3\n\nMaps and PvE auto-battles, where your squads fight using the stats you build here.', buttons: [{ label: 'OK', style: 'gold' }] }), { style: 'ghost', size: 26 }));
+  }, { style: 'gold', size: 24 }));
+  const refill = button(ui, 392, y3 + 40, 196, 76, 'Refill', () => {
+    const r = store.refillSquad(id);
+    api.toast(r.ok ? `${SQUADS[id].name}: +${r.added} troops from reserve` : r.reason);
+  }, { style: 'cyan', size: 22 });
+  c.add(refill);
+  c.add(button(ui, 594, y3 + 40, 196, 76, 'World', () => ui.onTab('world'), { style: 'ghost', size: 24 }));
+  const status = text(ui, 24, y3 + 86, '', 16, PALETTE.textDim, { wordWrap: { width: 672 } });
+  c.add(status);
+  api.dyn(() => {
+    const n = store.refillable(id), m = store.squadMarch(id);
+    refill.setEnabled(n > 0 && !m).setLabel(n > 0 ? `Refill +${n}` : 'Refill');
+    const tgt = m && store.world.get(m.targetId);
+    status.setText(m ? `${m.phase === 'out' ? `Marching to Lv ${tgt?.level ?? '?'}` : 'Returning to base'} · formation locked until it's back` : `Combat Power ${fmt(store.squadCombatPower(id))} (used on World hunts)  ·  only healthy troops march; Refill tops lines up from reserve`);
+  });
+  void march;
 }
 
 function renderEdit(ui, c, a, api, st, y0) {

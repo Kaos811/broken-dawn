@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, MAP } from '../config.js';
 import { makePortraitTextures } from '../art/portraits.js';
+import { makeCreatureTextures } from '../art/creatures.js';
 
 // Generates all placeholder art procedurally (no external assets), so the
 // single-file build stays self-contained. Swap these keys for real art later.
@@ -61,6 +62,7 @@ export default class BootScene extends Phaser.Scene {
   create() {
     this.makeSoftTextures();
     makePortraitTextures(this);
+    makeCreatureTextures(this);
     this.makeBuilding('tex-commandCenter', (g, c) => {
       const base = prism(g, c.x, c.y, 88, 44, 14, PALETTE.metalDark);
       faceStrip(g, base, 0.5, PALETTE.gold);
@@ -117,6 +119,23 @@ export default class BootScene extends Phaser.Scene {
       // pedestal
       g.fillStyle(PALETTE.metalEdge, 1); g.fillEllipse(c.x, body.topY + 2, 44, 20);
       g.fillStyle(PALETTE.cyan, 0.7); g.fillEllipse(c.x, body.topY + 2, 28, 12);
+    });
+    this.makeBuilding('tex-infirmary', (g, c) => {
+      const green = 0x4dff9a;
+      const base = prism(g, c.x, c.y, 86, 43, 12, PALETTE.metalDark);
+      faceStrip(g, base, 0.5, green);
+      const body = prism(g, c.x - 8, c.y - 12, 62, 31, 40, 0xc8d2dc, { left: 0x7d8896, right: 0xa4aebb });
+      faceStrip(g, body, 0.3, green);
+      const wing = prism(g, c.x + 40, c.y - 12 + 6, 30, 15, 26, 0xb4bec9, { left: 0x6f7a88, right: 0x96a0ad });
+      faceStrip(g, wing, 0.5, green, 'right');
+      // holographic cross above the roof
+      const top = body.topY - 34;
+      g.fillStyle(green, 0.16); g.fillCircle(c.x - 8, top, 34);
+      g.fillStyle(green, 1); g.fillRect(c.x - 8 - 7, top - 22, 14, 44); g.fillRect(c.x - 8 - 22, top - 7, 44, 14);
+      g.fillStyle(0xffffff, 0.7); g.fillRect(c.x - 8 - 3, top - 18, 6, 36);
+      // landing pad marking on the roof
+      g.lineStyle(2, green, 0.8); g.strokeEllipse(c.x - 8, body.topY + 2, 50, 22);
+      glowDot(g, c.x + 60, c.y - 40, 3.5, green);
     });
     this.makeBuilding('tex-beacon', (g, c) => {
       const base = prism(g, c.x, c.y, 92, 46, 16, PALETTE.metalDark);
