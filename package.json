@@ -1,0 +1,22 @@
+{
+  "name": "broken-dawn",
+  "version": "0.1.0",
+  "description": "Broken Dawn - sci-fi idle base-builder (stage 1: base view)",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build && vite build --mode single && node scripts/copy-single.mjs",
+    "preview": "vite preview --host",
+    "test": "node tests/e2e.mjs"
+  },
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1",
+    "vite": "^8.3.4",
+    "vite-plugin-singlefile": "^2.3.4"
+  },
+  "private": true
+}
