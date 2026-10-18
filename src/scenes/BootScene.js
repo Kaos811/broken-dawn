@@ -137,6 +137,26 @@ export default class BootScene extends Phaser.Scene {
       g.lineStyle(2, green, 0.8); g.strokeEllipse(c.x - 8, body.topY + 2, 50, 22);
       glowDot(g, c.x + 60, c.y - 40, 3.5, green);
     });
+    this.makeBuilding('tex-archive', (g, c) => {
+      const violet = 0xb07cff, pale = 0xe2d2ff;
+      const base = prism(g, c.x, c.y, 86, 43, 12, PALETTE.metalDark);
+      faceStrip(g, base, 0.5, violet);
+      const step1 = prism(g, c.x, c.y - 12, 66, 33, 30, PALETTE.metal);
+      faceStrip(g, step1, 0.5, violet);
+      const step2 = prism(g, c.x, c.y - 42, 46, 23, 30, PALETTE.metalLight);
+      faceStrip(g, step2, 0.4, violet); faceStrip(g, step2, 0.8, pale, 'left');
+      const spire = prism(g, c.x, c.y - 72, 22, 11, 34, PALETTE.metal, { top: violet });
+      // glyph tablets on the left face
+      g.fillStyle(violet, 0.9);
+      for (let i = 0; i < 3; i++) g.fillRect(c.x - 52 + i * 14, c.y - 30 + i * 7, 8, 12);
+      // orbiting data ring + signal orb
+      const ty = spire.topY - 26;
+      g.lineStyle(3, violet, 0.85); g.strokeEllipse(c.x, ty + 6, 84, 26);
+      g.lineStyle(1.5, pale, 0.6); g.strokeEllipse(c.x, ty + 6, 64, 18);
+      glowDot(g, c.x, ty - 4, 9, violet);
+      g.fillStyle(pale, 1); g.fillCircle(c.x - 2, ty - 6, 4);
+      for (const k of [-1, 1]) glowDot(g, c.x + k * 42, ty + 6, 3, pale);
+    });
     this.makeBuilding('tex-beacon', (g, c) => {
       const base = prism(g, c.x, c.y, 92, 46, 16, PALETTE.metalDark);
       faceStrip(g, base, 0.5, PALETTE.orange);

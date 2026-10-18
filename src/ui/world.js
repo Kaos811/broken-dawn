@@ -60,14 +60,15 @@ export function createWorldHud(ui, TOP_H, H) {
 
   hud.refresh = () => {
     const h = store.state.hunt;
-    stVal.setText(`${Math.floor(h.stamina)} / ${STAMINA.max}`);
+    const SMAX = store.staminaMax();
+    stVal.setText(`${Math.floor(h.stamina)} / ${SMAX}`);
     const nxt = store.staminaNext();
-    stSub.setText(h.stamina >= STAMINA.max ? `Full  ·  ${STAMINA.perAttack} per attack` : `+1 in ${fmtClock(nxt)}  ·  +${STAMINA.regenPerHour}/h`);
+    stSub.setText(h.stamina >= SMAX ? `Full  ·  ${STAMINA.perAttack} per attack` : `+1 in ${fmtClock(nxt)}  ·  +${store.staminaRegenPerHour()}/h`);
     stBar.clear();
     const bx = 200, bw = 200, byy = sy + 46;
     stBar.fillStyle(0x05070a, 1).fillRect(bx, byy, bw, 18);
-    stBar.fillStyle(h.stamina >= STAMINA.perAttack ? 0x4dff9a : 0xff4d5e, 1).fillRect(bx + 2, byy + 2, (bw - 4) * Math.min(1, h.stamina / STAMINA.max), 14);
-    if (h.stamina > STAMINA.max) stBar.fillStyle(PALETTE.gold, 1).fillRect(bx + 2, byy + 2, (bw - 4) * Math.min(1, (h.stamina - STAMINA.max) / STAMINA.max), 4);
+    stBar.fillStyle(h.stamina >= STAMINA.perAttack ? 0x4dff9a : 0xff4d5e, 1).fillRect(bx + 2, byy + 2, (bw - 4) * Math.min(1, h.stamina / SMAX), 14);
+    if (h.stamina > SMAX) stBar.fillStyle(PALETTE.gold, 1).fillRect(bx + 2, byy + 2, (bw - 4) * Math.min(1, (h.stamina - SMAX) / SMAX), 4);
     stBar.lineStyle(1.5, PALETTE.metalEdge, 1).strokeRect(bx, byy, bw, 18);
     auto.setLabel(h.auto ? 'AUTO: ON' : 'AUTO: OFF').setStyle(h.auto ? 'gold' : 'ghost');
     rep.setLabel(h.reports.length ? `Reports (${h.reports.length})` : 'Reports');

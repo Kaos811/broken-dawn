@@ -1,4 +1,4 @@
-import { PALETTE, TROOP_CLASSES, TROOP_IDS, INFIRMARY, SQUADS, TROOPS } from '../../config.js';
+import { PALETTE, TROOP_CLASSES, TROOP_IDS, INFIRMARY, SQUADS, TROOPS, TIERS } from '../../config.js';
 import { store } from '../../state/store.js';
 import { text, button, fmt, fmtClock } from '../widgets.js';
 import { header, card, portrait } from './common.js';
@@ -8,7 +8,7 @@ const GREEN = 0x4dff9a;
 export function renderInfirmary(ui, c, a, api) {
   const lv = store.infirmaryLevel;
   const sub = header(ui, c, a, 'INFIRMARY', '', GREEN);
-  api.dyn(() => sub.setText(`Lv ${lv}  ·  ${store.infirmaryCapacity()} beds  ·  heal x${INFIRMARY.healSpeed(lv).toFixed(2)}`));
+  api.dyn(() => sub.setText(`Lv ${lv}  ·  ${store.infirmaryCapacity()} beds  ·  heal x${store.healSpeed().toFixed(2)}`));
 
   // --- beds
   const y0 = a.y + 80;
@@ -17,7 +17,7 @@ export function renderInfirmary(ui, c, a, api) {
   const beds = text(ui, 36, y0 + 34, '', 30, PALETTE.text, { fontStyle: 'bold' });
   const bar = ui.add.graphics();
   c.add([beds, bar]);
-  c.add(text(ui, 36, y0 + 80, `Wounded beyond capacity die. Lv ${lv + 1}: ${INFIRMARY.capacity(lv + 1)} beds, x${INFIRMARY.healSpeed(lv + 1).toFixed(2)} speed.`, 16, PALETTE.textDim));
+  c.add(text(ui, 36, y0 + 80, `Wounded beyond capacity die. Lv ${lv + 1}: ${Math.floor(INFIRMARY.capacity(lv + 1) * store.mods.beds)} beds, x${(INFIRMARY.healSpeed(lv + 1) * store.mods.healSpeed).toFixed(2)} speed.`, 16, PALETTE.textDim));
   const healAll = button(ui, 588, y0 + 50, 200, 64, 'Heal all', () => {
     const r = store.healAll();
     api.toast(r.ok ? `Healing ${r.n} troops  (−${fmt(r.cost)} Energy)` : r.reason);
@@ -32,19 +32,23 @@ export function renderInfirmary(ui, c, a, api) {
     healAll.setEnabled(waiting > 0 && TROOP_IDS.some((t) => store.maxHealable(t) > 0)).setLabel(waiting ? `Heal all (${waiting})` : 'Heal all');
   });
 
-  // --- per class
-  const CH = 150;
-  TROOP_IDS.forEach((t, i) => {
-    const def = TROOP_CLASSES[t], H = INFIRMARY.heal[t];
-    const y = y0 + 122 + i * (CH + 10);
+  // --- per unit: T1 rows always, T2/T3 rows only while some are wounded (compact when there are more than 3)
+  const units = TROOP_IDS.filter((t) => TROOP_CLASSES[t].tier === 1 || store.woundedPool(t) + store.woundedQueued(t) > 0);
+  const compact = units.length > 3;
+  const CH = compact ? Math.max(84, Math.floor((470 - (units.length - 1) * 8) / units.length)) : 150;
+  units.forEach((t, i) => {
+    const def = TROOP_CLASSES[t];
+    const y = y0 + 122 + i * (CH + (compact ? 8 : 10));
     card(ui, c, 16, y, 688, CH, { accent: def.color, stroke: def.color });
-    portrait(ui, c, `portrait-${t}`, 30, y + 14, 96, def.color);
-    c.add(text(ui, 142, y + 12, def.plural, 26, def.colorHex, { fontStyle: 'bold' }));
-    const wl = text(ui, 142, y + 46, '', 19, '#8fffc1');
-    const cost = text(ui, 142, y + 74, '', 17, PALETTE.textDim);
+    portrait(ui, c, `portrait-${t}`, 30, y + (compact ? 8 : 14), compact ? CH - 22 : 96, def.color);
+    const nx = compact ? 30 + CH - 6 : 142;
+    c.add(text(ui, nx, y + (compact ? 6 : 12), `${def.plural}${def.tier > 1 ? ` · ${TIERS[def.tier].label}` : ''}`, compact ? 21 : 26, def.colorHex, { fontStyle: 'bold' }));
+    const wl = text(ui, nx, y + (compact ? 34 : 46), '', compact ? 16 : 19, '#8fffc1', { wordWrap: { width: compact ? 330 : 540 } });
+    const cost = text(ui, nx, y + (compact ? CH - 26 : 74), '', compact ? 15 : 17, PALETTE.textDim);
     c.add([wl, cost]);
-    const b1 = button(ui, 142 + 60, y + 118, 120, 46, 'Heal 1', () => { const r = store.heal(t, 1); if (!r.ok) api.toast(r.reason); }, { style: 'cyan', size: 20 });
-    const bAll = button(ui, 142 + 250, y + 118, 230, 46, 'Heal all', () => { const r = store.heal(t, store.maxHealable(t)); api.toast(r.ok ? `Healing ${r.n} ${r.n === 1 ? def.name : def.plural}  (−${fmt(r.cost)} Energy)` : r.reason); }, { style: 'gold', size: 20 });
+    const by = compact ? y + CH / 2 : y + 118;
+    const b1 = button(ui, compact ? 530 : 142 + 60, by, compact ? 100 : 120, compact ? 42 : 46, 'Heal 1', () => { const r = store.heal(t, 1); if (!r.ok) api.toast(r.reason); }, { style: 'cyan', size: compact ? 17 : 20 });
+    const bAll = button(ui, compact ? 640 : 142 + 250, by, compact ? 110 : 230, compact ? 42 : 46, 'Heal all', () => { const r = store.heal(t, store.maxHealable(t)); api.toast(r.ok ? `Healing ${r.n} ${r.n === 1 ? def.name : def.plural}  (−${fmt(r.cost)} Energy)` : r.reason); }, { style: 'gold', size: compact ? 16 : 20 });
     b1.chip = `heal1-${t}`; bAll.chip = `heal-${t}`;
     c.add([b1, bAll]);
     api.dyn(() => {
@@ -52,15 +56,15 @@ export function renderInfirmary(ui, c, a, api) {
       const from = [...TROOPS.squadIds, 'reserve'].filter((o) => w[o] > 0).map((o) => `${o === 'reserve' ? 'Reserve' : SQUADS[o].name} ${w[o]}`).join(' · ');
       const pool = store.woundedPool(t), q = store.woundedQueued(t);
       wl.setText(`Waiting ${pool}${from ? `  (${from})` : ''}${q ? `   ·   healing ${q}` : ''}`).setColor(pool || q ? '#8fffc1' : PALETTE.textDim);
-      cost.setText(`${H.energy} Energy  ·  ${store.healUnitTime(t).toFixed(1)}s each  ·  rejoins its squad`);
+      cost.setText(`${fmt(store.healEnergy(t))} Energy  ·  ${store.healUnitTime(t).toFixed(1)}s each${compact ? '' : '  ·  rejoins its squad'}`);
       const m = store.maxHealable(t);
       b1.setEnabled(store.healInfo(t, 1).can);
-      bAll.setEnabled(m > 0).setLabel(m > 0 ? `Heal all (${m})` : 'Heal all');
+      bAll.setEnabled(m > 0).setLabel(m > 0 ? (compact ? `All (${m})` : `Heal all (${m})`) : (compact ? 'All' : 'Heal all'));
     });
   });
 
   // --- healing queue
-  const qy = y0 + 122 + 3 * (CH + 10), qh = a.y + a.h - qy - 12;
+  const qy = compact ? y0 + 122 + 482 : y0 + 122 + 3 * (CH + 10), qh = a.y + a.h - qy - 12;
   card(ui, c, 16, qy, 688, qh, { accent: GREEN });
   c.add(text(ui, 36, qy + 14, 'HEALING QUEUE', 20, '#8fffc1', { fontStyle: 'bold', letterSpacing: 2 }));
   const qInfo = text(ui, 684, qy + 16, '', 17, PALETTE.textDim).setOrigin(1, 0);

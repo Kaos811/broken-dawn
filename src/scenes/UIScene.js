@@ -10,6 +10,8 @@ import { renderArmory, resultTag, drawCoreIcon } from '../ui/screens/armory.js';
 import { gearTexture } from '../art/portraits.js';
 import { RARITY, LEADERS, GEAR, CORES, INFIRMARY, STAMINA, CREATURES, SQUADS as SQ } from '../config.js';
 import { renderInfirmary } from '../ui/screens/infirmary.js';
+import { renderArchive } from '../ui/screens/archive.js';
+import { RESEARCH } from '../config.js';
 import { createWorldHud, openReport } from '../ui/world.js';
 
 export const TOP_H = 186;
@@ -22,7 +24,7 @@ const TABS = [
   { id: 'squads', label: 'Squads' },
   { id: 'settings', label: 'Settings' },
 ];
-const SCREENS = { troops: renderTroops, squads: renderSquads, armory: renderArmory, infirmary: renderInfirmary };
+const SCREENS = { troops: renderTroops, squads: renderSquads, armory: renderArmory, infirmary: renderInfirmary, archive: renderArchive };
 
 export default class UIScene extends Phaser.Scene {
   constructor() { super('UI'); }
@@ -63,6 +65,13 @@ export default class UIScene extends Phaser.Scene {
       store.on('squad', (_id, d) => { if (d && d.after !== d.before) this.bump(this.powerText); }),
       store.on('hunt', (r) => this.onHunt(r)),
       store.on('marchHome', (m) => { if (!m.meta?.auto) this.toast(`${SQ[m.squadId].name} is back at base`, 1400); }),
+      store.on('research', (id, lv, d) => {
+        if (d && d.after !== d.before) this.bump(this.powerText);
+        this.refreshPanel();
+        const R = RESEARCH[id];
+        this.toast(R.effect === 'tier' ? `Research done: ${R.name}. New troops in the Barracks!` : `Research done: ${R.name} Lv ${lv}`, 2600);
+      }),
+      store.on('researchStart', () => this.refreshPanel()),
       store.on('healed', (h) => { const n = Object.values(h).reduce((a, b) => a + b, 0); if (n && !this.screen) this.bumpTroops = true; }),
     ];
     this.events.once('shutdown', () => this.unsubs.forEach((u) => u()));
@@ -76,7 +85,7 @@ export default class UIScene extends Phaser.Scene {
     const off = store.offlineReport;
     if (off && off.energy >= 1) {
       const trained = Object.entries(off.trained ?? {}).map(([t, n]) => `${n} ${TROOP_CLASSES[t].plural}`).join(', ');
-      const built = (off.built ?? []).map((b) => `${store.nameOf(b.id)} Lv ${b.level}`).join(', ');
+      const built = [...(off.built ?? []).map((b) => `${store.nameOf(b.id)} Lv ${b.level}`), ...(off.researched ?? []).map((r) => `${RESEARCH[r.id].name} ${RESEARCH[r.id].maxLevel === 1 ? '' : `Lv ${r.level}`}`.trim())].join(', ');
       const hu = off.hunts;
       const hunts = hu?.fights ? `\nHunts while away: ${hu.wins}/${hu.fights} won${hu.cores ? `, +${hu.cores} Cores` : ''}, ${hu.wounded} wounded, ${hu.dead} fallen` : '';
       this.time.delayedCall(400, () => this.toast(`Welcome back, Commander. Away ${fmtDuration(off.seconds)}${off.capped ? ' (capped)' : ''}: +${fmt(off.energy)} Energy, +${fmt(off.shards)} Shards, +${fmt(off.alloy)} Alloy${trained ? `\nTrained while away: ${trained}` : ''}${built ? `\nUpgrades finished: ${built}` : ''}${hunts}`, hunts ? 6000 : 4600));
@@ -106,7 +115,7 @@ export default class UIScene extends Phaser.Scene {
     this.add.rectangle(W / 2, TOP_H / 2, W, TOP_H, 0, 0.001).setInteractive(); // swallow taps
 
     text(this, 20, 12, 'BROKEN DAWN', 18, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 4 });
-    text(this, W - 20, 12, 'STAGE 3 · WORLD', 16, PALETTE.textDim, { letterSpacing: 2 }).setOrigin(1, 0);
+    text(this, W - 20, 12, 'STAGE 4 · RESEARCH', 16, PALETTE.textDim, { letterSpacing: 2 }).setOrigin(1, 0);
 
     // Energy pill
     const pill = (x, w) => { panelBg(g, x, 42, w, 96, { accent: null, cut: 12, fill: 0x141922 }); };
@@ -432,10 +441,12 @@ export default class UIScene extends Phaser.Scene {
       '',
       'BUILDING POWER',
       `  Beacon Relay  Lv ${s.beacon.level}:  +${buildingPower(BEACON.id, s.beacon.level)}`,
-      ...Object.keys(BUILDINGS).map((id) => `  ${BUILDINGS[id].name}  Lv ${s.buildings[id].level}:  +${buildingPower(id, s.buildings[id].level)}`),
+      ...Object.keys(BUILDINGS).map((id) => (BUILDINGS[id].unlockBeacon && s.beacon.level < BUILDINGS[id].unlockBeacon
+        ? `  ${BUILDINGS[id].name}:  sealed until Beacon Lv ${BUILDINGS[id].unlockBeacon}`
+        : `  ${BUILDINGS[id].name}  Lv ${s.buildings[id].level}:  +${buildingPower(id, s.buildings[id].level)}`)),
       '',
-      'TROOP POWER  (1 per soldier, +10 per squad level above 1)',
-      ...TROOP_IDS.map((t) => `  ${TROOP_CLASSES[t].plural}: ${s.troops[t]}  →  +${s.troops[t] * TROOPS.powerPerSoldier}`),
+      'TROOP POWER  (T1 1 · T2 2 · T3 4 per soldier, +10 per squad level above 1)',
+      ...TROOP_IDS.filter((t) => TROOP_CLASSES[t].tier === 1 || s.troops[t] > 0).map((t) => `  ${TROOP_CLASSES[t].plural}: ${s.troops[t]}  →  +${s.troops[t] * TROOP_CLASSES[t].power * TROOPS.powerPerSoldier}`),
       `  Squad levels:  +${tp.levels}`,
     ];
     this.openOverlay({
@@ -519,7 +530,7 @@ export default class UIScene extends Phaser.Scene {
     }, { style: 'cyan', size: 28 });
     this.pOpen = button(this, x + w - 28 - 105, y + h - 146, 210, 70, 'Open', () => {
       const id = this.panelOpenFor;
-      const target = { barracks: 'troops', armory: 'armory', commandCenter: 'squads', infirmary: 'infirmary' }[id];
+      const target = { barracks: 'troops', armory: 'armory', commandCenter: 'squads', infirmary: 'infirmary', archive: 'archive' }[id];
       if (target) this.openScreen(target);
     }, { style: 'cyan', size: 26 });
     c.add([g, block, this.pTitle, this.pLevel, this.pDesc, this.pStats, this.pReason, this.pBar, close, this.pUpgrade, this.pMove, this.pOpen]);
@@ -553,7 +564,7 @@ export default class UIScene extends Phaser.Scene {
       const pct = Math.floor((s.beacon.charge / BEACON.maxCharge) * 100);
       this.pStats.setText([
         `Power (Beacon Relay):  +${now}   →  +${next}`,
-        `Charge:  ${pct}%   ·   Energy income ${ECONOMY.energyPerSec(lv).toFixed(2)}/s → ${ECONOMY.energyPerSec(lv + 1).toFixed(2)}/s`,
+        `Charge:  ${pct}%   ·   Energy income ${(ECONOMY.energyPerSec(lv) * store.mods.energy).toFixed(2)}/s → ${(ECONOMY.energyPerSec(lv + 1) * store.mods.energy).toFixed(2)}/s`,
         `Building level cap:  Lv ${store.buildingLevelCap()}   ·   Anchored (can't move)`,
         info.job ? `Upgrading to Lv ${info.job.toLevel}:  ${fmtClock(info.job.total - info.job.progress)} left` : `Upgrade:  ${fmt(info.cost)} Energy + full charge  ·  ${fmtClock(info.seconds)}`,
       ].join('\n'));
@@ -564,12 +575,14 @@ export default class UIScene extends Phaser.Scene {
       const def = BUILDINGS[id];
       this.pTitle.setText(def.name);
       this.pDesc.setText(def.description);
-      const now = buildingPower(id, lv), next = buildingPower(id, lv + 1);
+      const sealed = def.unlockBeacon && s.beacon.level < def.unlockBeacon;
+      const now = sealed ? 0 : buildingPower(id, lv), next = buildingPower(id, lv + 1);
       const extra = {
         barracks: `3 lanes · ${BARRACKS.laneCapacity(lv)} → ${BARRACKS.laneCapacity(lv + 1)} each  ·  Speed x${BARRACKS.trainSpeed(lv).toFixed(1)} → x${BARRACKS.trainSpeed(lv + 1).toFixed(1)}`,
         commandCenter: `Squad level cap Lv ${lv}  ·  Alloy ${(store.alloyRate * 3600).toFixed(0)}/h`,
         armory: `Cores ${fmt(s.resources.cores)} (pulls)  ·  Shards ${fmt(s.resources.shards)} (+${(store.shardRate * 3600).toFixed(0)}/h, upgrades)`,
-        infirmary: `Beds ${store.woundedTotal()}/${INFIRMARY.capacity(lv)} → ${INFIRMARY.capacity(lv + 1)}  ·  Heal x${INFIRMARY.healSpeed(lv).toFixed(2)} → x${INFIRMARY.healSpeed(lv + 1).toFixed(2)}`,
+        infirmary: `Beds ${store.woundedTotal()}/${store.infirmaryCapacity()} → ${Math.floor(INFIRMARY.capacity(lv + 1) * store.mods.beds)}  ·  Heal x${store.healSpeed().toFixed(2)} → x${(INFIRMARY.healSpeed(lv + 1) * store.mods.healSpeed).toFixed(2)}`,
+        archive: !store.archiveUnlocked() ? `Sealed until Beacon Lv ${def.unlockBeacon}: no research, no Power yet` : (store.researchJob() ? `Researching ${RESEARCH[store.researchJob().id].name} Lv ${store.researchJob().toLevel}: ${fmtClock(store.researchLeft())} left` : `Research node cap Lv ${lv} → ${lv + 1}  ·  Archive idle`),
       }[id];
       this.pStats.setText([
         `Power contribution:  +${now}   →  +${next} at Lv ${lv + 1}`,
@@ -578,7 +591,7 @@ export default class UIScene extends Phaser.Scene {
         info.job ? `Upgrading to Lv ${info.job.toLevel}:  ${fmtClock(info.job.total - info.job.progress)} left` : `Upgrade:  ${fmt(info.cost)} Energy  ·  takes ${fmtClock(info.seconds)}`,
       ].join('\n'));
       this.pMove.setVisible(true);
-      this.pOpen.setVisible(true).setLabel({ barracks: 'Train', armory: 'Recruit', commandCenter: 'Squads', infirmary: 'Heal' }[id]);
+      this.pOpen.setVisible(true).setLabel({ barracks: 'Train', armory: 'Recruit', commandCenter: 'Squads', infirmary: 'Heal', archive: 'Research' }[id]);
       this.pUpgrade.setPosition(this.panelRect.x + 28 + 210, this.pUpgrade.y);
     }
     this.pLevel.setText(`Lv ${lv}`);
@@ -663,7 +676,7 @@ export default class UIScene extends Phaser.Scene {
   openSettings() {
     this.openModal({
       title: 'Settings',
-      body: 'Broken Dawn · v0.3 (stage 3: World hunts)\nProgress saves automatically on this device.\n\nPvP: coming later.\n\nReset Save erases everything: base, troops, squads, leaders, gear and the world.',
+      body: 'Broken Dawn · v0.4 (stage 4: research + troop tiers)\nProgress saves automatically on this device.\n\nPvP: coming later.\n\nReset Save erases everything: base, troops, squads, leaders, gear, research and the world.',
       tab: 'settings',
       buttons: [
         { label: 'Close', style: 'ghost' },

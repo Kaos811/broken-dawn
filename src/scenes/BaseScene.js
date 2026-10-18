@@ -243,7 +243,16 @@ export default class BaseScene extends Phaser.Scene {
   syncLabel(id) {
     const b = store.state.buildings[id];
     const j = store.constructionJob(id);
-    this.sprites[id].label.setText(`${BUILDINGS[id].name}  ·  Lv ${b.level}${j ? `  ⬆ ${j.toLevel}` : ''}`);
+    const sealed = BUILDINGS[id].unlockBeacon && store.state.beacon.level < BUILDINGS[id].unlockBeacon;
+    if (sealed) {
+      // Archive before Beacon Lv 3: dark and locked
+      this.sprites[id].label.setText(`🔒 ${BUILDINGS[id].name}  ·  Beacon Lv ${BUILDINGS[id].unlockBeacon}`).setColor(PALETTE.textDim);
+      this.sprites[id].img.setTint(0x55505f);
+      return;
+    }
+    this.sprites[id].img.clearTint();
+    const busy = id === 'archive' && store.researchJob() ? '  ◆' : '';
+    this.sprites[id].label.setText(`${BUILDINGS[id].name}  ·  Lv ${b.level}${j ? `  ⬆ ${j.toLevel}` : ''}${busy}`).setColor(PALETTE.text);
   }
   syncBeaconLabel() {
     const a = footprintAnchor(BEACON.gx, BEACON.gy, BEACON.footprint);

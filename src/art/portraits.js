@@ -132,6 +132,23 @@ function weaponIcon(ctx, W, H, col) {
   ctx.restore();
 }
 
+// Tier marks for T2/T3 portraits: chevrons in the corner + an inner glow frame.
+function tierBadge(ctx, W, H, tier, col) {
+  const glow = tier === 3 ? '#ffd27f' : '#e2d2ff';
+  ctx.save();
+  ctx.strokeStyle = glow; ctx.globalAlpha = 0.55; ctx.lineWidth = tier === 3 ? 6 : 4;
+  ctx.strokeRect(4, 4, W - 8, H - 8);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#0b0e13dd'; ctx.fillRect(8, 8, 34, 16 + tier * 12);
+  ctx.strokeStyle = glow; ctx.lineWidth = 2; ctx.strokeRect(8, 8, 34, 16 + tier * 12);
+  ctx.fillStyle = glow;
+  for (let k = 0; k < tier; k++) {
+    const y = 16 + k * 12;
+    ctx.beginPath(); ctx.moveTo(14, y); ctx.lineTo(25, y + 7); ctx.lineTo(36, y); ctx.lineTo(36, y + 5); ctx.lineTo(25, y + 12); ctx.lineTo(14, y + 5); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
 export function makePortraitTextures(scene) {
   const { W, H } = PORTRAIT;
   canvasTex(scene, 'glow-white', 128, 128, (ctx, w) => {
@@ -149,7 +166,11 @@ export function makePortraitTextures(scene) {
     ctx.fillStyle = '#3ff0ff'; poly(ctx, [[w / 2, h / 2 + 16], [w / 2 + 26, h / 2 + 30], [w / 2, h / 2 + 44], [w / 2 - 26, h / 2 + 30]]); ctx.fill();
   });
   for (const [id, def] of Object.entries(TROOP_CLASSES)) {
-    canvasTex(scene, `portrait-${id}`, W, H, (ctx) => { background(ctx, W, H, def.colorHex); DRAW[id](ctx, W, H, def.colorHex); });
+    canvasTex(scene, `portrait-${id}`, W, H, (ctx) => {
+      background(ctx, W, H, def.colorHex);
+      DRAW[def.cls](ctx, W, H, def.colorHex);
+      if (def.tier > 1) tierBadge(ctx, W, H, def.tier, def.colorHex);
+    });
   }
   for (const [id, L] of Object.entries(LEADERS)) {
     const A = TROOP_CLASSES[L.affinity].colorHex;

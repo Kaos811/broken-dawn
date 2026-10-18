@@ -1,4 +1,4 @@
-import { PALETTE, TROOP_CLASSES, TROOP_IDS, SQUADS, TROOPS, LEADERS, GEAR, GEAR_IDS, RARITY } from '../../config.js';
+import { PALETTE, TROOP_CLASSES, TROOP_IDS, CLASS_IDS, TIERS, MAX_TIER, SQUADS, TROOPS, LEADERS, GEAR, GEAR_IDS, RARITY, unitOf, classOf, tierOf } from '../../config.js';
 import { store } from '../../state/store.js';
 import { text, button, fmt } from '../widgets.js';
 import { gearTexture } from '../../art/portraits.js';
@@ -97,7 +97,7 @@ function renderDetails(ui, c, a, api, st, y0) {
       const d = TROOP_CLASSES[l.type];
       const img = ui.add.image(170, ly + 4, `portrait-${l.type}`).setOrigin(0, 0).setScale(0.24); c.add(img);
       const short = l.full > l.count;
-      c.add(text(ui, 230, ly + 8, `${d.plural}  ×${l.count}${short ? ` / ${l.full}` : ''}`, 24, short ? '#ff8a95' : d.colorHex, { fontStyle: 'bold' }));
+      c.add(text(ui, 230, ly + 8, `${d.plural}${d.tier > 1 ? ` (${TIERS[d.tier].label})` : ''}  ×${l.count}${short ? ` / ${l.full}` : ''}`, 24, short ? '#ff8a95' : d.colorHex, { fontStyle: 'bold' }));
       c.add(text(ui, 230, ly + 38, short ? `${d.role}  ·  ${l.full - l.count} missing (wounded / fallen)` : d.role, 16, PALETTE.textDim));
       c.add(text(ui, 672, ly + 20, `+${l.count}`, 22, PALETTE.textGold).setOrigin(1, 0));
     } else c.add(text(ui, 170, ly + 20, 'Empty line', 21, '#5d6878'));
@@ -132,24 +132,38 @@ function renderEdit(ui, c, a, api, st, y0) {
   const draftUse = (t, skip = -1) => e.lines.reduce((n, l, i) => n + (i !== skip && l.type === t ? l.count : 0), 0);
   const maxFor = (i, t) => Math.max(0, store.availableFor(t, id) - draftUse(t, i));
   c.add(text(ui, 24, y0 + 2, `EDIT FORMATION · ${SQUADS[id].name.toUpperCase()}`, 22, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
-  c.add(text(ui, 24, y0 + 32, 'Available:  ' + TROOP_IDS.map((t) => `${TROOP_CLASSES[t].plural} ${store.availableFor(t, id) - draftUse(t)}`).join('   '), 19, PALETTE.textCyan));
+  const shown = TROOP_IDS.filter((t) => tierOf(t) === 1 || store.state.troops[t] > 0);
+  c.add(text(ui, 24, y0 + 32, 'Available:  ' + shown.map((t) => `${TROOP_CLASSES[t].plural} ${store.availableFor(t, id) - draftUse(t)}`).join('  '), shown.length > 4 ? 16 : 19, PALETTE.textCyan, { wordWrap: { width: 680 } }));
   const LH = 168;
   e.lines.forEach((l, i) => {
     const ly = y0 + 64 + i * (LH + 8);
     card(ui, c, 16, ly, 688, LH, { accent: l.type ? TROOP_CLASSES[l.type].color : null });
     c.add(text(ui, 32, ly + 12, `${SQUADS.lineNames[i].toUpperCase()} LINE`, 18, PALETTE.textDim, { letterSpacing: 2 }));
-    // type chips
-    const opts = [{ t: null, label: 'None' }, ...TROOP_IDS.map((t) => ({ t, label: TROOP_CLASSES[t].plural }))];
+    // class chips (a class chip picks that class at T1, or keeps the line's tier if it's the same class)
+    const opts = [{ t: null, label: 'None' }, ...CLASS_IDS.map((t) => ({ t, label: TROOP_CLASSES[t].plural }))];
+    const setType = (t) => { const m = maxFor(i, t); l.type = t; l.count = Math.min(m, l.count > 0 ? l.count : 10); };
     opts.forEach((o, k) => {
-      const on = l.type === o.t;
+      const on = o.t === null ? !l.type : classOf(l.type) === o.t;
       const b = button(ui, 32 + 82 + k * 164, ly + 64, 156, 50, o.label, () => {
         if (o.t === null) { l.type = null; l.count = 0; }
-        else { const m = maxFor(i, o.t); l.type = o.t; l.count = Math.min(m, l.count > 0 ? l.count : 10); }
+        else if (classOf(l.type) !== o.t) setType(o.t);
         api.rerender();
       }, { style: on ? 'gold' : 'ghost', size: 20 });
       b.chip = `line${i}-${o.t ?? 'none'}`;
       c.add(b);
     });
+    // tier chips: one tier per line
+    if (l.type) {
+      const cls = classOf(l.type);
+      for (let k = 1; k <= MAX_TIER; k++) {
+        const u = unitOf(cls, k);
+        const has = store.availableFor(u, id) > 0 || l.type === u;
+        const tb = button(ui, 444 + (k - 1) * 82, ly + 24, 74, 36, TIERS[k].label, () => { setType(u); api.rerender(); }, { style: l.type === u ? 'gold' : 'ghost', size: 17 });
+        tb.setEnabled(has && (store.tierUnlocked(k) || store.state.troops[u] > 0));
+        tb.chip = `line${i}-${u}`;
+        c.add(tb);
+      }
+    }
     // count stepper
     const cy = ly + 128;
     if (l.type) {
