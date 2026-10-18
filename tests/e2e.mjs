@@ -170,8 +170,9 @@ async function run(url, label, takeShots) {
   const aS = await fpCenter('armory');
   await page.mouse.click(aS.x, aS.y); await sleep(250);
   const mv = await uiPoint(() => { const b = __BD.ui().pMove; return __BD.gameToPage(b.x, b.y); });
-  await page.mouse.click(mv.x, mv.y); await sleep(150);
-  check('Move button enters move mode', (await ev(() => __BD.base().moveId)) === 'armory');
+  const dbg = await ev(() => `panel=${__BD.ui().panelOpenFor} panelY=${__BD.ui().panel.y} move=${__BD.base().moveId}`);
+  await page.mouse.click(mv.x, mv.y); await sleep(200);
+  check('Move button enters move mode', (await ev(() => __BD.base().moveId)) === 'armory', dbg);
   const aT = await ev(([gx, gy]) => __BD.worldToPage(26 * 48 + (gx + 1 - (gy + 1)) * 48, 140 + (gx + gy + 2) * 24), [ar0.gx - 3, ar0.gy]);
   await page.mouse.move(aS.x, aS.y); await page.mouse.down();
   for (let i = 1; i <= 12; i++) { await page.mouse.move(aS.x + ((aT.x - aS.x) * i) / 12, aS.y + ((aT.y - aS.y) * i) / 12); await sleep(20); }
