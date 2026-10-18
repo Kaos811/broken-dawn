@@ -1,23 +1,25 @@
-# Broken Dawn: Stage 1 (Base View)
+# Broken Dawn: Stage 2 (Troops, Squads, Armory)
 
 Broken Dawn is a sci-fi idle base-builder with auto-battle. It's a mobile web game built with
 [Phaser 3](https://phaser.io) and [Vite](https://vitejs.dev), and it uses only free, open-source tools.
 **Play it:** https://kaos811.github.io/broken-dawn/ (every push to `main` redeploys automatically via GitHub Actions)
 
-Stage 1 is the playable base: a zoomable top-down map built around **The Beacon**, with buildings you can move,
-upgrades, Base Power, and passive Energy income.
+Stage 1 built the playable base: a zoomable top-down map around **The Beacon**, with movable buildings,
+upgrades, Base Power and passive Energy. Stage 2 adds the army: troop training, squads and formations,
+and the Armory with leaders, gear and a recruitment gacha.
 
 ## Run it
 
 ```bash
 npm install
 npm run dev        # dev server at http://localhost:5173 (with --host, so phones on the same Wi-Fi can open it)
-npm run build      # -> dist/ (multi-file) AND broken-dawn-stage1.html (single self-contained file)
+npm run build      # -> dist/ (multi-file) AND broken-dawn.html (single self-contained file)
 npm run preview    # serve dist/
-npm test           # headless Chromium smoke test (needs a build; CHROME_PATH=/path/to/chrome to override)
+npm test           # headless Chromium e2e test (needs a build; CHROME_PATH=/path/to/chrome to override)
+                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=2 runs just the stage-2 suite
 ```
 
-`broken-dawn-stage1.html` has everything inlined, so you can open it directly from disk or host it
+`broken-dawn.html` has everything inlined, so you can open it directly from disk or host it
 anywhere, including GitHub Pages. `dist/` is the standard build for static hosting.
 
 ## Controls (touch first, mouse works too)
@@ -63,28 +65,68 @@ The Beacon is anchored: long-pressing it just shows "can't be moved".
 - **Layout:** designed for portrait 9:16 (720×1280 logical). On taller phones (19.5:9 and up) the height stretches so the HUD and
   nav sit at the real screen edges.
 
+## Stage 2: what's built
+
+All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RESOURCES`, `GACHA`, `LEADERS`, `GEAR`).
+
+- **Troop classes** (procedural portraits in `src/art/portraits.js`):
+
+  | Class | Role | HP | ATK | DEF | Energy | Time (Barracks Lv 1) |
+  |---|---|---|---|---|---|---|
+  | Sentinel | Frontline wall: T-visor, energy shield, short rifle | 120 | 8 | 14 | 6 | 8 s |
+  | Bearer | Main damage: long coat, two-handed weapon, Beacon light | 80 | 18 | 7 | 8 | 10 s |
+  | Voyager | Scout/support: hood, cyan eyes, sniper, floating shard | 65 | 13 | 5 | 7 | 9 s |
+- **Barracks** (Troops tab, or tap the Barracks → **Train**): x1 / x10 / Max (Max = what fits in the queue and what you
+  can afford). Queue capacity `10 + 10 × (level − 1)`, speed `1 + 0.2 × (level − 1)`, up to 5 batches. Energy is
+  paid up front; ✕ cancels a batch for a full refund. Training keeps running offline (same 8 h cap as income).
+  Cards show Ready / Assigned / Owned.
+- **Power:** each trained soldier adds 1 Troop Power (assigned or not), plus 10 per squad level above 1.
+  `Base Power = Building Power + Troop Power`. The HUD shows both parts; tap the Base Power pill for the full breakdown.
+- **Squads** (Squads tab, or tap the Command Center → **Squads**): Alpha is open from the start, Bravo unlocks at Command Center Lv 3,
+  Charlie at Lv 5. Squad Details shows power, level, leader, armor, weapon, the 3 formation lines (Front/Middle/Back)
+  and the squad's HP/ATK/DEF with buffs applied. **Edit Formation** picks a troop type and count per line, capped at
+  your unassigned troops, plus an optional leader. `Squad Power = soldiers + 10 × squad level`. Level-up costs
+  `80 × 1.7^(L−1)` Energy + `15 × L` Alloy and is capped at the Command Center level. **Battle** says "Coming in stage 3".
+- **Resources:** Shards start at 500 and trickle in from the Beacon (40/h at Lv 1, +20/h per level). Alloy is refined by
+  the Command Center (72/h per CC level). Both accrue offline.
+- **Armory** (Armory tab, or tap the Armory → **Recruit**), with three tabs:
+  - **Recruitment:** pull x1 = 10 Shards, x10 = 100. Rates are Common 60%, Rare 28%, Epic 10%, Legendary 2%. Pity: an Epic or better within 10
+    pulls, a Legendary within 60. 40% of pulls are leaders, 60% gear. There's a card-flip reveal with rarity colors (Epic and Legendary burst)
+    and a history of the last 50 recruits. A duplicate leader adds a star (max 5★, each star adds 25% of the base buff), and past 5★
+    it converts to Shards (2/5/15/50 by rarity).
+  - **Leaders:** a collection grid (unrecruited leaders appear dimmed) with rarity, class affinity, buff and debuff, stars and the squad they lead.
+    Tap one for details and to assign it to Alpha, Bravo or Charlie. A leader leads one squad at a time.
+    The 11 leaders are Kael and Seren (Legendary), Lyra and Jax (Epic), Vex, Orin and Nova (Rare), and Rook, Dax, Mira and Thane (Common).
+  - **Gear:** your inventory, 9 items (armor and weapons, +5% to +25% HP, ATK or DEF). Each squad holds one armor and one weapon.
+    Each copy can be equipped once.
+- **Saves:** the save version went from 1 to 2 and migrates automatically. Buildings, levels, Energy and the Beacon carry over,
+  and the old save is kept as `brokenDawn.save.v1.backup-v1`. Loaded saves are sanitized: formations are clamped to the troops you own,
+  and unknown leaders or gear are dropped.
+
 ## Code layout
 
 ```
 src/
   main.js              Phaser game config, scene list, window.__BD debug/test hook
   config.js            ALL tuning numbers: power per level, costs, income, map size, zoom, palette
-  state/store.js       game state, save/load/offline, upgrades, placement rules, event emitter
-  systems/power.js     Base / Building / Troop power formulas
+  state/store.js       game state, save/load/migration/offline, upgrades, placement, training,
+                       squads, leaders, gear, gacha (seedable RNG), event emitter
+  systems/power.js     Base / Building / Troop / Squad power formulas
+  art/portraits.js     procedural troop/leader portraits, gear icons, card back (canvas 2D)
   systems/grid.js      iso <-> world math, platform + placement validation
   scenes/BootScene.js  procedural textures (swap for real art later)
   scenes/BaseScene.js  map, camera (pan/pinch/wheel), picking, long-press, drag and snap
-  scenes/UIScene.js    HUD, bottom nav, info panel, move banner, modals, toasts, game tick
+  scenes/UIScene.js    HUD, bottom nav, info panel, move banner, screens, overlays, gacha reveal, toasts, game tick
   ui/widgets.js        buttons, panels, number formatting
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) smoke test, 45 checks × 2 builds
+  ui/screens/          troops.js (Barracks), squads.js (details, edit formation, pickers), armory.js, common.js
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1 + stage 2 suites × 2 builds (210 checks)
 screens/               screenshots from the test run
 ```
 
-### Hooks for stages 2 and 3
-- `state.troops` and `state.squads` (`alpha/bravo/charlie: { level, members: [{ type, count }] }`) already exist
-  in saves, and `totalTroopPower()` already counts them, so filling them in updates Base Power automatically.
-- New tabs: replace the "Coming in stage 2" branch in `UIScene.onTab()` with new scenes.
-- New buildings: add an entry to `BUILDINGS` in `config.js` and a texture in `BootScene`.
+### Hooks for stage 3
+- `store.squadStats(id)` returns each squad's total HP/ATK/DEF with leader and gear buffs applied, ready for auto-battle.
+- Per-soldier base stats are in `TROOP_CLASSES`. Squads have three ordered lines (Front/Middle/Back).
+- Battle and Maps are placeholders ("Coming in stage 3") in Squad Details and Settings.
 
 ## Known gaps
 
@@ -93,4 +135,6 @@ screens/               screenshots from the test run
   game but doesn't re-layout it, so reload after rotating. It's built for portrait.
 - Only tested in headless Chromium with phone emulation (390×844, touch and mouse). It hasn't been tried on a real iPhone or Android device yet.
 - Balance numbers are first-pass placeholders. Tune them in `src/config.js`.
+- Troops are never lost yet (that comes with battles), so the only Troop Power sink is the queue cap.
+- Gear and leader buffs only change squad HP/ATK/DEF (used in stage 3), not Base Power.
 - The bundle is about 1.2 MB (330 KB gzipped), almost all of it Phaser.

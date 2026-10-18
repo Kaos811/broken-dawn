@@ -524,7 +524,7 @@ export default class BaseScene extends Phaser.Scene {
     const g = this.gesture;
     if (g?.mode === 'drag' && g.lastScreen) {
       const cam = this.cameras.main, s = g.lastScreen;
-      const top = 170, bottom = cam.height - 150;
+      const top = 206, bottom = cam.height - 150;
       let vx = 0, vy = 0;
       if (s.x < EDGE_PAN) vx = -1; else if (s.x > cam.width - EDGE_PAN) vx = 1;
       if (s.y < top + EDGE_PAN && s.y > 0) vy = -1; else if (s.y > bottom - EDGE_PAN) vy = 1;

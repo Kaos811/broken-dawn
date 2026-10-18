@@ -70,5 +70,23 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
   c.setLabel = (s) => { t.setText(s); return c; };
   c.setStyle = (s) => { current = s; draw(); return c; };
   c.hit = hit;
+  c.isButton = true;
+  c.labelText = t;
+  c.isEnabled = () => enabled;
   return c;
+}
+
+// Small text chip / pill (non-interactive background box).
+export function pill(scene, g, x, y, w, h, color = 0x3b4452, alpha = 1, fill = 0x141922) {
+  g.fillStyle(fill, alpha).fillRoundedRect(x, y, w, h, Math.min(10, h / 2));
+  g.lineStyle(2, color, 1).strokeRoundedRect(x, y, w, h, Math.min(10, h / 2));
+}
+
+export function hexColor(n) { return `#${n.toString(16).padStart(6, '0')}`; }
+
+export function fmtClock(s) {
+  s = Math.max(0, Math.ceil(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const mm = String(m).padStart(h ? 2 : 1, '0'), ss = String(sec).padStart(2, '0');
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }

@@ -32,6 +32,22 @@ window.__BD = {
     const r = game.canvas.getBoundingClientRect();
     return { x: r.left + (s.x / GAME_WIDTH) * r.width, y: r.top + (s.y / GAME_HEIGHT) * r.height };
   },
+  // Visible UI controls (buttons / tap zones / tabs) for tests: [{ label, x, y, enabled }] in page px.
+  controls() {
+    const ui = game.scene.getScene('UI');
+    const out = [];
+    const r = game.canvas.getBoundingClientRect();
+    const visible = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active) return false; return true; };
+    const toPage = (b) => ({ x: r.left + ((b.centerX) / GAME_WIDTH) * r.width, y: r.top + ((b.centerY) / GAME_HEIGHT) * r.height });
+    const walk = (o) => {
+      if (o.isButton && visible(o)) out.push({ label: o.labelText.text, kind: 'button', enabled: o.isEnabled(), ...toPage(o.hit.getBounds()), meta: o.chip ?? o.step ?? o.trainType ?? o.cancelIndex });
+      else if (o.zoneName && visible(o)) out.push({ label: o.zoneName, kind: 'zone', enabled: true, ...toPage(o.getBounds()) });
+      else if (o.tabLabel && visible(o)) out.push({ label: o.tabLabel, kind: 'tab', enabled: true, ...toPage(o.getBounds()) });
+      (o.list ?? []).forEach(walk);
+    };
+    ui.children.list.forEach(walk);
+    return out;
+  },
   gameToPage(gx, gy) {
     const r = game.canvas.getBoundingClientRect();
     return { x: r.left + (gx / GAME_WIDTH) * r.width, y: r.top + (gy / GAME_HEIGHT) * r.height };

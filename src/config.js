@@ -70,7 +70,7 @@ export const BUILDINGS = {
     costGrowth: 1.6,
     start: { gx: 12, gy: 8, level: 1 },
     accent: 'gold',
-    description: 'Main hub. Oversees the base and its total Base Power.',
+    description: 'Main hub. Oversees Base Power, unlocks the Bravo and Charlie squads, and caps squad levels.',
   },
   barracks: {
     id: 'barracks',
@@ -81,18 +81,18 @@ export const BUILDINGS = {
     costGrowth: 1.55,
     start: { gx: 8, gy: 12, level: 1 },
     accent: 'blue',
-    description: 'Trains Sentinels, Bearers and Voyagers. (Troop training arrives in stage 2.)',
+    description: 'Trains Sentinels, Bearers and Voyagers. Higher levels hold a bigger training queue and train faster.',
   },
   armory: {
     id: 'armory',
     name: 'Armory',
     footprint: 2,
-    powerPerLevel: 0, // not part of the stage-1 power formula; gacha arrives in stage 2
+    powerPerLevel: 0, // not part of the power formula; the Armory hosts recruitment (gacha)
     baseCost: 40,
     costGrowth: 1.6,
     start: { gx: 16, gy: 16, level: 1 },
     accent: 'cyan',
-    description: 'Recruitment hub for leaders, armor and weapons. (Gacha arrives in stage 2.)',
+    description: 'Recruitment hub for leaders, armor and weapons. Spend Shards on pulls; equip what you find on your squads.',
   },
 };
 
@@ -106,21 +106,127 @@ export const buildingUpgradeCost = (id, level) => {
   return Math.round(b.baseCost * Math.pow(b.costGrowth, level - 1));
 };
 
-// Troop power (wired up for stage 2): each soldier = 1, +10 per squad level.
+// ---------------------------------------------------------------- STAGE 2 --
+
+// Troop classes. hp/atk/def are per-soldier base stats used by stage-3 auto-battle.
+// energy = Energy cost per unit; trainSeconds = time per unit at Barracks Lv 1.
+export const TROOP_CLASSES = {
+  sentinel: {
+    id: 'sentinel', name: 'Sentinel', plural: 'Sentinels', role: 'Frontline Wall',
+    hp: 120, atk: 8, def: 14, energy: 6, trainSeconds: 8,
+    color: 0x4a8cff, colorHex: '#4a8cff',
+    description: 'Bulky modular armor and a T-visor helmet. Holds the line with an energy shield and a short rifle.',
+  },
+  bearer: {
+    id: 'bearer', name: 'Bearer', plural: 'Bearers', role: 'Main Damage',
+    hp: 80, atk: 18, def: 7, energy: 8, trainSeconds: 10,
+    color: 0xffb347, colorHex: '#ffb347',
+    description: 'Long coats and two-handed weapons. Carries the Beacon\'s light into battle and deals the heavy damage.',
+  },
+  voyager: {
+    id: 'voyager', name: 'Voyager', plural: 'Voyagers', role: 'Scout / Support',
+    hp: 65, atk: 13, def: 5, energy: 7, trainSeconds: 9,
+    color: 0x3ff0ff, colorHex: '#3ff0ff',
+    description: 'Hooded, lightly armored, with glowing cyan eyes. Sniper rifles, dual pistols and a floating Beacon shard.',
+  },
+};
+export const TROOP_IDS = Object.keys(TROOP_CLASSES);
+
+// Troop power: each soldier = 1, +10 per squad level above 1 (summed into Base Power).
+// Squad Power (shown per squad) = soldiers in the squad + 10 x squad level.
 export const TROOPS = {
   powerPerSoldier: 1,
   powerPerSquadLevel: 10,
   squadIds: ['alpha', 'bravo', 'charlie'],
 };
 
+export const BARRACKS = {
+  // Max units waiting in the training queue at a given Barracks level.
+  queueCapacity: (level) => 10 + 10 * (level - 1),
+  // Training speed multiplier (unit time = trainSeconds / speed).
+  trainSpeed: (level) => 1 + 0.2 * (level - 1),
+  maxBatches: 5, // separate queue entries
+};
+
+export const SQUADS = {
+  alpha: { id: 'alpha', name: 'Alpha', unlockCC: 1 },
+  bravo: { id: 'bravo', name: 'Bravo', unlockCC: 3 },
+  charlie: { id: 'charlie', name: 'Charlie', unlockCC: 5 },
+  lines: 3,                       // formation lines per squad
+  lineNames: ['Front', 'Middle', 'Back'],
+  // Squad level can't exceed the Command Center level.
+  levelUpCost: (level) => ({ energy: Math.round(80 * Math.pow(1.7, level - 1)), alloy: 15 * level }),
+};
+
+// Secondary resources.
+export const RESOURCES = {
+  startShards: 500,
+  startAlloy: 0,
+  // Shards trickle from the Beacon: 40/h at Beacon Lv 1, +20/h per level.
+  shardsPerSec: (beaconLevel) => (40 + 20 * (beaconLevel - 1)) / 3600,
+  // Alloy is refined by the Command Center: 72/h per CC level.
+  alloyPerSec: (ccLevel) => 0.02 * ccLevel,
+};
+
+export const RARITIES = ['common', 'rare', 'epic', 'legendary'];
+export const RARITY = {
+  common: { name: 'Common', color: 0x9aa6b8, hex: '#9aa6b8', dupShards: 2 },
+  rare: { name: 'Rare', color: 0x4a8cff, hex: '#6aa2ff', dupShards: 5 },
+  epic: { name: 'Epic', color: 0xb05cff, hex: '#c58aff', dupShards: 15 },
+  legendary: { name: 'Legendary', color: 0xffb347, hex: '#ffc46b', dupShards: 50 },
+};
+
+export const GACHA = {
+  costX1: 10,
+  costX10: 100,
+  rates: { common: 0.60, rare: 0.28, epic: 0.10, legendary: 0.02 },
+  pityEpic: 10,        // an Epic or better is guaranteed within this many pulls
+  pityLegendary: 60,   // a Legendary is guaranteed within this many pulls
+  leaderChance: 0.4,   // share of pulls that are leaders (rest is gear)
+  maxStars: 5,
+  starBonus: 0.25,     // each extra star adds +25% of the leader's base buff
+  historySize: 50,
+};
+
+// Leaders. buff/debuff: { stat: 'hp'|'atk'|'def', target: troop id | 'all', pct }.
+export const LEADERS = {
+  kael: { id: 'kael', name: 'Kael', rarity: 'legendary', affinity: 'bearer', title: 'Lightbringer', buff: { stat: 'atk', target: 'bearer', pct: 25 }, debuff: { stat: 'def', target: 'bearer', pct: -5 } },
+  lyra: { id: 'lyra', name: 'Lyra', rarity: 'epic', affinity: 'voyager', title: 'Shardseer', buff: { stat: 'atk', target: 'voyager', pct: 18 } },
+  jax: { id: 'jax', name: 'Jax', rarity: 'epic', affinity: 'sentinel', title: 'Iron Bastion', buff: { stat: 'def', target: 'sentinel', pct: 20 } },
+  seren: { id: 'seren', name: 'Seren', rarity: 'legendary', affinity: 'voyager', title: 'Void Walker', buff: { stat: 'atk', target: 'all', pct: 12 } },
+  vex: { id: 'vex', name: 'Vex', rarity: 'rare', affinity: 'bearer', title: 'Embercoat', buff: { stat: 'atk', target: 'bearer', pct: 15 }, debuff: { stat: 'def', target: 'sentinel', pct: -8 } },
+  orin: { id: 'orin', name: 'Orin', rarity: 'rare', affinity: 'sentinel', title: 'Wallbreaker', buff: { stat: 'hp', target: 'sentinel', pct: 12 } },
+  nova: { id: 'nova', name: 'Nova', rarity: 'rare', affinity: 'voyager', title: 'Pathfinder', buff: { stat: 'hp', target: 'voyager', pct: 15 } },
+  rook: { id: 'rook', name: 'Rook', rarity: 'common', affinity: 'sentinel', title: 'Shieldhand', buff: { stat: 'def', target: 'sentinel', pct: 10 } },
+  dax: { id: 'dax', name: 'Dax', rarity: 'common', affinity: 'bearer', title: 'Gunner', buff: { stat: 'atk', target: 'bearer', pct: 8 } },
+  mira: { id: 'mira', name: 'Mira', rarity: 'common', affinity: 'voyager', title: 'Scout', buff: { stat: 'atk', target: 'voyager', pct: 8 }, debuff: { stat: 'hp', target: 'voyager', pct: -5 } },
+  thane: { id: 'thane', name: 'Thane', rarity: 'common', affinity: 'sentinel', title: 'Drill Sergeant', buff: { stat: 'hp', target: 'all', pct: 4 } },
+};
+export const LEADER_IDS = Object.keys(LEADERS);
+
+// Gear: one armor + one weapon per squad. buff applies to every soldier in the squad.
+export const GEAR = {
+  scrapPlating: { id: 'scrapPlating', name: 'Scrap Plating', slot: 'armor', rarity: 'common', buff: { stat: 'def', pct: 5 } },
+  pulseCarbine: { id: 'pulseCarbine', name: 'Pulse Carbine', slot: 'weapon', rarity: 'common', buff: { stat: 'atk', pct: 5 } },
+  fieldWeave: { id: 'fieldWeave', name: 'Field Weave', slot: 'armor', rarity: 'common', buff: { stat: 'hp', pct: 5 } },
+  aegisMesh: { id: 'aegisMesh', name: 'Aegis Mesh', slot: 'armor', rarity: 'rare', buff: { stat: 'def', pct: 10 } },
+  arcRifle: { id: 'arcRifle', name: 'Arc Rifle', slot: 'weapon', rarity: 'rare', buff: { stat: 'atk', pct: 10 } },
+  wardenShell: { id: 'wardenShell', name: 'Warden Shell', slot: 'armor', rarity: 'epic', buff: { stat: 'hp', pct: 16 } },
+  lumenLance: { id: 'lumenLance', name: 'Lumen Lance', slot: 'weapon', rarity: 'epic', buff: { stat: 'atk', pct: 16 } },
+  dawnforgedAegis: { id: 'dawnforgedAegis', name: 'Dawnforged Aegis', slot: 'armor', rarity: 'legendary', buff: { stat: 'def', pct: 25 } },
+  beaconEdge: { id: 'beaconEdge', name: 'Beacon Edge', slot: 'weapon', rarity: 'legendary', buff: { stat: 'atk', pct: 25 } },
+};
+export const GEAR_IDS = Object.keys(GEAR);
+
 export const ECONOMY = {
   startEnergy: 60,
   // Energy per second, scales with Beacon level.
   energyPerSec: (beaconLevel) => 1 + 0.75 * (beaconLevel - 1),
-  offlineCapSeconds: 8 * 60 * 60, // offline earnings capped at 8 hours
+  offlineCapSeconds: 8 * 60 * 60, // offline earnings capped at 8 hours (training too)
   offlineRate: 1.0,               // fraction of online rate earned offline
   autosaveMs: 5000,
 };
 
+// The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;

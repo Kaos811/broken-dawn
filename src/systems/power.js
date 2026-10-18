@@ -1,4 +1,4 @@
-import { BEACON, BUILDINGS, TROOPS } from '../config.js';
+import { BEACON, BUILDINGS, TROOPS, TROOP_IDS } from '../config.js';
 
 export function buildingPower(id, level) {
   if (id === BEACON.id) return BEACON.powerPerLevel * level;
@@ -12,16 +12,28 @@ export function totalBuildingPower(state) {
   return p;
 }
 
-// Troop Power = soldiers (1 each) + 10 per squad level. Empty in stage 1.
-export function totalTroopPower(state) {
-  let p = 0;
-  for (const squad of Object.values(state.squads ?? {})) {
-    const soldiers = (squad.members ?? []).reduce((n, m) => n + (m.count ?? 0), 0);
-    p += soldiers * TROOPS.powerPerSoldier;
-    p += Math.max(0, (squad.level ?? 1) - 1) * TROOPS.powerPerSquadLevel;
-  }
-  return p;
+export function totalSoldiers(state) {
+  return TROOP_IDS.reduce((n, t) => n + (state.troops?.[t] ?? 0), 0);
 }
+
+export function squadSoldiers(squad) {
+  return (squad?.lines ?? []).reduce((n, l) => n + (l.type ? l.count ?? 0 : 0), 0);
+}
+
+// Squad Power = soldiers in the squad + 10 x squad level.
+export function squadPower(squad) {
+  return squadSoldiers(squad) * TROOPS.powerPerSoldier + (squad?.level ?? 1) * TROOPS.powerPerSquadLevel;
+}
+
+// Troop Power = every trained soldier (1 each, assigned or not) + 10 per squad level above 1.
+export function troopPowerBreakdown(state) {
+  const soldiers = totalSoldiers(state) * TROOPS.powerPerSoldier;
+  let levels = 0;
+  for (const squad of Object.values(state.squads ?? {})) levels += Math.max(0, (squad.level ?? 1) - 1) * TROOPS.powerPerSquadLevel;
+  return { soldiers, levels, total: soldiers + levels };
+}
+
+export function totalTroopPower(state) { return troopPowerBreakdown(state).total; }
 
 export function basePower(state) {
   const building = totalBuildingPower(state);

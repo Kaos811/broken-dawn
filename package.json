@@ -1,7 +1,7 @@
 {
   "name": "broken-dawn",
-  "version": "0.1.0",
-  "description": "Broken Dawn - sci-fi idle base-builder (stage 1: base view)",
+  "version": "0.2.0",
+  "description": "Broken Dawn - sci-fi idle base-builder (stage 2: troops, squads, armory)",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build && vite build --mode single && node scripts/copy-single.mjs",

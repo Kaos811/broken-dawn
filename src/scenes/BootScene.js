@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, MAP } from '../config.js';
+import { makePortraitTextures } from '../art/portraits.js';
 
 // Generates all placeholder art procedurally (no external assets), so the
 // single-file build stays self-contained. Swap these keys for real art later.
@@ -59,6 +60,7 @@ export default class BootScene extends Phaser.Scene {
 
   create() {
     this.makeSoftTextures();
+    makePortraitTextures(this);
     this.makeBuilding('tex-commandCenter', (g, c) => {
       const base = prism(g, c.x, c.y, 88, 44, 14, PALETTE.metalDark);
       faceStrip(g, base, 0.5, PALETTE.gold);
