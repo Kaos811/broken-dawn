@@ -105,6 +105,18 @@ export const BUILDINGS = {
     accent: 'green',
     description: 'Treats troops wounded on World hunts. Wounded beyond its capacity die. Healing costs Energy and takes time; higher levels hold more and heal faster.',
   },
+  archive: {
+    id: 'archive',
+    name: 'Archive',
+    footprint: 2,
+    powerPerLevel: 5,       // only once unsealed (Beacon Lv 3)
+    baseCost: 60,
+    costGrowth: 1.6,
+    start: { gx: 8, gy: 8, level: 1 },
+    accent: 'violet',
+    unlockBeacon: 3,        // sealed until the Beacon reaches this level
+    description: 'Decodes the Beacon\'s signal into research. One project at a time; its level caps how far each research can go.',
+  },
 };
 
 export const BUILDING_IDS = Object.keys(BUILDINGS);
@@ -139,7 +151,8 @@ export const buildingUpgradeCost = (id, level) => {
 
 // Troop classes. hp/atk/def are per-soldier base stats used by stage-3 auto-battle.
 // energy = Energy cost per unit; trainSeconds = time per unit at Barracks Lv 1.
-export const TROOP_CLASSES = {
+// The three classes (T1 base stats). Each class trains in its own Barracks lane.
+const CLASS_BASE = {
   sentinel: {
     id: 'sentinel', name: 'Sentinel', plural: 'Sentinels', role: 'Frontline Wall',
     hp: 120, atk: 8, def: 14, energy: 6, trainSeconds: 8,
@@ -159,7 +172,49 @@ export const TROOP_CLASSES = {
     description: 'Hooded, lightly armored, with glowing cyan eyes. Sniper rifles, dual pistols and a floating Beacon shard.',
   },
 };
-export const TROOP_IDS = Object.keys(TROOP_CLASSES);
+export const CLASS_IDS = Object.keys(CLASS_BASE);
+
+// ---------------------------------------------------------------- STAGE 4 --
+// Troop tiers. Every tier is its own unit id (T1 keeps the class id, so older saves stay valid).
+// Stats/costs are derived from the class's T1 numbers with these multipliers.
+export const TIERS = {
+  1: { label: 'T1', roman: 'I', hpMult: 1, atkMult: 1, defAdd: 0, energyMult: 1, alloy: 0, timeMult: 1, power: 1, healEnergyMult: 1, healTimeMult: 1 },
+  2: { label: 'T2', roman: 'II', hpMult: 1.6, atkMult: 1.6, defAdd: 6, energyMult: 2.2, alloy: 2, timeMult: 1.8, power: 2, healEnergyMult: 2, healTimeMult: 1.5 },
+  3: { label: 'T3', roman: 'III', hpMult: 2.5, atkMult: 2.5, defAdd: 12, energyMult: 4.5, alloy: 6, timeMult: 3, power: 4, healEnergyMult: 4, healTimeMult: 2.2 },
+};
+export const MAX_TIER = 3; // T4 later (Barracks Lv 13)
+// Promotion (T1->T2, T2->T3): pay the cost difference, takes this share of the higher tier's training time.
+export const PROMOTE = { timeShare: 0.6 };
+const TIER_NAMES = {
+  sentinel: [null, { id: 'sentinel', name: 'Sentinel', plural: 'Sentinels' }, { id: 'bulwark', name: 'Bulwark', plural: 'Bulwarks' }, { id: 'aegis', name: 'Aegis', plural: 'Aegises' }],
+  bearer: [null, { id: 'bearer', name: 'Bearer', plural: 'Bearers' }, { id: 'lancer', name: 'Lancer', plural: 'Lancers' }, { id: 'sunbreaker', name: 'Sunbreaker', plural: 'Sunbreakers' }],
+  voyager: [null, { id: 'voyager', name: 'Voyager', plural: 'Voyagers' }, { id: 'phantom', name: 'Phantom', plural: 'Phantoms' }, { id: 'riftwalker', name: 'Riftwalker', plural: 'Riftwalkers' }],
+};
+const TIER_DESC = {
+  bulwark: 'Heavier plating and a wider shield. A T2 Sentinel.', aegis: 'A walking fortress wrapped in Beacon light. A T3 Sentinel.',
+  lancer: 'Charged lances that punch through hide and chitin. A T2 Bearer.', sunbreaker: 'Carries a shard of the Beacon\'s core as a weapon. A T3 Bearer.',
+  phantom: 'Cloaked marksmen that vanish between shots. A T2 Voyager.', riftwalker: 'Steps through small rifts to strike from anywhere. A T3 Voyager.',
+};
+
+// TROOP_CLASSES: every UNIT (class x tier), keyed by unit id: { id, cls, tier, name, plural, hp, atk, def, energy, alloy, trainSeconds, power, ... }.
+export const TROOP_CLASSES = {};
+for (const cls of CLASS_IDS) {
+  const B = CLASS_BASE[cls];
+  for (let tier = 1; tier <= MAX_TIER; tier++) {
+    const T = TIERS[tier], N = TIER_NAMES[cls][tier];
+    TROOP_CLASSES[N.id] = {
+      ...B, ...N, cls, tier, className: B.name, classPlural: B.plural,
+      hp: Math.round(B.hp * T.hpMult * 10) / 10, atk: Math.round(B.atk * T.atkMult * 10) / 10, def: B.def + T.defAdd,
+      energy: Math.round(B.energy * T.energyMult), alloy: T.alloy, trainSeconds: Math.round(B.trainSeconds * T.timeMult * 10) / 10,
+      power: T.power, description: TIER_DESC[N.id] ?? B.description,
+    };
+  }
+}
+export const TROOP_IDS = Object.keys(TROOP_CLASSES);          // all 9 units
+export const unitOf = (cls, tier) => TIER_NAMES[cls]?.[tier]?.id ?? null;
+export const classOf = (unit) => TROOP_CLASSES[unit]?.cls ?? null;
+export const tierOf = (unit) => TROOP_CLASSES[unit]?.tier ?? 1;
+export const nextTier = (unit) => unitOf(classOf(unit), tierOf(unit) + 1);
 
 // Troop power: each soldier = 1, +10 per squad level above 1 (summed into Base Power).
 // Squad Power (shown per squad) = soldiers in the squad + 10 x squad level.
@@ -295,7 +350,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 6; // v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 7; // v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -309,6 +364,11 @@ export const INFIRMARY = {
     bearer: { energy: 4, seconds: 5 },
     voyager: { energy: 3, seconds: 4.5 },
   },
+};
+// Per-unit heal cost at Infirmary Lv 1 (before research): class base x tier multipliers.
+export const healBase = (unit) => {
+  const u = TROOP_CLASSES[unit], h = INFIRMARY.heal[u.cls], T = TIERS[u.tier];
+  return { energy: h.energy * T.healEnergyMult, seconds: h.seconds * T.healTimeMult };
 };
 
 // Casualties after a hunt. The battle sim decides WHERE losses land (front lines take more);
@@ -402,4 +462,49 @@ export const BATTLE = {
   bearerVsSwarm: 0.25,
   voyager: { crit: 0.15, critMult: 1.6, pierce: 0.5 },
   spread: 0.1,                 // +-10% seeded damage roll per volley
+};
+
+// ---------------------------------------------------------------- STAGE 4 --
+// Research (in the Archive). One project at a time. Every node has levels 1..maxLevel; a node's level
+// can't exceed the Archive's level. Costs Energy + Alloy + Shards (never Cores).
+// `per` = effect per level (fractions, or flat for stamina numbers). `req` = extra gates.
+export const RESEARCH_BRANCHES = [
+  { id: 'economy', name: 'Economy', color: 0xffb347, hex: '#ffc46b' },
+  { id: 'military', name: 'Military', color: 0xff6f7b, hex: '#ff8a93' },
+  { id: 'healing', name: 'Healing', color: 0x4dff9a, hex: '#6dffae' },
+  { id: 'world', name: 'World', color: 0x3ff0ff, hex: '#5ff3ff' },
+];
+export const RESEARCH = {
+  // Economy
+  energyYield: { branch: 'economy', name: 'Beacon Harmonics', effect: 'energy', per: 0.04, fmt: 'pct', desc: 'Energy income' },
+  alloyYield: { branch: 'economy', name: 'Alloy Refining', effect: 'alloy', per: 0.05, fmt: 'pct', desc: 'Alloy income' },
+  shardYield: { branch: 'economy', name: 'Shard Resonance', effect: 'shards', per: 0.05, fmt: 'pct', desc: 'Shard income' },
+  buildSpeed: { branch: 'economy', name: 'Rapid Assembly', effect: 'build', per: 0.05, fmt: 'pct', desc: 'Building upgrade speed' },
+  // Military
+  sentinelDrills: { branch: 'military', name: 'Shield Drills', effect: 'combat', cls: 'sentinel', per: 0.03, fmt: 'pct', desc: 'Sentinel-class HP and ATK' },
+  bearerDrills: { branch: 'military', name: 'Lance Drills', effect: 'combat', cls: 'bearer', per: 0.03, fmt: 'pct', desc: 'Bearer-class HP and ATK' },
+  voyagerDrills: { branch: 'military', name: 'Rift Drills', effect: 'combat', cls: 'voyager', per: 0.03, fmt: 'pct', desc: 'Voyager-class HP and ATK' },
+  trainSpeed: { branch: 'military', name: 'Drill Cadence', effect: 'train', per: 0.05, fmt: 'pct', desc: 'Training speed' },
+  tier2: { branch: 'military', name: 'Tier II Protocols', effect: 'tier', tier: 2, maxLevel: 1, req: { barracks: 5, archive: 3 },
+    cost: { energy: 1500, alloy: 200, shards: 150 }, seconds: 1200, desc: 'Unlocks T2: Bulwark, Lancer, Phantom + promotion' },
+  tier3: { branch: 'military', name: 'Tier III Protocols', effect: 'tier', tier: 3, maxLevel: 1, req: { barracks: 9, archive: 5, research: 'tier2' },
+    cost: { energy: 8000, alloy: 900, shards: 600 }, seconds: 7200, desc: 'Unlocks T3: Aegis, Sunbreaker, Riftwalker' },
+  // Healing
+  beds: { branch: 'healing', name: 'Field Cots', effect: 'beds', per: 0.10, fmt: 'pct', desc: 'Infirmary beds' },
+  triage: { branch: 'healing', name: 'Triage', effect: 'healSpeed', per: 0.08, fmt: 'pct', desc: 'Healing speed' },
+  medSynth: { branch: 'healing', name: 'Med Synthesis', effect: 'healCost', per: 0.05, fmt: 'pctLess', desc: 'Healing Energy cost' },
+  stabilizers: { branch: 'healing', name: 'Stabilizers', effect: 'survival', per: 0.05, fmt: 'pctLess', desc: 'Battle deaths (they come back wounded instead)' },
+  // World
+  staminaCells: { branch: 'world', name: 'Stamina Cells', effect: 'staminaCap', per: 10, fmt: 'flat', desc: 'Max stamina' },
+  recovery: { branch: 'world', name: 'Recovery Loop', effect: 'staminaRegen', per: 1, fmt: 'perHour', desc: 'Stamina regen' },
+  striders: { branch: 'world', name: 'Rift Striders', effect: 'march', per: 0.05, fmt: 'pct', desc: 'March speed' },
+  salvage: { branch: 'world', name: 'Salvage Protocols', effect: 'loot', per: 0.05, fmt: 'pct', desc: 'Hunt rewards (Energy, Alloy, Shards)' },
+};
+export const RESEARCH_IDS = Object.keys(RESEARCH);
+export const RESEARCH_TUNING = {
+  maxLevel: 5,
+  // cost to research TO level L (normal nodes): 150 E / 20 A / 30 S at Lv 1, x1.7 per level
+  cost: (L) => { const g = Math.pow(1.7, L - 1); return { energy: Math.round(150 * g), alloy: Math.round(20 * g), shards: Math.round(30 * g) }; },
+  // seconds to research TO level L: 30 s, 2 m, 8 m, 30 m, 2 h, then x3
+  seconds: (L) => [0, 30, 120, 480, 1800, 7200][L] ?? 7200 * Math.pow(3, L - 5),
 };

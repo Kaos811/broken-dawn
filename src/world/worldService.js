@@ -43,7 +43,8 @@ export class LocalWorldService {
     return { name: target.name ?? 'Base', owner: target.owner, kind: 'base', lines: target.defense?.lines ?? [] };
   }
 
-  canSend({ owner, squadId, targetId }) {
+  // speed: march speed multiplier from the sender's research (plain number; a server would look it up).
+  canSend({ owner, squadId, targetId, speed = 1 }) {
     const t = this.get(targetId);
     if (!t) return { ok: false, reason: 'Target is gone' };
     if (t.owner === owner) return { ok: false, reason: 'That\'s your own base' };
@@ -51,11 +52,11 @@ export class LocalWorldService {
     if (this.marchFor(owner, squadId)) return { ok: false, reason: 'That squad is already out' };
     if (this.marches(owner).length >= WORLD.maxMarches) return { ok: false, reason: 'All march slots are busy' };
     const home = this.homeOf(owner);
-    return { ok: true, travel: marchSeconds(dist(home, t)), home, target: t };
+    return { ok: true, travel: marchSeconds(dist(home, t)) / Math.max(0.1, speed), home, target: t };
   }
 
-  sendMarch({ owner, squadId, army, targetId, meta = {} }) {
-    const c = this.canSend({ owner, squadId, targetId });
+  sendMarch({ owner, squadId, army, targetId, speed = 1, meta = {} }) {
+    const c = this.canSend({ owner, squadId, targetId, speed });
     if (!c.ok) return c;
     const w = this.w;
     const m = {
