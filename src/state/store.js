@@ -4,7 +4,7 @@ import {
   BEACON, BUILDINGS, BUILDING_IDS, BUILDING_LEVEL_HEADROOM, ECONOMY,
   SAVE_KEY, SAVE_VERSION, TROOPS, buildingUpgradeCost,
   TROOP_CLASSES, TROOP_IDS, BARRACKS, SQUADS, RESOURCES, GACHA, RARITY, RARITIES,
-  LEADERS, LEADER_IDS, GEAR, GEAR_IDS,
+  LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES,
 } from '../config.js';
 import { isValidPlacement } from '../systems/grid.js';
 import { basePower, squadPower, squadSoldiers, troopPowerBreakdown } from '../systems/power.js';
@@ -25,7 +25,7 @@ function defaultState() {
   for (const t of TROOP_IDS) troops[t] = 0;
   return {
     version: SAVE_VERSION,
-    resources: { energy: ECONOMY.startEnergy, shards: RESOURCES.startShards, alloy: RESOURCES.startAlloy },
+    resources: { energy: ECONOMY.startEnergy, shards: RESOURCES.startShards, alloy: RESOURCES.startAlloy, cores: CORES.start },
     beacon: { level: 1, charge: 0 },
     buildings,
     troops,                 // owned soldiers per class (ready + assigned)
@@ -33,6 +33,9 @@ function defaultState() {
     squads,
     leaders: {},            // { id: { stars } }
     gear: {},               // { id: count }
+    gearLevels: {},         // { id: level } (applies to every copy; missing = Lv 1)
+    daily: { lastDay: null, streak: 0 },     // daily login reward (local calendar days)
+    claims: { beacon: [], milestones: [] },  // one-time Core rewards already claimed
     gacha: { sinceEpic: 0, sinceLegendary: 0, total: 0, history: [] },
     lastSaved: Date.now(),
   };
@@ -82,6 +85,13 @@ export function migrate(raw) {
     raw.training = lanes;
     raw.version = 3;
   }
+  // v3 -> v4: Beacon Cores. Existing Shards stay; grant the starter Cores once.
+  if (num(raw.version, 1) < 4) {
+    raw = { ...raw };
+    raw.resources = { ...(raw.resources ?? {}) };
+    raw.resources.cores = int(raw.resources.cores) + CORES.migrationGrant;
+    raw.version = 4;
+  }
   return raw;
 }
 
@@ -95,6 +105,7 @@ function sanitize(raw) {
       energy: Math.max(0, num(raw.resources?.energy, d.resources.energy)),
       shards: Math.max(0, num(raw.resources?.shards, d.resources.shards)),
       alloy: Math.max(0, num(raw.resources?.alloy, d.resources.alloy)),
+      cores: int(raw.resources?.cores, d.resources.cores),
     },
     beacon: {
       level: Math.min(BEACON.maxLevel, Math.max(1, Math.floor(num(raw.beacon?.level, 1)))),
@@ -125,6 +136,13 @@ function sanitize(raw) {
   }
   for (const id of LEADER_IDS) if (raw.leaders?.[id]) s.leaders[id] = { stars: Math.min(GACHA.maxStars, Math.max(1, int(raw.leaders[id].stars, 1))) };
   for (const id of GEAR_IDS) { const n = int(raw.gear?.[id]); if (n) s.gear[id] = n; }
+  for (const id of GEAR_IDS) { const lv = Math.min(UPGRADES.gearMaxLevel, int(raw.gearLevels?.[id])); if (lv > 1) s.gearLevels[id] = lv; }
+  s.daily = { lastDay: Number.isFinite(raw.daily?.lastDay) ? Math.floor(raw.daily.lastDay) : null, streak: int(raw.daily?.streak) };
+  const msIds = new Set(CORES.milestones.map((m) => m.id));
+  s.claims = {
+    beacon: [...new Set((Array.isArray(raw.claims?.beacon) ? raw.claims.beacon : []).map((l) => Math.floor(l)).filter((l) => l >= 2 && l <= BEACON.maxLevel))],
+    milestones: [...new Set((Array.isArray(raw.claims?.milestones) ? raw.claims.milestones : []).filter((id) => msIds.has(id)))],
+  };
   const g = raw.gacha ?? {};
   s.gacha = {
     sinceEpic: int(g.sinceEpic), sinceLegendary: int(g.sinceLegendary), total: int(g.total),
@@ -172,6 +190,7 @@ class Store extends Emitter {
     this.offlineReport = null;
     this.migratedFrom = null;
     this.rng = Math.random;
+    this.clock = () => Date.now(); // overridable in tests (daily rewards)
   }
 
   setSeed(seed) { this.rng = seed == null ? Math.random : mulberry32(seed); }
@@ -505,11 +524,114 @@ class Store extends Emitter {
         let pct = 0;
         if (L?.buff && L.buff.stat === stat && (L.buff.target === 'all' || L.buff.target === line.type)) pct += L.buff.pct * mult;
         if (L?.debuff && L.debuff.stat === stat && (L.debuff.target === 'all' || L.debuff.target === line.type)) pct += L.debuff.pct;
-        for (const slot of ['armor', 'weapon']) { const g = GEAR[sq[slot]]; if (g && g.buff.stat === stat) pct += g.buff.pct; }
+        for (const slot of ['armor', 'weapon']) { const g = GEAR[sq[slot]]; if (g && g.buff.stat === stat) pct += this.gearBuffPct(g.id); }
         totals[stat] += base[stat] * line.count * (1 + pct / 100);
       }
     }
     return { hp: Math.round(totals.hp), atk: Math.round(totals.atk), def: Math.round(totals.def) };
+  }
+
+  // ---- Beacon Cores (earned only) ---------------------------------------
+  pullCost(n) { return n === 10 ? GACHA.costX10 : GACHA.costX1 * n; }
+  totalTroops() { return TROOP_IDS.reduce((n, t) => n + this.state.troops[t], 0); }
+  // Single entry point for every Core source (daily, Beacon, milestones, stage-3 battles).
+  grantCores(n, source = 'other') {
+    n = Math.floor(n);
+    if (!(n > 0)) return 0;
+    this.state.resources.cores += n;
+    this.emit('cores', n, source);
+    return n;
+  }
+  dayIndex(t = this.clock()) { const d = new Date(t); return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5); }
+  dailyInfo() {
+    const today = this.dayIndex(), dl = this.state.daily;
+    const claimed = dl.lastDay === today;
+    const streak = claimed ? dl.streak : (dl.lastDay === today - 1 ? dl.streak + 1 : 1); // streak if claimed now
+    const D = CORES.daily;
+    const reward = D.base + (streak % D.streakEvery === 0 ? D.streakBonus : 0);
+    const toBonus = (D.streakEvery - (streak % D.streakEvery)) % D.streakEvery;
+    return { claimed, can: !claimed, streak, reward, toBonus };
+  }
+  claimDaily() {
+    const info = this.dailyInfo();
+    if (!info.can) return { ok: false, reason: 'Already claimed today. Come back tomorrow.' };
+    this.state.daily = { lastDay: this.dayIndex(), streak: info.streak };
+    this.grantCores(info.reward, 'daily');
+    this.save(); this.emit('change');
+    return { ok: true, cores: info.reward, streak: info.streak, bonus: info.reward > CORES.daily.base };
+  }
+  beaconRewards() {
+    const out = [];
+    for (let lv = 2; lv <= this.state.beacon.level; lv++) out.push({ level: lv, cores: CORES.beaconLevel, claimed: this.state.claims.beacon.includes(lv) });
+    return out;
+  }
+  claimBeaconLevel(level) {
+    if (!(level >= 2 && level <= this.state.beacon.level)) return { ok: false, reason: `Reach Beacon Lv ${level} first` };
+    if (this.state.claims.beacon.includes(level)) return { ok: false, reason: 'Already claimed' };
+    this.state.claims.beacon.push(level);
+    this.grantCores(CORES.beaconLevel, 'beacon');
+    this.save(); this.emit('change');
+    return { ok: true, cores: CORES.beaconLevel };
+  }
+  milestones() {
+    return CORES.milestones.map((m) => ({ id: m.id, name: m.name, desc: m.desc, cores: m.cores, done: !!m.check(this), claimed: this.state.claims.milestones.includes(m.id) }));
+  }
+  claimMilestone(id) {
+    const m = CORES.milestones.find((x) => x.id === id);
+    if (!m) return { ok: false, reason: 'Unknown milestone' };
+    if (this.state.claims.milestones.includes(id)) return { ok: false, reason: 'Already claimed' };
+    if (!m.check(this)) return { ok: false, reason: `Not done yet: ${m.desc}` };
+    this.state.claims.milestones.push(id);
+    this.grantCores(m.cores, 'milestone');
+    this.save(); this.emit('change');
+    return { ok: true, cores: m.cores };
+  }
+  rewardsReady() {
+    return (this.dailyInfo().can ? 1 : 0) + this.beaconRewards().filter((r) => !r.claimed).length + this.milestones().filter((m) => m.done && !m.claimed).length;
+  }
+  claimAllRewards() {
+    let cores = 0;
+    if (this.dailyInfo().can) cores += this.claimDaily().cores;
+    for (const r of this.beaconRewards()) if (!r.claimed) cores += this.claimBeaconLevel(r.level).cores;
+    for (const m of this.milestones()) if (m.done && !m.claimed) cores += this.claimMilestone(m.id).cores;
+    return { ok: cores > 0, cores };
+  }
+
+  // ---- Shard upgrades: leader stars and gear levels ---------------------
+  starUpInfo(lid) {
+    const own = this.state.leaders[lid];
+    if (!own) return { can: false, reason: 'Leader not recruited' };
+    if (own.stars >= GACHA.maxStars) return { can: false, reason: 'Max stars', maxed: true };
+    const cost = UPGRADES.leaderStarCost(LEADERS[lid].rarity, own.stars);
+    return { can: this.state.resources.shards >= cost, reason: this.state.resources.shards >= cost ? null : `Need ${cost} Shards`, cost };
+  }
+  starUpLeader(lid) {
+    const info = this.starUpInfo(lid);
+    if (!info.can) return { ok: false, reason: info.reason };
+    this.state.resources.shards -= info.cost;
+    this.state.leaders[lid].stars += 1;
+    this.save(); this.emit('squad', this.leaderSquad(lid)); this.emit('change');
+    return { ok: true, stars: this.state.leaders[lid].stars, cost: info.cost };
+  }
+  gearLevel(gid) { return this.state.gearLevels[gid] ?? 1; }
+  gearMultiplier(gid) { return 1 + UPGRADES.gearLevelBonus * (this.gearLevel(gid) - 1); }
+  gearBuffPct(gid, level = this.gearLevel(gid)) { return Math.round(GEAR[gid].buff.pct * (1 + UPGRADES.gearLevelBonus * (level - 1)) * 10) / 10; }
+  gearUpgradeInfo(gid) {
+    if (!GEAR[gid]) return { can: false, reason: 'Unknown gear' };
+    if (!this.state.gear[gid]) return { can: false, reason: 'Not owned' };
+    const level = this.gearLevel(gid);
+    if (level >= UPGRADES.gearMaxLevel) return { can: false, reason: 'Max level', maxed: true, level };
+    const cost = UPGRADES.gearLevelCost(GEAR[gid].rarity, level);
+    const ok = this.state.resources.shards >= cost;
+    return { can: ok, reason: ok ? null : `Need ${cost} Shards`, cost, level };
+  }
+  upgradeGear(gid) {
+    const info = this.gearUpgradeInfo(gid);
+    if (!info.can) return { ok: false, reason: info.reason };
+    this.state.resources.shards -= info.cost;
+    this.state.gearLevels[gid] = info.level + 1;
+    this.save(); this.emit('change');
+    return { ok: true, level: info.level + 1, cost: info.cost };
   }
 
   // ---- Gacha ----------------------------------------------------------
@@ -552,10 +674,10 @@ class Store extends Emitter {
   }
 
   pull(n) {
-    const cost = n === 10 ? GACHA.costX10 : GACHA.costX1 * n;
+    const cost = this.pullCost(n);
     if (n !== 1 && n !== 10) return { ok: false, reason: 'Pull x1 or x10' };
-    if (this.state.resources.shards < cost) return { ok: false, reason: `Need ${cost} Shards` };
-    this.state.resources.shards -= cost;
+    if (this.state.resources.cores < cost) return { ok: false, reason: `Need ${cost} Beacon ${cost === 1 ? 'Core' : 'Cores'}` };
+    this.state.resources.cores -= cost;
     const results = [];
     for (let i = 0; i < n; i++) results.push(this.pullOne());
     this.save();

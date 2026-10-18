@@ -5,9 +5,9 @@ import { buildingPower } from '../systems/power.js';
 import { text, fmt, fmtDuration, panelBg, button } from '../ui/widgets.js';
 import { renderTroops } from '../ui/screens/troops.js';
 import { renderSquads } from '../ui/screens/squads.js';
-import { renderArmory, resultTag } from '../ui/screens/armory.js';
+import { renderArmory, resultTag, drawCoreIcon } from '../ui/screens/armory.js';
 import { gearTexture } from '../art/portraits.js';
-import { RARITY, LEADERS, GEAR } from '../config.js';
+import { RARITY, LEADERS, GEAR, CORES } from '../config.js';
 
 export const TOP_H = 186;
 const NAV_H = 130;
@@ -41,7 +41,7 @@ export default class UIScene extends Phaser.Scene {
     ev.on('base:moveMode', (id) => this.showBanner(id), this);
     ev.on('toast', (msg) => this.toast(msg), this);
     this.unsubs = [
-      store.on('upgrade', () => { this.bump(this.powerText); this.refreshPanel(); }),
+      store.on('upgrade', (id) => { this.bump(this.powerText); this.refreshPanel(); if (id === BEACON.id) this.time.delayedCall(900, () => this.toast(`Beacon Lv ${store.state.beacon.level}: +${CORES.beaconLevel} Beacon Cores ready. Tap the Cores counter to claim.`, 2600)); }),
       store.on('reset', () => { this.closePanel(false); this.screenState.edit = null; if (this.screen) this.renderScreen(); }),
       store.on('change', () => { this.screenDirty = true; }),
       store.on('trained', (done, d) => { if (d.after > d.before) this.bump(this.powerText); }),
@@ -59,8 +59,8 @@ export default class UIScene extends Phaser.Scene {
     if (off && off.energy >= 1) {
       const trained = Object.entries(off.trained ?? {}).map(([t, n]) => `${n} ${TROOP_CLASSES[t].plural}`).join(', ');
       this.time.delayedCall(400, () => this.toast(`Welcome back, Commander. Away ${fmtDuration(off.seconds)}${off.capped ? ' (capped)' : ''}: +${fmt(off.energy)} Energy, +${fmt(off.shards)} Shards, +${fmt(off.alloy)} Alloy${trained ? `\nTrained while away: ${trained}` : ''}`, 4600));
-    } else if (store.migratedFrom) {
-      this.time.delayedCall(400, () => this.toast('Stage 2 is here: troops, squads and the Armory. Your base carried over.', 4200));
+    } else if (store.migratedFrom && store.migratedFrom < 4) {
+      this.time.delayedCall(400, () => this.toast(`Recruitment now uses Beacon Cores. Here are ${CORES.migrationGrant} to start. Your Shards stay for upgrades.`, 4600));
     }
     this.panelTimer = 0;
   }
@@ -111,15 +111,24 @@ export default class UIScene extends Phaser.Scene {
     const powerHit = this.add.rectangle(238 + 110, 90, 220, 96, 0, 0.001).setInteractive({ useHandCursor: true });
     powerHit.on('pointerup', () => this.openPowerBreakdown());
 
-    // Resource row: Shards, Alloy, Troops (+ training indicator)
+    // Resource row: Beacon Cores (tap -> rewards), Shards, Alloy, Troops (+ training indicator)
     const ry = 146;
-    g.fillStyle(0xc58aff, 1).fillPoints([{ x: 30, y: ry + 2 }, { x: 40, y: ry + 16 }, { x: 30, y: ry + 30 }, { x: 20, y: ry + 16 }], true);
-    this.shardText = text(this, 50, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
-    g.fillStyle(0x9fb4c8, 1).fillPoints([{ x: 254, y: ry + 4 }, { x: 266, y: ry + 10 }, { x: 266, y: ry + 24 }, { x: 254, y: ry + 30 }, { x: 242, y: ry + 24 }, { x: 242, y: ry + 10 }], true);
-    this.alloyText = text(this, 276, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
-    g.lineStyle(3, PALETTE.blue, 1).strokeCircle(484, ry + 11, 7);
-    g.strokePoints([{ x: 472, y: ry + 32 }, { x: 475, y: ry + 22 }, { x: 493, y: ry + 22 }, { x: 496, y: ry + 32 }], false);
-    this.troopText = text(this, 506, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
+    drawCoreIcon(g, 32, ry + 17, 12);
+    this.coreText = text(this, 54, ry + 3, '0', 22, CORES.hex, { fontStyle: 'bold' });
+    this.coreBadge = this.add.graphics();
+    const coreHit = this.add.rectangle(85, ry + 17, 160, 40, 0, 0.001).setInteractive({ useHandCursor: true });
+    coreHit.on('pointerup', () => this.openRewards());
+    this.coreHit = coreHit;
+    const sx = 186;
+    g.fillStyle(0xc58aff, 1).fillPoints([{ x: sx, y: ry + 2 }, { x: sx + 10, y: ry + 16 }, { x: sx, y: ry + 30 }, { x: sx - 10, y: ry + 16 }], true);
+    this.shardText = text(this, sx + 20, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
+    const ax = 348;
+    g.fillStyle(0x9fb4c8, 1).fillPoints([{ x: ax, y: ry + 4 }, { x: ax + 12, y: ry + 10 }, { x: ax + 12, y: ry + 24 }, { x: ax, y: ry + 30 }, { x: ax - 12, y: ry + 24 }, { x: ax - 12, y: ry + 10 }], true);
+    this.alloyText = text(this, ax + 22, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
+    const tx = 492;
+    g.lineStyle(3, PALETTE.blue, 1).strokeCircle(tx, ry + 11, 7);
+    g.strokePoints([{ x: tx - 12, y: ry + 32 }, { x: tx - 9, y: ry + 22 }, { x: tx + 9, y: ry + 22 }, { x: tx + 12, y: ry + 32 }], false);
+    this.troopText = text(this, tx + 22, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
   }
 
   createNav() {
@@ -380,6 +389,60 @@ export default class UIScene extends Phaser.Scene {
     });
   }
 
+  // Beacon Core rewards: daily login streak, Beacon level-ups, first-time milestones.
+  openRewards() {
+    const C = CORES, D = C.daily;
+    const claimed = (res) => { if (res.ok) { this.toast(`+${res.cores} Beacon ${res.cores === 1 ? 'Core' : 'Cores'}`, 1600); this.bump(this.coreText); } else this.toast(res.reason); this.openRewards(); };
+    this.openOverlay({
+      title: 'Beacon Core Rewards', h: 1010,
+      build: (c, r) => {
+        const x0 = r.x + 28, xr = r.x + r.w - 28;
+        const g = this.add.graphics(); c.add(g);
+        c.add(text(this, x0, r.y + 76, `You have ${fmt(store.state.resources.cores)} Cores. Cores are earned only, never bought.`, 18, PALETTE.textDim));
+        // daily
+        const di = store.dailyInfo();
+        c.add(text(this, x0, r.y + 112, 'DAILY LOGIN', 20, C.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+        const shown = di.claimed ? di.streak : di.streak - 1; // days already banked in this cycle
+        const inCycle = shown <= 0 ? 0 : ((shown - 1) % D.streakEvery) + 1;
+        for (let k = 0; k < D.streakEvery; k++) {
+          const cx = x0 + 22 + k * 52, cy = r.y + 166;
+          const done = k < inCycle, bonus = k === D.streakEvery - 1;
+          g.fillStyle(done ? C.color : 0x141922, 1).fillCircle(cx, cy, 20);
+          g.lineStyle(2, bonus ? PALETTE.gold : C.color, 1).strokeCircle(cx, cy, 20);
+          c.add(text(this, cx, cy - 10, bonus ? `+${D.base + D.streakBonus}` : `${k + 1}`, 16, done ? '#ffffff' : (bonus ? PALETTE.textGold : PALETTE.textDim), { fontStyle: 'bold' }).setOrigin(0.5, 0));
+        }
+        c.add(text(this, x0, r.y + 196, di.claimed ? `Claimed today · ${di.streak}-day streak · come back tomorrow` : `Day ${di.streak} of your streak: +${di.reward}${di.reward > D.base ? ' (streak bonus!)' : ''}`, 17, PALETTE.text));
+        const bd = button(this, xr - 90, r.y + 166, 180, 56, di.claimed ? 'Claimed' : `Claim +${di.reward}`, () => claimed(store.claimDaily()), { style: 'gold', size: 21 });
+        bd.setEnabled(di.can); bd.chip = 'daily'; c.add(bd);
+        // beacon levels
+        const br = store.beaconRewards(), open = br.filter((b) => !b.claimed);
+        c.add(text(this, x0, r.y + 244, 'BEACON LEVELS', 20, C.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+        c.add(text(this, x0, r.y + 274, `+${C.beaconLevel} Cores for each Beacon level reached, once each.\nBeacon Lv ${store.state.beacon.level}: ${br.length - open.length}/${br.length} claimed${open.length ? `, ${open.length} ready` : ''}. Next: Lv ${store.state.beacon.level + 1}.`, 17, PALETTE.text, { lineSpacing: 5 }));
+        const bb = button(this, xr - 90, r.y + 262, 180, 56, open.length ? `Lv ${open[0].level} · +${C.beaconLevel}` : 'None ready', () => claimed(store.claimBeaconLevel(open[0].level)), { style: 'gold', size: 20 });
+        bb.setEnabled(open.length > 0); bb.chip = open.length ? `beacon-${open[0].level}` : 'beacon-none'; c.add(bb);
+        // milestones
+        c.add(text(this, x0, r.y + 340, 'FIRST-TIME MILESTONES', 20, C.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+        store.milestones().forEach((m, i) => {
+          const y = r.y + 376 + i * 66;
+          g.fillStyle(0x12171f, 1).fillRect(x0, y, r.w - 56, 58);
+          g.lineStyle(1, m.claimed ? 0x2e3540 : (m.done ? C.color : PALETTE.metalEdge), 1).strokeRect(x0, y, r.w - 56, 58);
+          c.add(text(this, x0 + 14, y + 6, `${m.claimed ? '✓ ' : ''}${m.name}`, 19, m.claimed ? PALETTE.textDim : PALETTE.text, { fontStyle: 'bold' }));
+          c.add(text(this, x0 + 14, y + 32, m.desc, 15, PALETTE.textDim));
+          if (m.claimed) c.add(text(this, xr - 16, y + 18, `+${m.cores} claimed`, 17, PALETTE.textDim).setOrigin(1, 0));
+          else {
+            const b = button(this, xr - 84, y + 29, 150, 44, m.done ? `Claim +${m.cores}` : `+${m.cores}`, () => claimed(store.claimMilestone(m.id)), { style: m.done ? 'gold' : 'ghost', size: 19 });
+            b.setEnabled(m.done); b.chip = `ms-${m.id}`; c.add(b);
+          }
+        });
+        const yb = r.y + 376 + C.milestones.length * 66 + 16;
+        c.add(text(this, x0, yb, 'Stage 3: battle victories will also pay Cores.', 16, PALETTE.textDim));
+        const n = store.rewardsReady();
+        const all = button(this, r.x + r.w / 2, yb + 66, 320, 64, n ? `Claim all (${n})` : 'Nothing to claim', () => claimed(store.claimAllRewards()), { style: 'cyan', size: 22 });
+        all.setEnabled(n > 0); c.add(all);
+      },
+    });
+  }
+
   // ---------------------------------------------------------- panel -----
   createPanel() {
     const x = 16, w = W - 32, h = 452, y = H - NAV_H - h - 12;
@@ -449,7 +512,7 @@ export default class UIScene extends Phaser.Scene {
       const extra = {
         barracks: `3 lanes · ${BARRACKS.laneCapacity(lv)} → ${BARRACKS.laneCapacity(lv + 1)} each  ·  Speed x${BARRACKS.trainSpeed(lv).toFixed(1)} → x${BARRACKS.trainSpeed(lv + 1).toFixed(1)}`,
         commandCenter: `Squad level cap Lv ${lv}  ·  Alloy ${(store.alloyRate * 3600).toFixed(0)}/h`,
-        armory: `Shards ${fmt(s.resources.shards)}  ·  +${(store.shardRate * 3600).toFixed(0)}/h from the Beacon`,
+        armory: `Cores ${fmt(s.resources.cores)} (pulls)  ·  Shards ${fmt(s.resources.shards)} (+${(store.shardRate * 3600).toFixed(0)}/h, upgrades)`,
       }[id];
       this.pStats.setText([
         `Power contribution:  +${now}   →  +${next} at Lv ${lv + 1}`,
@@ -582,6 +645,7 @@ export default class UIScene extends Phaser.Scene {
     if (pct >= 1) bar.fillStyle(0xffffff, 0.25 + 0.25 * Math.sin(this.time.now / 200)).fillRect(486, 82, 202, 16);
     bar.lineStyle(1.5, PALETTE.metalEdge, 1).strokeRect(484, 80, 206, 20);
 
+    this.coreText.setText(fmt(s.resources.cores));
     this.shardText.setText(fmt(s.resources.shards));
     this.alloyText.setText(fmt(s.resources.alloy));
     const q = store.queuedUnits();
@@ -592,6 +656,13 @@ export default class UIScene extends Phaser.Scene {
     if (this.panelTimer > 200) {
       this.panelTimer = 0;
       if (this.panelOpenFor) this.refreshPanel();
+      const ready = store.rewardsReady();
+      this.coreBadge.clear();
+      if (ready) {
+        const bx = 60 + this.coreText.width + 12;
+        this.coreBadge.fillStyle(0xff3355, 1).fillCircle(bx, 150, 9).lineStyle(2, 0xffffff, 0.9).strokeCircle(bx, 150, 9);
+      }
+      this.rewardsReadyCount = ready;
       if (this.screen) {
         if (this.screenDirty && !this.modal && !this.reveal) this.renderScreen();
         else this.screen.dyn.forEach((fn) => fn());

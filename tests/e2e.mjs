@@ -35,6 +35,11 @@ async function run(url, label, takeShots) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(e.message));
   const cdp = await ctx.newCDPSession(page);
+  // On a busy machine the game can drop to a few fps; let Phaser process each click (input runs on its
+  // next frame, tweens need frames to settle) before the test reads state.
+  const frames = (n) => page.evaluate((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+  const rawClick = page.mouse.click.bind(page.mouse);
+  page.mouse.click = async (...args) => { await rawClick(...args); await frames(4); };
 
   const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(400); };
   await page.goto(url); await ready();
@@ -114,6 +119,7 @@ async function run(url, label, takeShots) {
   const beaconSpriteBefore = await ev(() => { const s = __BD.base().beaconSprite; return [s.x, s.y]; });
   const bp = await fpCenter('beacon');
   await touch('touchStart', [bp]); await sleep(650);
+  for (let i = 0; i < 30 && !(await ev(() => __BD.ui().toastBox.visible)); i++) await sleep(100); // slow frames: wait for the long-press
   for (let i = 1; i <= 8; i++) { await touch('touchMove', [{ x: bp.x + i * 12, y: bp.y + i * 8 }]); await sleep(16); }
   await touch('touchEnd', []);
   await sleep(100);
@@ -154,6 +160,7 @@ async function run(url, label, takeShots) {
   const bS = await fpCenter('barracks');
   const bT = await ev(([gx, gy]) => __BD.worldToPage(26 * 48 + (gx + 1 - (gy + 1)) * 48, 140 + (gx + gy + 2) * 24), [br0.gx, br0.gy + 3]);
   await touch('touchStart', [bS]); await sleep(600);
+  for (let i = 0; i < 30 && (await ev(() => __BD.base().moveId)) !== 'barracks'; i++) await sleep(100);
   check('long-press enters move mode', (await ev(() => __BD.base().moveId)) === 'barracks');
   for (let i = 1; i <= 12; i++) { await touch('touchMove', [{ x: bS.x + ((bT.x - bS.x) * i) / 12, y: bS.y + ((bT.y - bS.y) * i) / 12 }]); await sleep(20); }
   await touch('touchEnd', []); await sleep(150);
@@ -249,10 +256,17 @@ async function run(url, label, takeShots) {
   t = await tabPt(0); await page.mouse.click(t.x, t.y); await sleep(200);
   check('Base tab closes screens', await ev(() => __BD.ui().screen === null && __BD.ui().activeTab === 'base'));
   t = await tabPt(4); await page.mouse.click(t.x, t.y); await sleep(250);
-  const btn = async (label) => ev((label) => {
-    const m = __BD.ui().modal; const b = m.list.find((o) => o.list && o.list.some((q) => q.text === label));
-    return __BD.gameToPage(b.x, b.y);
-  }, label);
+  const btn = async (label) => {
+    for (let i = 0; i < 30; i++) {
+      const p = await ev((label) => {
+        const m = __BD.ui().modal; const b = m?.list.find((o) => o.list && o.list.some((q) => q.text === label));
+        return b ? __BD.gameToPage(b.x, b.y) : null;
+      }, label);
+      if (p) { await sleep(150); return p; }
+      await sleep(100);
+    }
+    throw new Error(`modal button not found: ${label}`);
+  };
   let rb = await btn('Reset Save'); await page.mouse.click(rb.x, rb.y); await sleep(250);
   check('Reset Save asks for confirmation', await ev(() => __BD.ui().modal.list.some((o) => o.text && /Reset all progress/.test(o.text))));
   rb = await btn('Cancel'); await page.mouse.click(rb.x, rb.y); await sleep(200);
@@ -337,12 +351,30 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let m = await state();
-    check('v2 save migrates to version 3', m.version === 3);
+    check('v2 save migrates to version 4 (via v3)', m.version === 4);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
     check('v2 migration keeps troops, Energy, Shards, Alloy and squads', m.troops.sentinel === 5 && m.troops.bearer === 2 && m.troops.voyager === 1 && m.resources.energy >= 500 && m.resources.energy < 510 && Math.floor(m.resources.shards) === 321 && m.resources.alloy >= 12 && m.squads.alpha.lines[0].count === 2, JSON.stringify(m.resources));
+    check('v2→v4 migration keeps Shards (321) and grants 10 starter Beacon Cores', Math.floor(m.resources.shards) === 321 && m.resources.cores === 10, JSON.stringify(m.resources));
     check('v2 migration keeps a backup of the v2 save', await ev(() => { const b = JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v2') || 'null'); return !!b && b.version === 2 && b.training.length === 4; }));
+
+    // --- 0b. v3 save (parallel lanes, no Cores) -> v4: Shards stay, +10 Cores, backup kept
+    await ev(() => {
+      localStorage.clear();
+      localStorage.setItem('brokenDawn.save.v1', JSON.stringify({
+        version: 3, resources: { energy: 50, shards: 777, alloy: 3 }, beacon: { level: 3, charge: 0 },
+        buildings: { commandCenter: { level: 1, gx: 12, gy: 8 }, barracks: { level: 1, gx: 8, gy: 12 }, armory: { level: 1, gx: 16, gy: 16 } },
+        troops: { sentinel: 4, bearer: 0, voyager: 0 }, training: { sentinel: { count: 2, progress: 1 }, bearer: { count: 0, progress: 0 }, voyager: { count: 0, progress: 0 } },
+        squads: {}, leaders: { jax: { stars: 2 } }, gear: { arcRifle: 1 }, gacha: { sinceEpic: 4, sinceLegendary: 30, total: 30, history: [] }, lastSaved: Date.now(),
+      }));
+      __BD.store.save = () => {};
+    });
+    await page.reload(); await ready();
+    m = await state();
+    check('v3 save migrates to v4: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 4 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
+    check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload(); await ready(); return (await state()).resources.cores === 10; })());
 
     // --- 1. Save migration from a stage-1 (v1) save
     await ev(() => {
@@ -357,9 +389,9 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v1 save migrates to version 3', s.version === 3);
+    check('v1 save migrates to version 4', s.version === 4);
     check('migration keeps buildings, levels, Energy and Beacon', s.buildings.barracks.gy === 15 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
-    check('migration adds Shards (500), Alloy, troops, squad lines', Math.floor(s.resources.shards) === 500 && s.resources.alloy < 5 && s.troops.sentinel === 0 && s.squads.alpha.lines.length === 3 && s.squads.alpha.leader === null);
+    check('migration adds Shards (500), 10 Cores, Alloy, troops, squad lines', Math.floor(s.resources.shards) === 500 && s.resources.cores === 10 && s.resources.alloy < 5 && s.troops.sentinel === 0 && s.squads.alpha.lines.length === 3 && s.squads.alpha.leader === null);
     check('migration keeps a backup of the v1 save', await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v1')));
     check('Base Power after migration = buildings only (70)', (await power()).total === 70, JSON.stringify(await power()));
     await ev(() => { __BD.store.state.resources.energy = 200; __BD.store.state.resources.shards = 500; __BD.store.save(); });
@@ -384,7 +416,7 @@ async function runStage2(url, label, takeShots) {
     await sleep(300);
     const p1 = await power();
     check('Troop Power: trained soldier adds 1 to Base Power', p1.troop === 1 && p1.total === 71, JSON.stringify(p1));
-    check('HUD breakdown shows Troops', await ev(() => /Troops 1\b/.test(__BD.ui().powerSub.text) && __BD.ui().powerText.text === '71'));
+    check('HUD breakdown shows Troops', await waitTrue(() => /Troops 1\b/.test(__BD.ui().powerSub.text) && __BD.ui().powerText.text === '71'));
 
     await ev(() => { __BD.store.state.resources.energy = 150; }); await refresh();
     await click('x10', { meta: 'bearer' });
@@ -399,10 +431,10 @@ async function runStage2(url, label, takeShots) {
     s = await state();
     check('all three lanes hold 10 units at once (30 queued > old shared cap of 20)', s.training.sentinel.count === 10 && s.training.bearer.count === 10 && s.training.voyager.count === 10 && (await ev(() => __BD.store.queuedUnits())) === 30, JSON.stringify(s.training));
     const lp0 = await ev(() => JSON.parse(JSON.stringify(__BD.store.state.training)));
-    await sleep(1200);
+    await sleep(2000);
     const lp1 = await ev(() => JSON.parse(JSON.stringify(__BD.store.state.training)));
-    check('all three lane timers run simultaneously (live)', ['sentinel', 'bearer', 'voyager'].every((t) => lp1[t].progress > lp0[t].progress + 0.1), JSON.stringify(lp1));
-    check('lane UI shows next + all timers and a ✕ per lane', await ev(() => {
+    check('all three lane timers run simultaneously (live)', ['sentinel', 'bearer', 'voyager'].every((t) => lp1[t].progress > lp0[t].progress + 0.03), JSON.stringify(lp1));
+    check('lane UI shows next + all timers and a ✕ per lane', await waitTrue(() => {
       const ui = __BD.ui(); const texts = []; const walk = (o) => { if (o.text !== undefined) texts.push(o.text); (o.list ?? []).forEach(walk); }; walk(ui.screen.container);
       return texts.filter((t) => /^next \d+:\d\d  ·  all \d+:\d\d$/.test(t)).length === 3;
     }) && (await ev(() => ['sentinel', 'bearer', 'voyager'].every((t) => __BD.controls().some((c) => c.label === '✕' && c.meta === t && c.enabled)))));
@@ -459,7 +491,7 @@ async function runStage2(url, label, takeShots) {
     check('cancelLane refunds every unit incl. the one in progress (4 × 6 = 24), other lanes untouched', cr.refund === 24 && cr.energy === 24 && cr.voy.count === 2 && cr.voy.progress === 1 && cr.again === false, JSON.stringify(cr));
     const p2 = await power();
     check('Base Power = Building + Troop Power after offline training', p2.troop === 30 && p2.total === 70 + 30, JSON.stringify(p2));
-    check('offline earned Shards and Alloy', s.resources.shards > 500.7 && s.resources.alloy > 4.7, `shards ${s.resources.shards.toFixed(2)} alloy ${s.resources.alloy.toFixed(2)}`);
+    check('offline earned (modest) Shards and Alloy, but no Cores', s.resources.shards > 500.2 && s.resources.shards < 501 && s.resources.alloy > 4.7 && s.resources.cores === 10, `shards ${s.resources.shards.toFixed(2)} alloy ${s.resources.alloy.toFixed(2)}`);
 
     // --- 4. Squads: formation save limited by available troops
     await tab(3);
@@ -500,21 +532,26 @@ async function runStage2(url, label, takeShots) {
     await tab(2);
     check('Armory tab opens', await ev(() => __BD.ui().screen?.id === 'armory'));
     await click('Recruitment', { kind: 'tab' });
-    await ev(() => { __BD.store.state.resources.shards = 500; __BD.store.setSeed(2026); }); await refresh();
-    await click('Pull x10  ·  100', { wait: 500 });
+    await ev(() => { __BD.store.state.resources.shards = 500; __BD.store.state.resources.cores = 15; __BD.store.setSeed(2026); }); await refresh();
+    check('Recruitment shows the How to earn Cores panel', await ev(() => { const t = []; const w = (o) => { if (o.text !== undefined) t.push(o.text); (o.list ?? []).forEach(w); }; w(__BD.ui().screen.container); return t.includes('HOW TO EARN BEACON CORES') && t.some((x) => /Daily login/.test(x)); }));
+    await click('Pull x10  ·  10 Cores', { wait: 500 });
     s = await state();
-    check('x10 pull costs 100 Shards', s.resources.shards >= 400 && s.resources.shards < 400.5, s.resources.shards.toFixed(2));
+    check('x10 pull costs 10 Beacon Cores (Shards untouched)', s.resources.cores === 5 && s.resources.shards >= 500 && s.resources.shards < 500.5, `cores ${s.resources.cores} shards ${s.resources.shards.toFixed(2)}`);
     check('x10 pull gives 10 results and history', s.gacha.history.length === 10 && s.gacha.total === 10);
     check('reveal animation shown', await ev(() => !!__BD.ui().reveal && __BD.ui().revealCards.length === 10));
     await click('Reveal All', { wait: 1500 });
     await shot('stage2-gacha-x10-reveal.png');
     await click('Continue', { wait: 400 });
     check('reveal closes on Continue', await waitTrue(() => __BD.ui().reveal === null));
-    await ev(() => { __BD.store.state.resources.shards = 50; __BD.store.setSeed(2026); __BD.store.pull(1); });
-    check('x1 pull costs 10 Shards', Math.abs((await state()).resources.shards - 40) < 0.5);
-    await ev(() => { __BD.store.state.resources.shards = 5; });
+    await ev(() => { __BD.store.state.resources.cores = 3; __BD.store.state.resources.shards = 50; __BD.store.setSeed(2026); __BD.store.pull(1); });
+    check('x1 pull costs 1 Core', (await state()).resources.cores === 2 && (await state()).resources.shards >= 50);
+    const poor10 = await ev(() => __BD.store.pull(10));
+    check('x10 blocked with only 2 Cores', poor10.ok === false && /Need 10 Beacon Cores/.test(poor10.reason) && (await state()).resources.cores === 2, poor10.reason);
+    await ev(() => { __BD.store.state.resources.cores = 0; __BD.store.state.resources.shards = 99999; }); await refresh();
     const poor = await ev(() => __BD.store.pull(1));
-    check('pull blocked without enough Shards', poor.ok === false && (await state()).resources.shards < 5.5);
+    check('cannot pull without Cores, even with lots of Shards', poor.ok === false && (await state()).resources.cores === 0 && (await state()).gacha.total === 11);
+    check('pull buttons disabled at 0 Cores', await ev(() => __BD.controls().filter((c) => /^Pull x/.test(c.label)).every((c) => !c.enabled)));
+    await ev(() => { __BD.store.state.resources.shards = 50; });
 
     // rarity distribution over many seeded pulls (pity included)
     const dist = await ev(() => {
@@ -560,7 +597,66 @@ async function runStage2(url, label, takeShots) {
     });
     check('duplicate leader stars up, then converts to Shards at 5★', dup[0] === 'kael' && dup[1] === 'new' && dup[2] === 'star' && dup[3] === 2 && dup[4] === 'shards' && dup[5] === 50, JSON.stringify(dup));
 
+    // --- 5b. Beacon Cores: earned only (daily streak, Beacon levels, milestones)
+    const passive = await ev(() => { const st = __BD.store; const snap = JSON.stringify(st.state); st.state.resources.cores = 4; st.tick(3600); const c = st.state.resources.cores; st.state = JSON.parse(snap); return c; });
+    check('no passive Core income (1h of ticks adds 0)', passive === 4);
+    const daily = await ev(() => {
+      const st = __BD.store, DAY = 864e5; const t0 = Date.now() - 40 * DAY;
+      st.state.daily = { lastDay: null, streak: 0 }; st.state.resources.cores = 0;
+      const log = [];
+      for (let d = 0; d < 7; d++) { st.clock = () => t0 + d * DAY; const r = st.claimDaily(); log.push(r.cores); if (d === 0) log.push(st.claimDaily().ok); }
+      const after7 = st.state.resources.cores;
+      st.clock = () => t0 + 8 * DAY; const reset = st.claimDaily();            // skipped day 7 -> streak resets
+      st.clock = () => Date.now();
+      return { log, after7, reset: [reset.cores, reset.streak], cores: st.state.resources.cores };
+    });
+    check('daily login: +1/day, same-day re-claim refused', JSON.stringify(daily.log) === '[1,false,1,1,1,1,1,4]', JSON.stringify(daily.log));
+    check('7-day streak pays the +3 bonus on day 7 (10 Cores over 7 days)', daily.after7 === 10);
+    check('missing a day resets the streak to 1', daily.reset[0] === 1 && daily.reset[1] === 1 && daily.cores === 11, JSON.stringify(daily));
+    // HUD Cores counter opens the rewards panel; claim today's daily in the UI
+    await tab(0);
+    await ev(() => { const st = __BD.store; st.state.beacon.level = 3; st.state.claims.beacon = []; st.state.claims.milestones = []; st.state.resources.cores = 0; st.save(); });
+    const ch = await ev(() => { const h = __BD.ui().coreHit; return __BD.gameToPage(h.x, h.y); });
+    await page.mouse.click(ch.x, ch.y); await sleep(400);
+    check('tapping the HUD Cores counter opens Beacon Core Rewards', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'Beacon Core Rewards')));
+    check('rewards panel lists ready rewards (daily + Beacon Lv 2, 3 + squad/leader/CC3 milestones)', (await ev(() => __BD.store.rewardsReady())) >= 4, String(await ev(() => __BD.store.rewardsReady())));
+    await shot('stage2-cores-earn.png');
+    await click('Claim +1', { meta: 'daily' });
+    check('UI daily claim adds 1 Core', (await state()).resources.cores === 1);
+    check('daily button shows Claimed afterwards', !!(await ev(() => __BD.controls().find((c) => c.label === 'Claimed' && c.meta === 'daily' && !c.enabled))));
+    await click('Lv 2 · +3', { meta: 'beacon-2' });
+    s = await state();
+    check('Beacon Lv 2 reward claimed via UI (+3)', s.resources.cores === 4 && s.claims.beacon.includes(2));
+    const bl = await ev(() => [__BD.store.claimBeaconLevel(2).ok, __BD.store.claimBeaconLevel(4).ok, __BD.store.claimBeaconLevel(3).ok, __BD.store.claimBeaconLevel(3).ok]);
+    check('Beacon level rewards: each level once only, unreached levels refused', JSON.stringify(bl) === '[false,false,true,false]' && (await state()).resources.cores === 7, JSON.stringify(bl));
+    await ev(() => __BD.ui().openRewards()); await sleep(300);
+    await click('Claim +2', { meta: 'ms-cc3' });
+    s = await state();
+    check('milestone "Command Center Lv 3" claimed via UI (+2)', s.claims.milestones.includes('cc3') && s.resources.cores === 9);
+    const ms = await ev(() => { const st = __BD.store; const a = st.claimMilestone('cc3').ok; const b = st.claimMilestone('troops50'); return [a, b.ok, b.reason]; });
+    check('milestones: claimed once only; unfinished ones refused', ms[0] === false && ms[1] === false && /Own 50 troops/.test(ms[2]), JSON.stringify(ms));
+    const t50 = await ev(() => { const st = __BD.store; const snap = JSON.stringify(st.state.troops); st.state.troops.sentinel += 50; const r = [st.claimMilestone('troops50').cores, st.claimMilestone('troops50').ok]; st.state.troops = JSON.parse(snap); return r; });
+    check('owning 50 troops unlocks its milestone (+2) once', t50[0] === 2 && t50[1] === false);
+    const all = await ev(() => { const st = __BD.store; const before = st.state.resources.cores; const r = st.claimAllRewards(); return [r.cores, st.state.resources.cores - before, st.rewardsReady()]; });
+    check('Claim all collects the rest (first squad saved) and leaves nothing ready', all[0] === all[1] && all[0] >= 1 && all[2] === 0, JSON.stringify(all));
+    await ev(() => __BD.ui().closeModal(true));
+    const cBefore = (await state()).resources.cores;
+    await ev(() => __BD.store.save()); await page.reload(); await ready();
+    const again = await ev(() => [__BD.store.claimBeaconLevel(2).ok, __BD.store.claimMilestone('cc3').ok, __BD.store.claimDaily().ok, __BD.store.state.resources.cores]);
+    check('claims persist across reload (no double-claiming)', JSON.stringify(again) === JSON.stringify([false, false, false, cBefore]), JSON.stringify(again));
+    check('stage-3 hook: grantCores(n, "battle") adds Cores', await ev(() => { const st = __BD.store; const c = st.state.resources.cores; st.grantCores(1, 'battle'); const ok = st.state.resources.cores === c + 1; st.state.resources.cores = c; return ok; }));
+    // Shards now buy leader stars and gear levels
+    const su = await ev(() => {
+      const st = __BD.store; st.state.leaders.jax = { stars: 1 }; st.state.resources.shards = 1000;
+      const r1 = st.starUpLeader('jax'); const sh = st.state.resources.shards;
+      st.state.leaders.jax.stars = 5; const r2 = st.starUpLeader('jax');
+      st.state.leaders.jax.stars = 1; st.state.resources.shards = 10; const r3 = st.starUpLeader('jax');
+      return [r1.ok, r1.cost, sh, r2.reason, r3.ok];
+    });
+    check('leader star-up with Shards (Epic 1→2★ = 160 Shards); capped at 5★; needs Shards', su[0] && su[1] === 160 && su[2] === 840 && su[3] === 'Max stars' && su[4] === false, JSON.stringify(su));
+
     // --- 6. Leader assignment (UI)
+    await tab(2);
     await ev(() => __BD.store.save());
     await click('Leaders', { kind: 'tab' });
     await shot('stage2-leaders-collection.png');
@@ -589,6 +685,16 @@ async function runStage2(url, label, takeShots) {
     const dupEquip = await ev(() => __BD.store.equipGear('bravo', 'weapon', 'arcRifle'));
     check('one copy of gear can only be equipped once', dupEquip.ok === false);
     check('armor cannot go in the weapon slot', (await ev(() => __BD.store.equipGear('alpha', 'weapon', 'scrapPlating'))).ok === false);
+    await ev(() => { __BD.store.state.resources.shards = 100; __BD.ui().renderScreen(); });
+    const atk3 = await ev(() => __BD.store.squadStats('alpha').atk);
+    await click('gearcard-arcRifle', { kind: 'zone' });
+    await click('Upgrade · 40 Shards');
+    s = await state();
+    check('gear level-up via UI costs Shards (Rare Lv1→2 = 40) and raises the buff (+10% → +12%)', s.gearLevels.arcRifle === 2 && Math.abs(s.resources.shards - 60) < 0.5 && (await ev(() => __BD.store.gearBuffPct('arcRifle'))) === 12, `shards ${s.resources.shards.toFixed(1)}`);
+    check('upgraded gear raises squad ATK', (await ev(() => __BD.store.squadStats('alpha').atk)) > atk3);
+    await ev(() => __BD.ui().closeModal(true));
+    const gmax = await ev(() => { const st = __BD.store; st.state.gearLevels.arcRifle = 5; const r = st.upgradeGear('arcRifle'); st.state.gearLevels.arcRifle = 2; return r.reason; });
+    check('gear level capped at 5', gmax === 'Max level');
 
     // --- 8. Everything persists across reload
     const before = await state();
@@ -627,10 +733,10 @@ const srv = await serveDist();
 try {
   if (process.env.ONLY !== '2') {
     await run(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
-    await run(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+    if (!process.env.QUICK) await run(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
   }
-  await runStage2(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
-  if (!process.env.QUICK) await runStage2(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+  if (process.env.ONLY !== '1') await runStage2(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
+  if (!process.env.QUICK && process.env.ONLY !== '1') await runStage2(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

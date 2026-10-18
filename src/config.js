@@ -163,8 +163,9 @@ export const SQUADS = {
 export const RESOURCES = {
   startShards: 500,
   startAlloy: 0,
-  // Shards trickle from the Beacon: 40/h at Beacon Lv 1, +20/h per level.
-  shardsPerSec: (beaconLevel) => (40 + 20 * (beaconLevel - 1)) / 3600,
+  // Shards trickle from the Beacon (modest): 10/h at Beacon Lv 1, +5/h per level.
+  // Shards now pay for leader star-ups and gear upgrades, not recruitment.
+  shardsPerSec: (beaconLevel) => (10 + 5 * (beaconLevel - 1)) / 3600,
   // Alloy is refined by the Command Center: 72/h per CC level.
   alloyPerSec: (ccLevel) => 0.02 * ccLevel,
 };
@@ -177,9 +178,42 @@ export const RARITY = {
   legendary: { name: 'Legendary', color: 0xffb347, hex: '#ffc46b', dupShards: 50 },
 };
 
+// Beacon Cores: the premium recruitment currency. Earned only, never bought and never
+// generated passively over time. All sources live here.
+export const CORES = {
+  name: 'Beacon Cores',
+  color: 0xff4f7b, hex: '#ff6f93',
+  start: 10,                 // new players: exactly one x10 pull
+  migrationGrant: 10,        // one-time starter grant for saves from before Cores existed
+  daily: { base: 1, streakEvery: 7, streakBonus: 3 }, // 1/day; every 7th consecutive day pays 1 + 3
+  beaconLevel: 3,            // one-time reward for each Beacon level reached (Lv 2, 3, ...)
+  // One-time first-time milestones. `check(store)` decides when each is claimable.
+  milestones: [
+    { id: 'firstSquad', name: 'First squad saved', desc: 'Save a formation with at least 1 soldier', cores: 1, check: (st) => Object.values(st.state.squads).some((q) => q.lines.some((l) => l.type && l.count > 0)) },
+    { id: 'firstLeader', name: 'Leader in command', desc: 'Assign a leader to a squad', cores: 1, check: (st) => Object.values(st.state.squads).some((q) => q.leader) },
+    { id: 'barracks3', name: 'Drill yard', desc: 'Barracks Lv 3', cores: 1, check: (st) => st.state.buildings.barracks.level >= 3 },
+    { id: 'cc3', name: 'Chain of command', desc: 'Command Center Lv 3', cores: 2, check: (st) => st.state.buildings.commandCenter.level >= 3 },
+    { id: 'troops50', name: 'Garrison', desc: 'Own 50 troops', cores: 2, check: (st) => st.totalTroops() >= 50 },
+    { id: 'troops150', name: 'Legion', desc: 'Own 150 troops', cores: 2, check: (st) => st.totalTroops() >= 150 },
+  ],
+  // Stage 3 hook: store.grantCores(n, 'battle') pays these once auto-battles exist.
+  battle: { victory: 0, firstClear: 1 },
+};
+
+// Shard sinks: leader star-ups (alternative to duplicates) and gear levels.
+export const UPGRADES = {
+  // Shards to raise a leader from `stars` to `stars + 1`.
+  leaderStarCost: (rarity, stars) => ({ common: 40, rare: 80, epic: 160, legendary: 300 }[rarity]) * stars,
+  gearMaxLevel: 5,
+  gearLevelBonus: 0.2,       // each gear level above 1 adds +20% of the item's base buff
+  // Shards to raise a gear item (all copies of it) from `level` to `level + 1`.
+  gearLevelCost: (rarity, level) => ({ common: 20, rare: 40, epic: 80, legendary: 150 }[rarity]) * level,
+};
+
 export const GACHA = {
-  costX1: 10,
-  costX10: 100,
+  currency: 'cores',
+  costX1: 1,                 // Beacon Cores
+  costX10: 10,
   rates: { common: 0.60, rare: 0.28, epic: 0.10, legendary: 0.02 },
   pityEpic: 10,        // an Epic or better is guaranteed within this many pulls
   pityLegendary: 60,   // a Legendary is guaranteed within this many pulls
@@ -230,4 +264,4 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 3; // v3: parallel training lanes (v2 had one sequential queue)
+export const SAVE_VERSION = 4; // v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels

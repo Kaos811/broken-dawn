@@ -1,4 +1,4 @@
-import { PALETTE, GACHA, RARITY, RARITIES, LEADERS, LEADER_IDS, GEAR, GEAR_IDS, TROOP_CLASSES, SQUADS, TROOPS } from '../../config.js';
+import { PALETTE, GACHA, RARITY, RARITIES, LEADERS, LEADER_IDS, GEAR, GEAR_IDS, TROOP_CLASSES, SQUADS, TROOPS, CORES, UPGRADES } from '../../config.js';
 import { store } from '../../state/store.js';
 import { text, button, fmt } from '../widgets.js';
 import { gearTexture } from '../../art/portraits.js';
@@ -6,13 +6,13 @@ import { header, tabRow, card, tapZone, fmtBuff, fmtGearBuff, itemName } from '.
 
 export function renderArmory(ui, c, a, api, st) {
   const sub = header(ui, c, a, 'ARMORY', '');
-  api.dyn(() => sub.setText(`Shards ${fmt(store.state.resources.shards)}  ·  +${(store.shardRate * 3600).toFixed(0)}/h`));
+  api.dyn(() => sub.setText(`Cores ${fmt(store.state.resources.cores)}  ·  Shards ${fmt(store.state.resources.shards)}`));
   const nLeaders = Object.keys(store.state.leaders).length;
   const nGear = Object.values(store.state.gear).reduce((n, v) => n + v, 0);
   tabRow(ui, c, 16, a.y + 78, 688, 70, [
     { id: 'leaders', label: 'Leaders', sub: `${nLeaders}/${LEADER_IDS.length}` },
     { id: 'gear', label: 'Gear', sub: `${nGear} items` },
-    { id: 'recruit', label: 'Recruitment', sub: `${GACHA.costX1} per pull` },
+    { id: 'recruit', label: 'Recruitment', sub: `${GACHA.costX1} Core per pull` },
   ], st.armoryTab, (id) => { st.armoryTab = id; api.rerender(); });
   const y0 = a.y + 162;
   ({ leaders: renderLeaders, gear: renderGear, recruit: renderRecruit })[st.armoryTab](ui, c, a, api, st, y0);
@@ -34,7 +34,7 @@ function renderRecruit(ui, c, a, api, st, y0) {
   c.add(text(ui, 360, y0 + 204, RARITIES.map((r) => `${RARITY[r].name} ${Math.round(GACHA.rates[r] * 100)}%`).join('   '), 18, PALETTE.text).setOrigin(0.5, 0));
   const pity = text(ui, 360, y0 + 234, '', 18, PALETTE.textCyan).setOrigin(0.5, 0);
   c.add(pity);
-  c.add(text(ui, 360, y0 + 260, 'Duplicate leaders add a star (max 5★), then convert to Shards', 15, PALETTE.textDim).setOrigin(0.5, 0));
+  c.add(text(ui, 360, y0 + 260, 'Pulls cost Beacon Cores. Duplicate leaders add a star (max 5★), then give Shards', 15, PALETTE.textDim).setOrigin(0.5, 0));
   api.dyn(() => pity.setText(`Epic+ guaranteed within ${GACHA.pityEpic - g.sinceEpic}  ·  Legendary within ${GACHA.pityLegendary - g.sinceLegendary}`));
 
   const yb = y0 + 306;
@@ -43,17 +43,33 @@ function renderRecruit(ui, c, a, api, st, y0) {
     if (!r.ok) { api.toast(r.reason); return; }
     api.reveal(r.results);
   };
-  const b1 = button(ui, 186, yb + 42, 340, 84, `Pull x1  ·  ${GACHA.costX1}`, () => doPull(1), { style: 'cyan', size: 26 });
-  const b10 = button(ui, 534, yb + 42, 340, 84, `Pull x10  ·  ${GACHA.costX10}`, () => doPull(10), { style: 'gold', size: 26 });
+  const b1 = button(ui, 186, yb + 42, 340, 84, `Pull x1  ·  ${GACHA.costX1} Core`, () => doPull(1), { style: 'cyan', size: 26 });
+  const b10 = button(ui, 534, yb + 42, 340, 84, `Pull x10  ·  ${GACHA.costX10} Cores`, () => doPull(10), { style: 'gold', size: 26 });
   c.add([b1, b10]);
-  api.dyn(() => { b1.setEnabled(store.state.resources.shards >= GACHA.costX1); b10.setEnabled(store.state.resources.shards >= GACHA.costX10); });
+  api.dyn(() => { b1.setEnabled(store.state.resources.cores >= GACHA.costX1); b10.setEnabled(store.state.resources.cores >= GACHA.costX10); });
 
-  const yh = yb + 100, hh = a.y + a.h - yh - 12;
+  // How to earn Cores (they're never bought and never trickle in over time)
+  const ye = yb + 100, eh = 182;
+  card(ui, c, 16, ye, 688, eh, { accent: CORES.color, stroke: CORES.color });
+  const eg = ui.add.graphics(); drawCoreIcon(eg, 44, ye + 26, 13); c.add(eg);
+  c.add(text(ui, 66, ye + 12, 'HOW TO EARN BEACON CORES', 20, CORES.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+  const D = CORES.daily, msTotal = CORES.milestones.reduce((n, m) => n + m.cores, 0);
+  c.add(text(ui, 36, ye + 48, [
+    `• Daily login: ${D.base}/day, every ${D.streakEvery}th day in a row +${D.streakBonus} bonus`,
+    `• Each Beacon level reached: +${CORES.beaconLevel} (once per level)`,
+    `• ${CORES.milestones.length} first-time milestones: ${msTotal} Cores total`,
+    '• Battle rewards arrive in stage 3. Cores can\'t be bought.',
+  ].join('\n'), 17, PALETTE.text, { lineSpacing: 7 }));
+  const rb = button(ui, 588, ye + 26, 210, 44, 'Rewards', () => ui.openRewards(), { style: 'gold', size: 20 });
+  c.add(rb);
+  api.dyn(() => { const n = store.rewardsReady(); rb.setLabel(n ? `Rewards (${n})` : 'Rewards'); });
+
+  const yh = ye + eh + 12, hh = a.y + a.h - yh - 12;
   card(ui, c, 16, yh, 688, hh);
   c.add(text(ui, 36, yh + 14, 'RECRUIT HISTORY', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
   c.add(text(ui, 684, yh + 16, `${g.total} pulls total`, 17, PALETTE.textDim).setOrigin(1, 0));
-  const rows = Math.max(0, Math.floor((hh - 56) / 32));
-  if (!g.history.length) c.add(text(ui, 36, yh + 56, 'No recruits yet. Your first 500 Shards are enough for five x10 pulls.', 19, PALETTE.textDim, { wordWrap: { width: 640 } }));
+  const rows = Math.max(0, Math.floor((hh - 52) / 32));
+  if (!g.history.length) c.add(text(ui, 36, yh + 56, `No recruits yet. Your ${CORES.start} starter Cores are enough for one x10 pull.`, 19, PALETTE.textDim, { wordWrap: { width: 640 } }));
   g.history.slice(0, rows).forEach((h, i) => {
     const y = yh + 52 + i * 32;
     const R = RARITY[h.rarity];
@@ -118,7 +134,15 @@ export function leaderDetail(ui, api, lid) {
       c.add(text(ui, r.x + 272, r.y + 268, L.debuff ? `Debuff: ${fmtBuff(L.debuff)}` : 'No debuff', 20, L.debuff ? '#ff8a95' : PALETTE.textDim));
       const where = store.leaderSquad(lid);
       c.add(text(ui, r.x + 272, r.y + 304, where ? `Leading ${SQUADS[where].name} Squad` : 'Not assigned', 20, where ? PALETTE.textGold : PALETTE.textDim, { fontStyle: 'bold' }));
-      c.add(text(ui, r.x + 28, r.y + 374, `Duplicates add a star (+${GACHA.starBonus * 100}% of the base buff each). At ${GACHA.maxStars}★, duplicates convert to ${R.dupShards} Shards.`, 18, PALETTE.textDim, { wordWrap: { width: r.w - 56 } }));
+      c.add(text(ui, r.x + 28, r.y + 366, `Each star adds +${GACHA.starBonus * 100}% of the base buff. Get stars from duplicates or buy them with Shards. Past ${GACHA.maxStars}★, duplicates give ${R.dupShards} Shards.`, 17, PALETTE.textDim, { wordWrap: { width: r.w - 300 } }));
+      const su = store.starUpInfo(lid);
+      const sb = button(ui, r.x + r.w - 140, r.y + 400, 230, 60, su.maxed ? 'Max stars' : `★ Up · ${fmt(su.cost)} Shards`, () => {
+        const res = store.starUpLeader(lid);
+        if (!res.ok) { api.toast(res.reason); return; }
+        close(); api.toast(`${L.name} is now ${res.stars}★ (−${fmt(res.cost)} Shards)`); leaderDetail(ui, api, lid);
+      }, { style: 'gold', size: 18 });
+      sb.setEnabled(su.can); sb.starUp = lid;
+      c.add(sb);
       c.add(text(ui, r.x + 28, r.y + 440, 'ASSIGN TO SQUAD', 18, PALETTE.textDim, { letterSpacing: 2 }));
       TROOPS.squadIds.forEach((sid, i) => {
         const unlocked = store.squadUnlocked(sid);
@@ -171,19 +195,37 @@ export function gearDetail(ui, api, gid) {
       c.add(text(ui, r.x + 230, r.y + 92, `${R.name.toUpperCase()} ${G.slot.toUpperCase()}`, 22, R.hex, { fontStyle: 'bold', letterSpacing: 2 }));
       c.add(text(ui, r.x + 230, r.y + 132, fmtGearBuff(G), 24, PALETTE.textCyan));
       c.add(text(ui, r.x + 230, r.y + 172, `Owned ${store.state.gear[gid]}  ·  Free ${store.gearFree(gid)}`, 21, PALETTE.text));
-      c.add(text(ui, r.x + 28, r.y + 290, `EQUIP ON SQUAD (${G.slot} slot)`, 18, PALETTE.textDim, { letterSpacing: 2 }));
+      const gu = store.gearUpgradeInfo(gid), lv = store.gearLevel(gid);
+      c.add(text(ui, r.x + 230, r.y + 208, `Level ${lv} / ${UPGRADES.gearMaxLevel}${gu.maxed ? '' : `  ·  next: +${store.gearBuffPct(gid, lv + 1)}%`}`, 19, PALETTE.textGold));
+      const ub = button(ui, r.x + 345, r.y + 258, 230, 54, gu.maxed ? 'Max level' : `Upgrade · ${fmt(gu.cost)} Shards`, () => {
+        const res = store.upgradeGear(gid);
+        if (!res.ok) { api.toast(res.reason); return; }
+        close(); api.toast(`${G.name} is now Lv ${res.level} (−${fmt(res.cost)} Shards)`); gearDetail(ui, api, gid);
+      }, { style: 'gold', size: 18 });
+      ub.setEnabled(gu.can); ub.gearUp = gid;
+      c.add(ub);
+      c.add(text(ui, r.x + 28, r.y + 300, `EQUIP ON SQUAD (${G.slot} slot)`, 18, PALETTE.textDim, { letterSpacing: 2 }));
       TROOPS.squadIds.forEach((sid, i) => {
         const unlocked = store.squadUnlocked(sid);
         const cur = store.state.squads[sid][G.slot];
-        const b = button(ui, r.x + 128 + i * 214, r.y + 360, 200, 72, unlocked ? SQUADS[sid].name : `${SQUADS[sid].name} (CC ${SQUADS[sid].unlockCC})`, () => {
+        const b = button(ui, r.x + 128 + i * 214, r.y + 370, 200, 72, unlocked ? SQUADS[sid].name : `${SQUADS[sid].name} (CC ${SQUADS[sid].unlockCC})`, () => {
           const res = store.equipGear(sid, G.slot, cur === gid ? null : gid);
           if (!res.ok) { api.toast(res.reason); return; }
           close(); api.toast(cur === gid ? `Unequipped from ${SQUADS[sid].name}` : `${G.name} equipped on ${SQUADS[sid].name}`);
         }, { style: cur === gid ? 'gold' : 'cyan', size: unlocked ? 24 : 18 });
         b.setEnabled(unlocked && (cur === gid || store.gearFree(gid, sid) > 0));
         c.add(b);
-        if (unlocked) c.add(text(ui, r.x + 128 + i * 214, r.y + 404, cur === gid ? 'equipped (tap to remove)' : cur ? `now: ${GEAR[cur].name}` : 'empty', 14, PALETTE.textDim).setOrigin(0.5, 0));
+        if (unlocked) c.add(text(ui, r.x + 128 + i * 214, r.y + 414, cur === gid ? 'equipped (tap to remove)' : cur ? `now: ${GEAR[cur].name}` : 'empty', 14, PALETTE.textDim).setOrigin(0.5, 0));
       });
     },
   });
+}
+
+// Beacon Core icon: a hot-pink hexagonal core with a white-hot centre (distinct from purple Shards).
+export function drawCoreIcon(g, x, y, r) {
+  const pts = Array.from({ length: 6 }, (_, k) => ({ x: x + r * Math.cos(Math.PI / 6 + (k * Math.PI) / 3), y: y + r * Math.sin(Math.PI / 6 + (k * Math.PI) / 3) }));
+  g.fillStyle(CORES.color, 0.35).fillCircle(x, y, r * 1.35);
+  g.fillStyle(CORES.color, 1).fillPoints(pts, true);
+  g.lineStyle(2, 0xffd0dc, 1).strokePoints(pts, true);
+  g.fillStyle(0xffffff, 1).fillCircle(x, y, r * 0.38);
 }

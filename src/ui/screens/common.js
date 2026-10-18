@@ -1,5 +1,6 @@
 import { PALETTE, RARITY, TROOP_CLASSES, LEADERS, GEAR } from '../../config.js';
 import { text, panelBg, hexColor } from '../widgets.js';
+import { store } from '../../state/store.js';
 
 export const STAT_NAMES = { hp: 'HP', atk: 'ATK', def: 'DEF' };
 
@@ -75,7 +76,8 @@ export function fmtBuff(b, mult = 1) {
   const who = b.target === 'all' || !b.target ? 'all troops' : TROOP_CLASSES[b.target].name;
   return `${pct > 0 ? '+' : ''}${pct}% ${who} ${STAT_NAMES[b.stat]}`;
 }
-export function fmtGearBuff(g) { return `+${g.buff.pct}% squad ${STAT_NAMES[g.buff.stat]}`; }
+// Includes the gear's Shard upgrade level (Lv 1 = base buff).
+export function fmtGearBuff(g) { const lv = store.gearLevel(g.id); return `+${store.gearBuffPct(g.id)}% squad ${STAT_NAMES[g.buff.stat]}${lv > 1 ? `  (Lv ${lv})` : ''}`; }
 
 export function itemName(id) { return LEADERS[id]?.name ?? GEAR[id]?.name ?? id; }
 export { hexColor };

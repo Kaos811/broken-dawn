@@ -67,7 +67,7 @@ The Beacon is anchored: long-pressing it just shows "can't be moved".
 
 ## Stage 2: what's built
 
-All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RESOURCES`, `GACHA`, `LEADERS`, `GEAR`).
+All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RESOURCES`, `CORES`, `UPGRADES`, `GACHA`, `LEADERS`, `GEAR`).
 
 - **Troop classes** (procedural portraits in `src/art/portraits.js`):
 
@@ -91,10 +91,26 @@ All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RES
   and the squad's HP/ATK/DEF with buffs applied. **Edit Formation** picks a troop type and count per line, capped at
   your unassigned troops, plus an optional leader. `Squad Power = soldiers + 10 × squad level`. Level-up costs
   `80 × 1.7^(L−1)` Energy + `15 × L` Alloy and is capped at the Command Center level. **Battle** says "Coming in stage 3".
-- **Resources:** Shards start at 500 and trickle in from the Beacon (40/h at Lv 1, +20/h per level). Alloy is refined by
-  the Command Center (72/h per CC level). Both accrue offline.
+- **Beacon Cores (premium, earned only):** the only currency for recruitment. Cores are never sold and never trickle in
+  over time (not online, not offline). New players start with **10** (one x10 pull). Sources (all in `CORES`):
+  - **Daily login:** 1 Core per day; every 7th consecutive day pays 1 + 3 = **4**. Missing a day resets the streak.
+    Days are local calendar days. A full 7-day streak = 10 Cores.
+  - **Beacon level-ups:** **3** Cores for each Beacon level reached (Lv 2, 3, ...), claimable once per level.
+  - **First-time milestones** (once each, 9 Cores total): First squad saved (1), Leader in command (1), Barracks Lv 3 (1),
+    Command Center Lv 3 (2), Own 50 troops (2), Own 150 troops (2).
+  - **Stage 3 hook:** `store.grantCores(n, 'battle')` is the single entry point for every source; `CORES.battle` holds
+    placeholder battle rewards.
+  Rewards are claimed in the **Beacon Core Rewards** panel: tap the pink Cores counter in the HUD (a red dot means
+  something is ready) or **Rewards** in Recruitment. It shows the 7-day streak track, Beacon level rewards, every
+  milestone with its status, and **Claim all**.
+- **Shards:** start at 500 and now trickle in modestly from the Beacon (10/h at Lv 1, +5/h per level; was 40 + 20).
+  They no longer buy pulls. Instead they pay for **leader star-ups** (an alternative to duplicates:
+  `40 / 80 / 160 / 300 × current stars` for Common / Rare / Epic / Legendary, up to 5★) and **gear levels**
+  (Lv 1 → 5, each level adds +20% of the item's base buff, e.g. Arc Rifle +10% → +12% at Lv 2; costs
+  `20 / 40 / 80 / 150 × current level`, applies to every copy). Duplicate leaders past 5★ still give Shards.
+- **Alloy** is refined by the Command Center (72/h per CC level). Shards and Alloy accrue offline.
 - **Armory** (Armory tab, or tap the Armory → **Recruit**), with three tabs:
-  - **Recruitment:** pull x1 = 10 Shards, x10 = 100. Rates are Common 60%, Rare 28%, Epic 10%, Legendary 2%. Pity: an Epic or better within 10
+  - **Recruitment:** pull x1 = **1 Beacon Core**, x10 = **10 Cores** (pity unchanged). A "How to earn Beacon Cores" panel sits under the pull buttons. Rates are Common 60%, Rare 28%, Epic 10%, Legendary 2%. Pity: an Epic or better within 10
     pulls, a Legendary within 60. 40% of pulls are leaders, 60% gear. There's a card-flip reveal with rarity colors (Epic and Legendary burst)
     and a history of the last 50 recruits. A duplicate leader adds a star (max 5★, each star adds 25% of the base buff), and past 5★
     it converts to Shards (2/5/15/50 by rarity).
@@ -103,6 +119,9 @@ All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RES
     The 11 leaders are Kael and Seren (Legendary), Lyra and Jax (Epic), Vex, Orin and Nova (Rare), and Rook, Dax, Mira and Thane (Common).
   - **Gear:** your inventory, 9 items (armor and weapons, +5% to +25% HP, ATK or DEF). Each squad holds one armor and one weapon.
     Each copy can be equipped once.
+- **Saves (v4):** Beacon Cores bumped the save to version 4. Existing Shards stay, every older save gets a one-time
+  grant of 10 Cores, and the v3 save is kept as `brokenDawn.save.v1.backup-v3`. Claimed rewards, the login streak and
+  gear levels are saved, so nothing can be claimed twice.
 - **Saves (v3):** parallel lanes bumped the save to version 3. A v2 save's sequential queue is migrated into the
   lanes: every queued unit moves to its class lane (batches of the same class are summed), the batch that was in
   progress keeps its progress, and Energy, troops and everything else carry over. The v2 save is kept as
@@ -127,7 +146,7 @@ src/
   scenes/UIScene.js    HUD, bottom nav, info panel, move banner, screens, overlays, gacha reveal, toasts, game tick
   ui/widgets.js        buttons, panels, number formatting
   ui/screens/          troops.js (Barracks), squads.js (details, edit formation, pickers), armory.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1 + stage 2 suites × 2 builds (238 checks)
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1 + stage 2 suites × 2 builds (292 checks)
 screens/               screenshots from the test run
 ```
 
