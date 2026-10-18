@@ -94,6 +94,17 @@ export const BUILDINGS = {
     accent: 'cyan',
     description: 'Recruitment hub for leaders, armor and weapons. Spend Shards on pulls; equip what you find on your squads.',
   },
+  infirmary: {
+    id: 'infirmary',
+    name: 'Infirmary',
+    footprint: 2,
+    powerPerLevel: 5,
+    baseCost: 35,
+    costGrowth: 1.55,
+    start: { gx: 16, gy: 8, level: 1 },
+    accent: 'green',
+    description: 'Treats troops wounded on World hunts. Wounded beyond its capacity die. Healing costs Energy and takes time; higher levels hold more and heal faster.',
+  },
 };
 
 export const BUILDING_IDS = Object.keys(BUILDINGS);
@@ -215,7 +226,9 @@ export const CORES = {
     { id: 'troops150', name: 'Legion', desc: 'Own 150 troops', cores: 2, check: (st) => st.totalTroops() >= 150 },
   ],
   // Stage 3 hook: store.grantCores(n, 'battle') pays these once auto-battles exist.
-  battle: { victory: 0, firstClear: 1 },
+  // Stage 3: World hunts. Only the FIRST kill of each creature level pays Cores (Dusk Wyrm elites pay more).
+  // Levels 1-20 -> 16 x 1 + 4 x 2 = 24 Cores in total, ever. Normal kills pay 0.
+  battle: { victory: 0, firstKill: 1, firstKillElite: 2 },
 };
 
 // Shard sinks: leader star-ups (alternative to duplicates) and gear levels.
@@ -282,4 +295,111 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 5; // v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers
+export const SAVE_VERSION = 6; // v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+
+// ---------------------------------------------------------------- STAGE 3 --
+
+// Infirmary: wounded troops wait here. Beyond capacity, extra wounded die.
+// Healing runs one unit at a time through a queue of batches; Energy is paid when a batch is queued.
+export const INFIRMARY = {
+  capacity: (level) => 30 + 15 * (level - 1),
+  healSpeed: (level) => 1 + 0.25 * (level - 1),
+  heal: {                                   // per unit at Infirmary Lv 1 (about half of training)
+    sentinel: { energy: 3, seconds: 4 },
+    bearer: { energy: 4, seconds: 5 },
+    voyager: { energy: 3, seconds: 4.5 },
+  },
+};
+
+// Casualties after a hunt. The battle sim decides WHERE losses land (front lines take more);
+// these rates decide HOW MANY, as a share of the troops sent. Most casualties are wounded, not dead.
+export const CASUALTIES = {
+  win: { min: 0.10, max: 0.20, deadShare: 0.2 },   // ~10-20% casualties, 80% of them wounded
+  loss: { min: 0.35, max: 0.60, deadShare: 0.4 },  // losses hurt much more
+  lineWeight: [1.0, 0.6, 0.4],                     // front / middle / back exposure
+};
+
+// Stamina gates World attacks.
+export const STAMINA = {
+  max: 100,
+  regenPerHour: 10,
+  perAttack: 10,
+  dailyBonus: 20,       // added with the daily login claim (may go above max, up to overCap)
+  overCap: 200,
+};
+
+// World map: square tiles, the player's base at the centre, creature levels rising in rings outward.
+export const WORLD = {
+  size: 64,
+  tile: 72,
+  baseX: 32, baseY: 32,
+  rings: [
+    { min: 3, max: 9, levels: [1, 5], count: 12 },
+    { min: 10, max: 16, levels: [6, 10], count: 11 },
+    { min: 17, max: 23, levels: [11, 15], count: 9 },
+    { min: 24, max: 30, levels: [16, 20], count: 8 },
+  ],
+  minSpacing: 2.2,          // tiles between creatures
+  respawnSeconds: 600,      // a killed creature comes back after 10 min, somewhere else in its ring
+  march: { base: 5, perTile: 1, max: 60 }, // seconds each way
+  maxMarches: 3,            // one per squad
+  levelHeadroom: 1,         // you can attack up to (best kill + 1)
+  autoMargin: 1.1,          // Auto only picks creatures your squad out-powers by >= 10%
+  reportsKept: 12,
+  maxLevel: 20,
+  minZoom: 0.25, maxZoom: 1.6, startZoom: 0.55,
+};
+
+// Creature Combat Power by level: ~20 at Lv 1, +20% per level (~640 at Lv 20). Elites x1.25.
+export const creaturePower = (level, elite = false) => Math.round(20 * Math.pow(1.2, level - 1) * (elite ? 1.25 : 1));
+
+// Kill rewards (normal kills; elites x1.5). Shards here are a steady but modest source.
+export const HUNT_REWARDS = {
+  energy: (L) => 30 * L,
+  alloy: (L) => 4 * L,
+  shards: (L) => 8 + 2 * L,
+  eliteMult: 1.5,
+};
+
+// Creature types. hp/atk/def are per unit at Lv 1; stats scale x(1 + 0.08 per level).
+// targets: which of YOUR lines they hit first. tags drive class counters in the battle sim.
+export const CREATURES = {
+  scuttler: {
+    id: 'scuttler', calib: 1.2, name: 'Husk Scuttlers', short: 'Scuttlers', color: 0xc9a46a, hex: '#d9b47a',
+    unit: { hp: 40, atk: 6, def: 2 }, targets: 'front', tags: ['swarm'],
+    desc: 'Chittering swarms of hollowed husks. Weak alone, dangerous in numbers. Bearers cut through them (+25% damage).',
+  },
+  drone: {
+    id: 'drone', calib: 0.77, name: 'Rift Drones', short: 'Drones', color: 0x9b7bff, hex: '#b39bff',
+    unit: { hp: 45, atk: 9, def: 3 }, targets: 'back', tags: ['flier'],
+    desc: 'Fast fliers that slip past the front and strike your BACK line first.',
+  },
+  hound: {
+    id: 'hound', calib: 1.07, name: 'Void Hounds', short: 'Hounds', color: 0x4dd6c1, hex: '#6fe6d3',
+    unit: { hp: 70, atk: 11, def: 5 }, targets: 'front', tags: ['fast'], firstStrike: true,
+    desc: 'Pack hunters from the dark between stars. They pounce first every round.',
+  },
+  golem: {
+    id: 'golem', calib: 0.74, name: 'Shard Golems', short: 'Golems', color: 0x6aa2ff, hex: '#8ab6ff',
+    unit: { hp: 240, atk: 14, def: 32 }, targets: 'front', tags: ['armored'],
+    desc: 'Walking crystal. Heavily armored; Voyager shots pierce armor (ignore 50% DEF).',
+  },
+  wyrm: {
+    id: 'wyrm', calib: 0.84, name: 'Dusk Wyrm', short: 'Wyrm', color: 0xff6f3c, hex: '#ff8a5c', elite: true,
+    unit: { hp: 900, atk: 40, def: 18 }, targets: 'front', tags: ['elite'], brood: 'scuttler', broodShare: 0.4,
+    desc: 'Elite. A great serpent of the dusk with a brood of Scuttlers. Appears at every 5th level and pays double first-kill Cores.',
+  },
+};
+export const CREATURE_IDS = Object.keys(CREATURES);
+export const NORMAL_CREATURES = ['scuttler', 'drone', 'hound', 'golem'];
+
+// Battle tuning (see src/world/battle.js).
+export const BATTLE = {
+  maxRounds: 12,
+  defK: 50,                    // damage x defK / (defK + DEF)
+  squadLevelBonus: 0.04,       // +4% HP and ATK per squad level above 1
+  sentinelFrontDef: 0.2,       // Sentinels in the FRONT line get +20% DEF (shield wall)
+  bearerVsSwarm: 0.25,
+  voyager: { crit: 0.15, critMult: 1.6, pierce: 0.5 },
+  spread: 0.1,                 // +-10% seeded damage roll per volley
+};
