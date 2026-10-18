@@ -6,7 +6,9 @@ import {
   TROOP_CLASSES, TROOP_IDS, BARRACKS, SQUADS, RESOURCES, GACHA, RARITY, RARITIES,
   LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION,
   INFIRMARY, CASUALTIES, STAMINA, WORLD, HUNT_REWARDS, CREATURES, creaturePower, MAP,
+  CLASS_IDS, TIERS, MAX_TIER, PROMOTE, RESEARCH, RESEARCH_IDS, RESEARCH_TUNING, healBase, classOf, tierOf, nextTier,
 } from '../config.js';
+import { researchMods, researchLevel, archiveUnlocked } from '../systems/research.js';
 import { isValidPlacement } from '../systems/grid.js';
 import { basePower, squadPower, squadSoldiers, troopPowerBreakdown } from '../systems/power.js';
 import { LocalWorldService } from '../world/worldService.js';
@@ -17,7 +19,11 @@ import { combatPower, resolveBattle, odds } from '../world/battle.js';
 // Line: { type, count, full } -- `count` = healthy troops in the line now, `full` = the count the formation
 // was saved with (casualties lower `count`; healing and Refill bring it back up to `full`).
 const emptyLines = () => Array.from({ length: SQUADS.lines }, () => ({ type: null, count: 0, full: 0 }));
-const emptyLanes = () => Object.fromEntries(TROOP_IDS.map((t) => [t, { count: 0, progress: 0 }]));
+// Training lanes: one per CLASS. A lane runs one job type at a time: training `unit`, or (from != null)
+// promoting `from` -> `unit`. count = units still queued; progress = seconds into the current one.
+const emptyLane = (cls) => ({ count: 0, progress: 0, unit: cls, from: null });
+const emptyLanes = () => Object.fromEntries(CLASS_IDS.map((c) => [c, emptyLane(c)]));
+const emptyResearch = () => ({ levels: {}, job: null }); // job: { id, toLevel, cost: {energy, alloy, shards}, total, progress }
 const emptySquad = () => ({ level: 1, lines: emptyLines(), leader: null, armor: null, weapon: null });
 const ORIGINS = [...TROOPS.squadIds, 'reserve'];
 const emptyWounded = () => Object.fromEntries(TROOP_IDS.map((t) => [t, Object.fromEntries(ORIGINS.map((o) => [o, 0]))]));
@@ -51,6 +57,7 @@ function defaultState() {
     hunt: defaultHunt(),                       // stage 3: player-side hunt progress (stamina, kills, reports)
     infirmary: { wounded: emptyWounded(), queue: [] }, // wounded[type][origin squad] + healing batches
     world: createWorld(),                      // stage 3: shared-world model (entities + marches), see worldService
+    research: emptyResearch(),                 // stage 4: Archive research levels + the one running project
     lastSaved: Date.now(),
   };
 }
@@ -120,6 +127,15 @@ export function migrate(raw) {
     for (const sq of Object.values(raw.squads ?? {})) for (const l of Array.isArray(sq?.lines) ? sq.lines : []) if (l) l.full = l.count;
     raw.version = 6;
   }
+  // v6 -> v7: research + troop tiers. Every existing troop is T1 (T1 keeps the class id, so troops,
+  // formations, wounded and heal queues carry over untouched). Lanes get their job fields; no research yet.
+  if (num(raw.version, 1) < 7) {
+    raw = { ...raw };
+    const tr = raw.training ?? {};
+    raw.training = Object.fromEntries(CLASS_IDS.map((c) => [c, { count: int(tr[c]?.count), progress: num(tr[c]?.progress, 0), unit: c, from: null }]));
+    raw.research = emptyResearch();
+    raw.version = 7;
+  }
   return raw;
 }
 
@@ -163,10 +179,12 @@ function sanitize(raw) {
   for (const t of TROOP_IDS) s.troops[t] = int(raw.troops?.[t]);
   // Lanes are never trimmed to capacity on load (that would silently delete paid-for units).
   s.training = emptyLanes();
-  for (const t of TROOP_IDS) {
-    const l = raw.training?.[t];
+  for (const c of CLASS_IDS) {
+    const l = raw.training?.[c];
     const count = int(l?.count);
-    s.training[t] = { count, progress: count > 0 ? Math.max(0, num(l?.progress, 0)) : 0 };
+    const unit = classOf(l?.unit) === c ? l.unit : c;
+    const from = l?.from && classOf(l.from) === c && tierOf(l.from) === tierOf(unit) - 1 ? l.from : null;
+    s.training[c] = { count, progress: count > 0 ? Math.max(0, num(l?.progress, 0)) : 0, unit, from };
   }
   for (const id of LEADER_IDS) if (raw.leaders?.[id]) s.leaders[id] = { stars: Math.min(GACHA.maxStars, Math.max(1, int(raw.leaders[id].stars, 1))) };
   for (const id of GEAR_IDS) { const n = int(raw.gear?.[id]); if (n) s.gear[id] = n; }
@@ -211,7 +229,7 @@ function sanitize(raw) {
     const cur = id === BEACON.id ? s.beacon.level : s.buildings[id]?.level;
     const cost = Math.max(0, num(j?.cost, 0));
     if (cur == null || s.construction.some((x) => x.id === id) || s.construction.length >= CONSTRUCTION.builders) { s.resources.energy += cost; continue; }
-    const total = CONSTRUCTION.seconds(cur + 1);
+    const total = num(j.total, 0) > 0 ? j.total : CONSTRUCTION.seconds(cur + 1);
     s.construction.push({ id, toLevel: cur + 1, cost, total, progress: Math.min(total, Math.max(0, num(j.progress, 0))) });
   }
   // Stage 3: hunt progress, infirmary, world
@@ -232,9 +250,23 @@ function sanitize(raw) {
     const from = Object.fromEntries(ORIGINS.map((o) => [o, int(b.from?.[o])]));
     const sum = ORIGINS.reduce((n, o) => n + from[o], 0);
     from.reserve += Math.max(0, int(b.count) - sum);
-    s.infirmary.queue.push({ type: b.type, count: int(b.count), energyPer: Math.max(0, num(b.energyPer, INFIRMARY.heal[b.type].energy)), progress: Math.max(0, num(b.progress, 0)), from });
+    s.infirmary.queue.push({ type: b.type, count: int(b.count), energyPer: Math.max(0, num(b.energyPer, healBase(b.type).energy)), progress: Math.max(0, num(b.progress, 0)), from });
   }
   s.world = sanitizeWorld(raw.world) ?? d.world;
+  // Stage 4: research. Levels clamped to each node's max; an invalid running job is refunded.
+  s.research = emptyResearch();
+  for (const id of RESEARCH_IDS) {
+    const lv = Math.min(RESEARCH[id].maxLevel ?? RESEARCH_TUNING.maxLevel, int(raw.research?.levels?.[id]));
+    if (lv > 0) s.research.levels[id] = lv;
+  }
+  const rj = raw.research?.job;
+  if (rj && typeof rj === 'object') {
+    const cost = { energy: Math.max(0, num(rj.cost?.energy, 0)), alloy: Math.max(0, num(rj.cost?.alloy, 0)), shards: Math.max(0, num(rj.cost?.shards, 0)) };
+    const R = RESEARCH[rj.id], cur = s.research.levels[rj.id] ?? 0;
+    if (R && rj.toLevel === cur + 1 && cur < (R.maxLevel ?? RESEARCH_TUNING.maxLevel) && num(rj.total, 0) > 0) {
+      s.research.job = { id: rj.id, toLevel: rj.toLevel, cost, total: rj.total, progress: Math.min(rj.total, Math.max(0, num(rj.progress, 0))) };
+    } else { s.resources.energy += cost.energy; s.resources.alloy += cost.alloy; s.resources.shards += cost.shards; }
+  }
   return s;
 }
 
@@ -286,17 +318,18 @@ class Store extends Emitter {
     const s = this.state;
     const r0 = { ...s.resources };
     const chargeBefore = s.beacon.charge;
-    s.resources.energy += ECONOMY.energyPerSec(s.beacon.level) * secs * ECONOMY.offlineRate;
-    s.resources.shards += RESOURCES.shardsPerSec(s.beacon.level) * secs * ECONOMY.offlineRate;
-    s.resources.alloy += RESOURCES.alloyPerSec(s.buildings.commandCenter.level) * secs * ECONOMY.offlineRate;
+    s.resources.energy += this.energyRate * secs * ECONOMY.offlineRate;
+    s.resources.shards += this.shardRate * secs * ECONOMY.offlineRate;
+    s.resources.alloy += this.alloyRate * secs * ECONOMY.offlineRate;
     s.beacon.charge = Math.min(BEACON.maxCharge, chargeBefore + BEACON.chargePerSec(s.beacon.level) * secs);
     const trained = this.processTraining(secs);
     const built = this.processConstruction(secs);
+    const researched = this.processResearch(secs);
     const hunts = this.simulateWorld(secs);
     this.offlineReport = {
       seconds: secs, capped: elapsed > ECONOMY.offlineCapSeconds,
       energy: s.resources.energy - r0.energy, shards: s.resources.shards - r0.shards, alloy: s.resources.alloy - r0.alloy,
-      charge: s.beacon.charge - chargeBefore, trained, built, hunts,
+      charge: s.beacon.charge - chargeBefore, trained, built, researched, hunts,
     };
   }
 
@@ -316,13 +349,14 @@ class Store extends Emitter {
   // Called every frame with seconds elapsed.
   tick(dt) {
     const s = this.state;
-    s.resources.energy += ECONOMY.energyPerSec(s.beacon.level) * dt;
-    s.resources.shards += RESOURCES.shardsPerSec(s.beacon.level) * dt;
-    s.resources.alloy += RESOURCES.alloyPerSec(s.buildings.commandCenter.level) * dt;
+    s.resources.energy += this.energyRate * dt;
+    s.resources.shards += this.shardRate * dt;
+    s.resources.alloy += this.alloyRate * dt;
     if (s.beacon.charge < BEACON.maxCharge) {
       s.beacon.charge = Math.min(BEACON.maxCharge, s.beacon.charge + BEACON.chargePerSec(s.beacon.level) * dt);
     }
     if (s.construction.length) this.processConstruction(dt);
+    if (s.research.job) this.processResearch(dt);
     this.tickStamina(dt);
     if (s.infirmary.queue.length) { const healed = this.processHealing(dt); if (Object.keys(healed).length) { this.save(); this.emit('healed', healed); this.emit('change'); } }
     this.processWorld(dt);
@@ -339,9 +373,10 @@ class Store extends Emitter {
 
   get power() { return basePower(this.state); }
   get troopPower() { return troopPowerBreakdown(this.state); }
-  get energyRate() { return ECONOMY.energyPerSec(this.state.beacon.level); }
-  get shardRate() { return RESOURCES.shardsPerSec(this.state.beacon.level); }
-  get alloyRate() { return RESOURCES.alloyPerSec(this.state.buildings.commandCenter.level); }
+  get mods() { return researchMods(this.state); }
+  get energyRate() { return ECONOMY.energyPerSec(this.state.beacon.level) * this.mods.energy; }
+  get shardRate() { return RESOURCES.shardsPerSec(this.state.beacon.level) * this.mods.shards; }
+  get alloyRate() { return RESOURCES.alloyPerSec(this.state.buildings.commandCenter.level) * this.mods.alloy; }
 
   buildingLevelCap() { return this.state.beacon.level + BUILDING_LEVEL_HEADROOM; }
 
@@ -350,13 +385,15 @@ class Store extends Emitter {
   nameOf(id) { return id === BEACON.id ? BEACON.name : BUILDINGS[id].name; }
   constructionJob(id) { return this.state.construction.find((j) => j.id === id) ?? null; }
   buildersFree() { return Math.max(0, CONSTRUCTION.builders - this.state.construction.length); }
-  upgradeSeconds(id) { return CONSTRUCTION.seconds(this.levelOf(id) + 1); }
+  // Building upgrade time, shortened by Rapid Assembly research.
+  buildSeconds(toLevel) { return CONSTRUCTION.seconds(toLevel) / this.mods.build; }
+  upgradeSeconds(id) { return this.buildSeconds(this.levelOf(id) + 1); }
   constructionLeft(id) { const j = this.constructionJob(id); return j ? Math.max(0, j.total - j.progress) : 0; }
 
   upgradeInfo(id) {
     const s = this.state;
     const level = this.levelOf(id);
-    const seconds = CONSTRUCTION.seconds(level + 1);
+    const seconds = this.buildSeconds(level + 1);
     const job = this.constructionJob(id);
     let cost, reason = null;
     if (id === BEACON.id) {
@@ -367,6 +404,7 @@ class Store extends Emitter {
     } else {
       cost = buildingUpgradeCost(id, level);
       if (job) reason = `Upgrading to Lv ${job.toLevel}`;
+      else if (BUILDINGS[id].unlockBeacon && s.beacon.level < BUILDINGS[id].unlockBeacon) reason = `Unlocks at Beacon Lv ${BUILDINGS[id].unlockBeacon}`;
       else if (level >= this.buildingLevelCap()) reason = `Raise the Beacon to Lv ${level - BUILDING_LEVEL_HEADROOM + 1} first`;
     }
     if (!reason && this.buildersFree() < 1) {
@@ -423,7 +461,7 @@ class Store extends Emitter {
       const before = this.power.total;
       if (j.id === BEACON.id) {
         this.state.beacon.level = j.toLevel;
-        this.state.hunt.stamina = Math.max(this.state.hunt.stamina, STAMINA.max); // Beacon level-up refills stamina
+        this.state.hunt.stamina = Math.max(this.state.hunt.stamina, this.staminaMax()); // Beacon level-up refills stamina
       } else this.state.buildings[j.id].level = j.toLevel;
       this.state.construction.splice(this.state.construction.indexOf(j), 1);
       done.push({ id: j.id, level: j.toLevel });
@@ -457,78 +495,230 @@ class Store extends Emitter {
   }
 
   // ---- Barracks / training -------------------------------------------
-  // One lane per troop class. Lanes have their own capacity and timer and all run at once.
+  // One lane per troop CLASS (any tier trains in its class lane). Lanes have their own capacity and
+  // timer and all run at once. A lane runs one job at a time: training one unit, or one promotion.
+  // `type` arguments are unit ids (T1 unit id = class id, so stage 1-3 calls still work).
   get barracksLevel() { return this.state.buildings.barracks.level; }
   laneCapacity() { return BARRACKS.laneCapacity(this.barracksLevel); }
-  lane(type) { return this.state.training[type]; }
+  lane(type) {
+    const cls = classOf(type) ?? type, l = this.state.training[cls];
+    if (l && !TROOP_CLASSES[l.unit]) { l.unit = cls; l.from = null; } // tolerate old-shape lanes ({ count, progress })
+    return l;
+  }
   laneRoom(type) { return Math.max(0, this.laneCapacity() - (this.lane(type)?.count ?? 0)); }
-  queuedUnits() { return TROOP_IDS.reduce((n, t) => n + this.state.training[t].count, 0); }
-  activeLanes() { return TROOP_IDS.filter((t) => this.state.training[t].count > 0); }
-  unitTime(type) { return TROOP_CLASSES[type].trainSeconds / BARRACKS.trainSpeed(this.barracksLevel); }
+  queuedUnits() { return CLASS_IDS.reduce((n, c) => n + this.state.training[c].count, 0); }
+  activeLanes() { return CLASS_IDS.filter((c) => this.state.training[c].count > 0); }
+  maxTier() { return this.mods.maxTier; }
+  tierUnlocked(tier) { return tier <= this.maxTier(); }
+  unitTime(type) { return TROOP_CLASSES[type].trainSeconds / (BARRACKS.trainSpeed(this.barracksLevel) * this.mods.train); }
+  promoteTime(toUnit) { return this.unitTime(toUnit) * PROMOTE.timeShare; }
+  laneUnitTime(cls) { const l = this.lane(cls); return l.from ? this.promoteTime(l.unit) : this.unitTime(l.unit); }
+  trainCost(type) { const u = TROOP_CLASSES[type]; return { energy: u.energy, alloy: u.alloy }; }
+  promoteCost(fromUnit) {
+    const to = nextTier(fromUnit);
+    if (!to) return null;
+    const a = TROOP_CLASSES[fromUnit], b = TROOP_CLASSES[to];
+    return { energy: Math.max(0, b.energy - a.energy), alloy: Math.max(0, b.alloy - a.alloy) };
+  }
+  affordable(cost) {
+    const r = this.state.resources;
+    return Math.min(cost.energy > 0 ? Math.floor(r.energy / cost.energy) : Infinity, cost.alloy > 0 ? Math.floor(r.alloy / cost.alloy) : Infinity);
+  }
+  // A lane that's busy with a different job can't take this one until it's done (or cancelled).
+  laneBusyWith(type, from = null) {
+    const l = this.lane(type);
+    if (!l || l.count < 1) return null;
+    if (l.unit === type && (l.from ?? null) === from) return null;
+    return l.from ? `promoting ${l.count} → ${TROOP_CLASSES[l.unit].plural}` : `training ${l.count} ${TROOP_CLASSES[l.unit].plural}`;
+  }
   maxTrainable(type) {
-    return Math.min(this.laneRoom(type), Math.floor(this.state.resources.energy / TROOP_CLASSES[type].energy));
+    if (!TROOP_CLASSES[type] || !this.tierUnlocked(tierOf(type)) || this.laneBusyWith(type)) return 0;
+    return Math.min(this.laneRoom(type), this.affordable(this.trainCost(type)));
   }
   // Seconds until the unit currently in training in this lane finishes (0 if idle).
-  laneNextSeconds(type) { const l = this.lane(type); return l.count ? Math.max(0, this.unitTime(type) - l.progress) : 0; }
+  laneNextSeconds(type) { const l = this.lane(type); return l.count ? Math.max(0, this.laneUnitTime(type) - l.progress) : 0; }
   // Seconds until this whole lane is done.
-  laneSecondsLeft(type) { const l = this.lane(type); return l.count ? Math.max(0, l.count * this.unitTime(type) - l.progress) : 0; }
+  laneSecondsLeft(type) { const l = this.lane(type); return l.count ? Math.max(0, l.count * this.laneUnitTime(type) - l.progress) : 0; }
   // Lanes run in parallel, so everything is done when the slowest lane is.
-  trainingSecondsLeft() { return Math.max(0, ...TROOP_IDS.map((t) => this.laneSecondsLeft(t))); }
+  trainingSecondsLeft() { return Math.max(0, ...CLASS_IDS.map((c) => this.laneSecondsLeft(c))); }
+  tierLockReason(tier) {
+    if (this.tierUnlocked(tier)) return null;
+    return `Research ${RESEARCH[`tier${tier}`].name} in the Archive`;
+  }
 
   trainInfo(type, n) {
     const def = TROOP_CLASSES[type];
     if (!def) return { can: false, reason: 'Unknown troop' };
     n = Math.floor(n);
-    const cost = n * def.energy;
+    const unit = this.trainCost(type);
+    const cost = n * unit.energy, alloy = n * unit.alloy;
     const room = this.laneRoom(type);
-    let reason = null;
-    if (room < 1) reason = `${def.name} lane is full`;
+    const busy = this.laneBusyWith(type);
+    let reason = this.tierLockReason(def.tier);
+    if (reason) { /* locked tier */ }
+    else if (busy) reason = `${def.className} lane is busy: ${busy}`;
+    else if (room < 1) reason = `${def.className} lane is full`;
     else if (n < 1) reason = 'Not enough Energy';
-    else if (n > room) reason = `${def.name} lane has room for ${room}`;
+    else if (n > room) reason = `${def.className} lane has room for ${room}`;
     else if (this.state.resources.energy < cost) reason = 'Not enough Energy';
-    return { can: !reason, reason, cost, n };
+    else if (this.state.resources.alloy < alloy) reason = 'Not enough Alloy';
+    return { can: !reason, reason, cost, alloy, n };
   }
 
   train(type, n) {
     const info = this.trainInfo(type, n);
     if (!info.can) return { ok: false, reason: info.reason };
     this.state.resources.energy -= info.cost;
+    this.state.resources.alloy -= info.alloy;
     const l = this.lane(type);
-    if (l.count === 0) l.progress = 0;
+    if (l.count === 0) { l.progress = 0; l.unit = type; l.from = null; }
     l.count += info.n;
     this.save();
     this.emit('change');
-    return { ok: true, n: info.n, cost: info.cost };
+    return { ok: true, n: info.n, cost: info.cost, alloy: info.alloy };
   }
 
-  // Cancels everything in one lane (including the unit in progress) for a full Energy refund.
+  // Promotion: ready (unassigned, healthy) troops of `fromUnit` move up one tier. They leave the army
+  // when queued and come back as the higher tier one by one. Pays the cost difference.
+  maxPromotable(fromUnit) {
+    const to = nextTier(fromUnit);
+    if (!to || !this.tierUnlocked(tierOf(to)) || this.laneBusyWith(to, fromUnit)) return 0;
+    return Math.min(this.readyCount(fromUnit), this.laneRoom(fromUnit), this.affordable(this.promoteCost(fromUnit)));
+  }
+  promoteInfo(fromUnit, n) {
+    const def = TROOP_CLASSES[fromUnit];
+    if (!def) return { can: false, reason: 'Unknown troop' };
+    const to = nextTier(fromUnit);
+    n = Math.floor(n);
+    const per = this.promoteCost(fromUnit) ?? { energy: 0, alloy: 0 };
+    const cost = n * per.energy, alloy = n * per.alloy;
+    const ready = this.readyCount(fromUnit), room = this.laneRoom(fromUnit);
+    let reason = null;
+    if (!to) reason = `${def.plural} are the top tier`;
+    else if ((reason = this.tierLockReason(tierOf(to)))) { /* locked */ }
+    else if (this.laneBusyWith(to, fromUnit)) reason = `${def.className} lane is busy: ${this.laneBusyWith(to, fromUnit)}`;
+    else if (ready < 1) reason = `No ready ${def.plural} (assigned or wounded troops can't be promoted)`;
+    else if (room < 1) reason = `${def.className} lane is full`;
+    else if (n < 1) reason = 'Not enough Energy';
+    else if (n > ready) reason = `Only ${ready} ready ${def.plural}`;
+    else if (n > room) reason = `${def.className} lane has room for ${room}`;
+    else if (this.state.resources.energy < cost) reason = 'Not enough Energy';
+    else if (this.state.resources.alloy < alloy) reason = 'Not enough Alloy';
+    return { can: !reason, reason, cost, alloy, n, to, seconds: to ? this.promoteTime(to) : 0 };
+  }
+  promote(fromUnit, n) {
+    const info = this.promoteInfo(fromUnit, n);
+    if (!info.can) return { ok: false, reason: info.reason };
+    const before = this.power.total;
+    this.state.resources.energy -= info.cost;
+    this.state.resources.alloy -= info.alloy;
+    this.state.troops[fromUnit] -= info.n;
+    const l = this.lane(fromUnit);
+    if (l.count === 0) { l.progress = 0; l.unit = info.to; l.from = fromUnit; }
+    l.count += info.n;
+    this.save();
+    this.emit('trainStart', { promote: true, from: fromUnit, to: info.to, n: info.n, before, after: this.power.total });
+    this.emit('change');
+    return { ok: true, n: info.n, cost: info.cost, alloy: info.alloy, to: info.to };
+  }
+
+  // Cancels everything in one lane (including the unit in progress) for a full refund
+  // (promotions also give the queued troops back at their old tier).
   cancelLane(type) {
     const l = this.lane(type);
     if (!l || l.count < 1) return { ok: false };
     const n = l.count;
-    const refund = n * TROOP_CLASSES[type].energy;
+    const per = l.from ? this.promoteCost(l.from) : this.trainCost(l.unit);
+    const refund = n * per.energy, alloy = n * per.alloy;
     this.state.resources.energy += refund;
-    l.count = 0; l.progress = 0;
+    this.state.resources.alloy += alloy;
+    if (l.from) this.state.troops[l.from] += n;
+    l.count = 0; l.progress = 0; l.from = null; l.unit = classOf(l.unit);
     this.save();
     this.emit('change');
-    return { ok: true, refund, n };
+    return { ok: true, refund, alloy, n };
   }
 
-  // Advances every lane by dt seconds, independently; returns { type: unitsCompleted }.
+  // Advances every lane by dt seconds, independently; returns { unit: unitsCompleted }.
   processTraining(dt) {
     const done = {};
     if (!(dt > 0)) return done;
-    for (const t of TROOP_IDS) {
-      const l = this.state.training[t];
+    for (const c of CLASS_IDS) {
+      const l = this.lane(c);
       if (l.count < 1) continue;
-      const ut = this.unitTime(t);
+      const ut = this.laneUnitTime(c);
       const avail = l.progress + dt;
       const n = Math.min(l.count, Math.floor(avail / ut + 1e-9));
       l.count -= n;
       l.progress = l.count > 0 ? Math.max(0, avail - n * ut) : 0;
-      if (n > 0) { this.state.troops[t] += n; done[t] = n; }
+      if (n > 0) { this.state.troops[l.unit] += n; done[l.unit] = (done[l.unit] ?? 0) + n; }
+      if (l.count === 0) l.from = null;
     }
     return done;
+  }
+
+  // ---- Research (Archive) --------------------------------------------
+  // One project at a time. A node's level can't exceed the Archive's level; tier nodes need Barracks
+  // levels too. Costs Energy + Alloy + Shards (never Cores), paid up front; cancel = full refund.
+  archiveUnlocked() { return archiveUnlocked(this.state); }
+  get archiveLevel() { return this.state.buildings.archive.level; }
+  researchLevel(id) { return researchLevel(this.state, id); }
+  researchMax(id) { return RESEARCH[id]?.maxLevel ?? RESEARCH_TUNING.maxLevel; }
+  researchCost(id, toLevel) { const R = RESEARCH[id]; return R.cost ? { ...R.cost } : RESEARCH_TUNING.cost(toLevel); }
+  researchSeconds(id, toLevel) { const R = RESEARCH[id]; return R.seconds ?? RESEARCH_TUNING.seconds(toLevel); }
+  researchJob() { return this.state.research.job; }
+  researchLeft() { const j = this.researchJob(); return j ? Math.max(0, j.total - j.progress) : 0; }
+  researchInfo(id) {
+    const R = RESEARCH[id];
+    if (!R) return { can: false, reason: 'Unknown research' };
+    const level = this.researchLevel(id), max = this.researchMax(id), toLevel = level + 1;
+    const cost = this.researchCost(id, Math.min(toLevel, max)), seconds = this.researchSeconds(id, Math.min(toLevel, max));
+    const job = this.researchJob(), r = this.state.resources;
+    const needArchive = Math.max(toLevel, R.req?.archive ?? 0);
+    let reason = null;
+    if (!this.archiveUnlocked()) reason = `The Archive unlocks at Beacon Lv ${BUILDINGS.archive.unlockBeacon}`;
+    else if (level >= max) reason = 'Fully researched';
+    else if (job?.id === id) reason = `Researching Lv ${job.toLevel}`;
+    else if (R.req?.research && this.researchLevel(R.req.research) < 1) reason = `Research ${RESEARCH[R.req.research].name} first`;
+    else if (R.req?.barracks && this.barracksLevel < R.req.barracks) reason = `Needs Barracks Lv ${R.req.barracks}`;
+    else if (this.archiveLevel < needArchive) reason = `Needs Archive Lv ${needArchive}`;
+    else if (job) reason = `Archive busy: ${RESEARCH[job.id].name} Lv ${job.toLevel}`;
+    else if (r.energy < cost.energy) reason = 'Not enough Energy';
+    else if (r.alloy < cost.alloy) reason = 'Not enough Alloy';
+    else if (r.shards < cost.shards) reason = 'Not enough Shards';
+    return { can: !reason, reason, level, max, toLevel, cost, seconds, job: job?.id === id ? job : null };
+  }
+  startResearch(id) {
+    const info = this.researchInfo(id);
+    if (!info.can) return { ok: false, reason: info.reason };
+    const r = this.state.resources;
+    r.energy -= info.cost.energy; r.alloy -= info.cost.alloy; r.shards -= info.cost.shards;
+    this.state.research.job = { id, toLevel: info.toLevel, cost: info.cost, total: info.seconds, progress: 0 };
+    this.save(); this.emit('researchStart', id); this.emit('change');
+    return { ok: true, seconds: info.seconds, cost: info.cost, toLevel: info.toLevel };
+  }
+  cancelResearch() {
+    const j = this.researchJob();
+    if (!j) return { ok: false, reason: 'Nothing to cancel' };
+    const r = this.state.resources;
+    r.energy += j.cost.energy; r.alloy += j.cost.alloy; r.shards += j.cost.shards;
+    this.state.research.job = null;
+    this.save(); this.emit('change');
+    return { ok: true, refund: j.cost };
+  }
+  // Hook for future speed-ups (no Cores for research today): skips `seconds` of the running project.
+  speedUpResearch(seconds) { if (!this.researchJob() || !(seconds > 0)) return { ok: false }; this.processResearch(seconds); return { ok: true }; }
+  processResearch(dt) {
+    const j = this.state.research.job;
+    if (!j || !(dt > 0)) return [];
+    j.progress += dt;
+    if (j.progress + 1e-9 < j.total) return [];
+    const before = this.power.total;
+    this.state.research.levels[j.id] = j.toLevel;
+    this.state.research.job = null;
+    this.emit('research', j.id, j.toLevel, { before, after: this.power.total });
+    this.save(); this.emit('change');
+    return [{ id: j.id, level: j.toLevel }];
   }
 
   // ---- Squads ---------------------------------------------------------
@@ -648,13 +838,13 @@ class Store extends Emitter {
     const totals = { hp: 0, atk: 0, def: 0 };
     for (const line of sq.lines) {
       if (!line.type) continue;
-      const base = TROOP_CLASSES[line.type];
+      const base = TROOP_CLASSES[line.type], cls = base.cls, rm = this.mods.combat[cls];
       for (const stat of ['hp', 'atk', 'def']) {
         let pct = 0;
-        if (L?.buff && L.buff.stat === stat && (L.buff.target === 'all' || L.buff.target === line.type)) pct += L.buff.pct * mult;
-        if (L?.debuff && L.debuff.stat === stat && (L.debuff.target === 'all' || L.debuff.target === line.type)) pct += L.debuff.pct;
+        if (L?.buff && L.buff.stat === stat && (L.buff.target === 'all' || L.buff.target === cls)) pct += L.buff.pct * mult;
+        if (L?.debuff && L.debuff.stat === stat && (L.debuff.target === 'all' || L.debuff.target === cls)) pct += L.debuff.pct;
         for (const slot of ['armor', 'weapon']) { const g = GEAR[sq[slot]]; if (g && g.buff.stat === stat) pct += this.gearBuffPct(g.id); }
-        totals[stat] += base[stat] * line.count * (1 + pct / 100);
+        totals[stat] += base[stat] * line.count * (1 + pct / 100) * (stat === 'def' ? 1 : rm);
       }
     }
     return { hp: Math.round(totals.hp), atk: Math.round(totals.atk), def: Math.round(totals.def) };
@@ -820,21 +1010,24 @@ class Store extends Emitter {
 
   // ---- Infirmary -------------------------------------------------------
   get infirmaryLevel() { return this.state.buildings.infirmary.level; }
-  infirmaryCapacity() { return INFIRMARY.capacity(this.infirmaryLevel); }
+  infirmaryCapacity() { return Math.floor(INFIRMARY.capacity(this.infirmaryLevel) * this.mods.beds + 1e-9); }
+  healSpeed() { return INFIRMARY.healSpeed(this.infirmaryLevel) * this.mods.healSpeed; }
+  // Energy to heal one unit (tier multiplier, Med Synthesis research)
+  healEnergy(type) { return Math.round(healBase(type).energy * this.mods.healCost * 100) / 100; }
   woundedPool(type) { return ORIGINS.reduce((n, o) => n + this.state.infirmary.wounded[type][o], 0); }
   woundedQueued(type) { return this.state.infirmary.queue.reduce((n, b) => n + (b.type === type ? b.count : 0), 0); }
   woundedTotal() { return TROOP_IDS.reduce((n, t) => n + this.woundedPool(t) + this.woundedQueued(t), 0); }
   infirmaryFree() { return Math.max(0, this.infirmaryCapacity() - this.woundedTotal()); }
-  healUnitTime(type) { return INFIRMARY.heal[type].seconds / INFIRMARY.healSpeed(this.infirmaryLevel); }
+  healUnitTime(type) { return healBase(type).seconds / this.healSpeed(); }
   healQueueSeconds() {
     return this.state.infirmary.queue.reduce((n, b) => n + b.count * this.healUnitTime(b.type), 0) - (this.state.infirmary.queue[0]?.progress ?? 0);
   }
-  maxHealable(type) { return Math.min(this.woundedPool(type), Math.floor(this.state.resources.energy / INFIRMARY.heal[type].energy)); }
+  maxHealable(type) { return Math.min(this.woundedPool(type), Math.floor(this.state.resources.energy / this.healEnergy(type) + 1e-9)); }
 
   healInfo(type, n) {
     if (!TROOP_CLASSES[type]) return { can: false, reason: 'Unknown troop' };
     n = Math.floor(n);
-    const pool = this.woundedPool(type), cost = n * INFIRMARY.heal[type].energy;
+    const pool = this.woundedPool(type), cost = Math.round(n * this.healEnergy(type) * 100) / 100;
     let reason = null;
     if (pool < 1) reason = `No wounded ${TROOP_CLASSES[type].plural}`;
     else if (n < 1) reason = 'Not enough Energy';
@@ -852,7 +1045,7 @@ class Store extends Emitter {
     let left = info.n;
     for (const o of ORIGINS) { const k = Math.min(left, w[o]); w[o] -= k; from[o] += k; left -= k; }
     this.state.resources.energy -= info.cost;
-    this.state.infirmary.queue.push({ type, count: info.n, energyPer: INFIRMARY.heal[type].energy, progress: 0, from });
+    this.state.infirmary.queue.push({ type, count: info.n, energyPer: this.healEnergy(type), progress: 0, from });
     this.save(); this.emit('change');
     return { ok: true, n: info.n, cost: info.cost };
   }
@@ -922,15 +1115,17 @@ class Store extends Emitter {
   squadCombatPower(id) { return combatPower(squadArmy(this.state, id)); }
 
   // ---- Stamina -----------------------------------------------------------
-  get staminaRegenSeconds() { return 3600 / STAMINA.regenPerHour; }
-  staminaNext() { return this.state.hunt.stamina >= STAMINA.max ? 0 : Math.max(0, this.staminaRegenSeconds - this.state.hunt.staminaCarry); }
+  staminaMax() { return STAMINA.max + this.mods.staminaCap; }
+  staminaRegenPerHour() { return STAMINA.regenPerHour + this.mods.staminaRegen; }
+  get staminaRegenSeconds() { return 3600 / this.staminaRegenPerHour(); }
+  staminaNext() { return this.state.hunt.stamina >= this.staminaMax() ? 0 : Math.max(0, this.staminaRegenSeconds - this.state.hunt.staminaCarry); }
   tickStamina(dt) {
-    const h = this.state.hunt;
-    if (h.stamina >= STAMINA.max) { h.staminaCarry = 0; return; }
+    const h = this.state.hunt, max = this.staminaMax();
+    if (h.stamina >= max) { h.staminaCarry = 0; return; }
     h.staminaCarry += dt;
     const per = this.staminaRegenSeconds;
-    while (h.staminaCarry >= per && h.stamina < STAMINA.max) { h.staminaCarry -= per; h.stamina += 1; }
-    if (h.stamina >= STAMINA.max) h.staminaCarry = 0;
+    while (h.staminaCarry + 1e-6 >= per && h.stamina < max) { h.staminaCarry = Math.max(0, h.staminaCarry - per); h.stamina += 1; }
+    if (h.stamina >= max) h.staminaCarry = 0;
   }
 
   // ---- Hunting -------------------------------------------------------------
@@ -942,7 +1137,7 @@ class Store extends Emitter {
     return level % 5 === 0 ? CORES.battle.firstKillElite : CORES.battle.firstKill;
   }
   killRewards(e) {
-    const m = CREATURES[e.type]?.elite ? HUNT_REWARDS.eliteMult : 1;
+    const m = (CREATURES[e.type]?.elite ? HUNT_REWARDS.eliteMult : 1) * this.mods.loot; // Salvage Protocols research
     return { energy: Math.round(HUNT_REWARDS.energy(e.level) * m), alloy: Math.round(HUNT_REWARDS.alloy(e.level) * m), shards: Math.round(HUNT_REWARDS.shards(e.level) * m) };
   }
 
@@ -956,9 +1151,10 @@ class Store extends Emitter {
     else if (this.squadSoldiers(squadId) + this.refillable(squadId) < 1) out.reason = `No healthy troops in ${SQUADS[squadId].name}`;
     else if (t.kind === 'creature' && t.level > this.maxAttackLevel()) out.reason = `Defeat a Lv ${t.level - 1} creature first`;
     else if (this.state.hunt.stamina < STAMINA.perAttack) out.reason = `Need ${STAMINA.perAttack} stamina`;
-    const c = this.world.canSend({ owner: LOCAL_OWNER, squadId, targetId });
+    const speed = this.mods.march; // Rift Striders research
+    const c = this.world.canSend({ owner: LOCAL_OWNER, squadId, targetId, speed });
     if (!out.reason && !c.ok) out.reason = c.reason;
-    out.travel = c.travel ?? marchSeconds(dist(t, { x: WORLD.baseX, y: WORLD.baseY }));
+    out.travel = c.travel ?? marchSeconds(dist(t, { x: WORLD.baseX, y: WORLD.baseY })) / speed;
     // power if it marched now (after refill)
     const sq = this.state.squads[squadId];
     const saved = sq.lines.map((l) => l.count);
@@ -976,7 +1172,7 @@ class Store extends Emitter {
     if (!info.can) return { ok: false, reason: info.reason };
     this.refillSquad(squadId, { silent: true });
     const army = squadArmy(this.state, squadId);
-    const r = this.world.sendMarch({ owner: LOCAL_OWNER, squadId, army, targetId, meta: { auto, power: info.power, enemy: info.enemy, stamina: STAMINA.perAttack } });
+    const r = this.world.sendMarch({ owner: LOCAL_OWNER, squadId, army, targetId, speed: this.mods.march, meta: { auto, power: info.power, enemy: info.enemy, stamina: STAMINA.perAttack } });
     if (!r.ok) return r;
     this.state.hunt.stamina -= STAMINA.perAttack;
     if (!this.simulating) { this.save(); this.emit('march', r.march); this.emit('change'); }
@@ -1049,7 +1245,7 @@ class Store extends Emitter {
     for (let pass = 0; left > 0 && pass < 3; pass++) for (const { i } of order) if (left > 0 && take[i] < sent[i]) { take[i]++; left--; }
     // dead share is rounded on the TOTAL (so small fights still lose someone now and then), front lines first
     const deadPer = take.map(() => 0);
-    let deadLeft = Math.round(n * C.deadShare);
+    let deadLeft = Math.round(n * C.deadShare * this.mods.survival); // Stabilizers research: fewer deaths, more wounded
     for (let pass = 0; deadLeft > 0 && pass < n; pass++) for (let i = 0; i < take.length && deadLeft > 0; i++) if (deadPer[i] < take[i]) { deadPer[i]++; deadLeft--; }
     let free = this.infirmaryFree();
     take.forEach((k, i) => {
