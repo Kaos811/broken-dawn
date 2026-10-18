@@ -5,13 +5,23 @@ import {
   SAVE_KEY, SAVE_VERSION, TROOPS, buildingUpgradeCost,
   TROOP_CLASSES, TROOP_IDS, BARRACKS, SQUADS, RESOURCES, GACHA, RARITY, RARITIES,
   LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION,
+  INFIRMARY, CASUALTIES, STAMINA, WORLD, HUNT_REWARDS, CREATURES, creaturePower, MAP,
 } from '../config.js';
 import { isValidPlacement } from '../systems/grid.js';
 import { basePower, squadPower, squadSoldiers, troopPowerBreakdown } from '../systems/power.js';
+import { LocalWorldService } from '../world/worldService.js';
+import { createWorld, sanitizeWorld, dist, marchSeconds, LOCAL_OWNER } from '../world/worldState.js';
+import { squadArmy } from '../world/armies.js';
+import { combatPower, resolveBattle, odds } from '../world/battle.js';
 
-const emptyLines = () => Array.from({ length: SQUADS.lines }, () => ({ type: null, count: 0 }));
+// Line: { type, count, full } -- `count` = healthy troops in the line now, `full` = the count the formation
+// was saved with (casualties lower `count`; healing and Refill bring it back up to `full`).
+const emptyLines = () => Array.from({ length: SQUADS.lines }, () => ({ type: null, count: 0, full: 0 }));
 const emptyLanes = () => Object.fromEntries(TROOP_IDS.map((t) => [t, { count: 0, progress: 0 }]));
 const emptySquad = () => ({ level: 1, lines: emptyLines(), leader: null, armor: null, weapon: null });
+const ORIGINS = [...TROOPS.squadIds, 'reserve'];
+const emptyWounded = () => Object.fromEntries(TROOP_IDS.map((t) => [t, Object.fromEntries(ORIGINS.map((o) => [o, 0]))]));
+const defaultHunt = () => ({ stamina: STAMINA.max, staminaCarry: 0, auto: false, bestKill: 0, firstKills: [], kills: 0, losses: 0, dead: 0, reports: [], reportSeq: 0 });
 
 function defaultState() {
   const buildings = {};
@@ -38,6 +48,9 @@ function defaultState() {
     claims: { beacon: [], milestones: [] },  // one-time Core rewards already claimed
     construction: [],       // running upgrades: [{ id, toLevel, cost, total, progress }] (progress in seconds)
     gacha: { sinceEpic: 0, sinceLegendary: 0, total: 0, history: [] },
+    hunt: defaultHunt(),                       // stage 3: player-side hunt progress (stamina, kills, reports)
+    infirmary: { wounded: emptyWounded(), queue: [] }, // wounded[type][origin squad] + healing batches
+    world: createWorld(),                      // stage 3: shared-world model (entities + marches), see worldService
     lastSaved: Date.now(),
   };
 }
@@ -99,6 +112,14 @@ export function migrate(raw) {
     raw = { ...raw, construction: [] };
     raw.version = 5;
   }
+  // v5 -> v6: World hunts + Infirmary. Everything is kept; the Infirmary is added at Lv 1 (placed on a
+  // free spot if its default one is taken), a world is generated, stamina starts full, and each saved
+  // formation's current counts become its "full" counts.
+  if (num(raw.version, 1) < 6) {
+    raw = { ...raw };
+    for (const sq of Object.values(raw.squads ?? {})) for (const l of Array.isArray(sq?.lines) ? sq.lines : []) if (l) l.full = l.count;
+    raw.version = 6;
+  }
   return raw;
 }
 
@@ -130,6 +151,12 @@ function sanitize(raw) {
     };
     const size = BUILDINGS[id].footprint;
     if (!isValidPlacement(b.gx, b.gy, size, placed)) { b.gx = d.buildings[id].gx; b.gy = d.buildings[id].gy; }
+    if (!isValidPlacement(b.gx, b.gy, size, placed)) {
+      // default spot is taken too (e.g. a new building added to an old save): first free platform spot
+      search: for (let gy = MAP.platformMin; gy <= MAP.platformMax; gy++) for (let gx = MAP.platformMin; gx <= MAP.platformMax; gx++) {
+        if (isValidPlacement(gx, gy, size, placed)) { b.gx = gx; b.gy = gy; break search; }
+      }
+    }
     placed.push({ gx: b.gx, gy: b.gy, size });
     s.buildings[id] = b;
   }
@@ -166,7 +193,8 @@ function sanitize(raw) {
     (Array.isArray(r.lines) ? r.lines : []).slice(0, SQUADS.lines).forEach((l, i) => {
       if (!TROOP_CLASSES[l?.type]) return;
       const n = Math.min(int(l.count), s.troops[l.type] - assigned[l.type]);
-      if (n > 0) { sq.lines[i] = { type: l.type, count: n }; assigned[l.type] += n; }
+      const full = Math.max(n, int(l.full, int(l.count)));
+      if (n > 0 || full > 0) { sq.lines[i] = { type: l.type, count: Math.max(0, n), full }; assigned[l.type] += Math.max(0, n); }
     });
     if (s.leaders[r.leader] && !usedLeaders.has(r.leader)) { sq.leader = r.leader; usedLeaders.add(r.leader); }
     for (const slot of ['armor', 'weapon']) {
@@ -186,6 +214,27 @@ function sanitize(raw) {
     const total = CONSTRUCTION.seconds(cur + 1);
     s.construction.push({ id, toLevel: cur + 1, cost, total, progress: Math.min(total, Math.max(0, num(j.progress, 0))) });
   }
+  // Stage 3: hunt progress, infirmary, world
+  const h = raw.hunt ?? {};
+  s.hunt = {
+    stamina: Math.min(STAMINA.overCap, Math.max(0, num(h.stamina, STAMINA.max))),
+    staminaCarry: Math.max(0, num(h.staminaCarry, 0)),
+    auto: h.auto === true,
+    bestKill: Math.min(WORLD.maxLevel, int(h.bestKill)),
+    firstKills: [...new Set((Array.isArray(h.firstKills) ? h.firstKills : []).map((l) => Math.floor(l)).filter((l) => l >= 1 && l <= WORLD.maxLevel))],
+    kills: int(h.kills), losses: int(h.losses), dead: int(h.dead), reportSeq: int(h.reportSeq),
+    reports: (Array.isArray(h.reports) ? h.reports : []).filter((r) => r && Array.isArray(r.attacker?.lines) && Array.isArray(r.defender?.lines) && Number.isFinite(r.seed)).slice(0, WORLD.reportsKept),
+  };
+  s.infirmary = { wounded: emptyWounded(), queue: [] };
+  for (const t of TROOP_IDS) for (const o of ORIGINS) s.infirmary.wounded[t][o] = int(raw.infirmary?.wounded?.[t]?.[o]);
+  for (const b of Array.isArray(raw.infirmary?.queue) ? raw.infirmary.queue : []) {
+    if (!TROOP_CLASSES[b?.type] || !(int(b.count) > 0)) continue;
+    const from = Object.fromEntries(ORIGINS.map((o) => [o, int(b.from?.[o])]));
+    const sum = ORIGINS.reduce((n, o) => n + from[o], 0);
+    from.reserve += Math.max(0, int(b.count) - sum);
+    s.infirmary.queue.push({ type: b.type, count: int(b.count), energyPer: Math.max(0, num(b.energyPer, INFIRMARY.heal[b.type].energy)), progress: Math.max(0, num(b.progress, 0)), from });
+  }
+  s.world = sanitizeWorld(raw.world) ?? d.world;
   return s;
 }
 
@@ -209,6 +258,9 @@ class Store extends Emitter {
     this.migratedFrom = null;
     this.rng = Math.random;
     this.clock = () => Date.now(); // overridable in tests (daily rewards)
+    // All world access goes through this service (swap for a remote one for PvP; see README).
+    this.world = new LocalWorldService(() => this.state.world, (w) => { this.state.world = w; });
+    this.simulating = false;
   }
 
   setSeed(seed) { this.rng = seed == null ? Math.random : mulberry32(seed); }
@@ -240,10 +292,11 @@ class Store extends Emitter {
     s.beacon.charge = Math.min(BEACON.maxCharge, chargeBefore + BEACON.chargePerSec(s.beacon.level) * secs);
     const trained = this.processTraining(secs);
     const built = this.processConstruction(secs);
+    const hunts = this.simulateWorld(secs);
     this.offlineReport = {
       seconds: secs, capped: elapsed > ECONOMY.offlineCapSeconds,
       energy: s.resources.energy - r0.energy, shards: s.resources.shards - r0.shards, alloy: s.resources.alloy - r0.alloy,
-      charge: s.beacon.charge - chargeBefore, trained, built,
+      charge: s.beacon.charge - chargeBefore, trained, built, hunts,
     };
   }
 
@@ -270,6 +323,9 @@ class Store extends Emitter {
       s.beacon.charge = Math.min(BEACON.maxCharge, s.beacon.charge + BEACON.chargePerSec(s.beacon.level) * dt);
     }
     if (s.construction.length) this.processConstruction(dt);
+    this.tickStamina(dt);
+    if (s.infirmary.queue.length) { const healed = this.processHealing(dt); if (Object.keys(healed).length) { this.save(); this.emit('healed', healed); this.emit('change'); } }
+    this.processWorld(dt);
     if (this.queuedUnits()) {
       const before = this.power.total;
       const done = this.processTraining(dt);
@@ -365,8 +421,10 @@ class Store extends Emitter {
       j.progress += add;
       if (j.progress + 1e-9 < j.total) continue;
       const before = this.power.total;
-      if (j.id === BEACON.id) this.state.beacon.level = j.toLevel;
-      else this.state.buildings[j.id].level = j.toLevel;
+      if (j.id === BEACON.id) {
+        this.state.beacon.level = j.toLevel;
+        this.state.hunt.stamina = Math.max(this.state.hunt.stamina, STAMINA.max); // Beacon level-up refills stamina
+      } else this.state.buildings[j.id].level = j.toLevel;
       this.state.construction.splice(this.state.construction.indexOf(j), 1);
       done.push({ id: j.id, level: j.toLevel });
       this.emit('upgrade', j.id, { before, after: this.power.total });
@@ -494,7 +552,8 @@ class Store extends Emitter {
     if (!sq) return { ok: false, reason: 'Unknown squad' };
     if (!this.squadUnlocked(squadId)) return { ok: false, reason: `Unlocks at Command Center Lv ${SQUADS[squadId].unlockCC}` };
     if (!Array.isArray(lines) || lines.length !== SQUADS.lines) return { ok: false, reason: 'Bad formation' };
-    const clean = lines.map((l) => (TROOP_CLASSES[l?.type] && Math.floor(l.count) > 0 ? { type: l.type, count: Math.floor(l.count) } : { type: null, count: 0 }));
+    if (this.squadMarch(squadId)) return { ok: false, reason: `${SQUADS[squadId].name} is out on a march` };
+    const clean = lines.map((l) => (TROOP_CLASSES[l?.type] && Math.floor(l.count) > 0 ? { type: l.type, count: Math.floor(l.count), full: Math.floor(l.count) } : { type: null, count: 0, full: 0 }));
     for (const t of TROOP_IDS) {
       const want = clean.reduce((n, l) => n + (l.type === t ? l.count : 0), 0);
       const avail = this.availableFor(t, squadId);
@@ -627,8 +686,9 @@ class Store extends Emitter {
     if (!info.can) return { ok: false, reason: 'Already claimed today. Come back tomorrow.' };
     this.state.daily = { lastDay: this.dayIndex(), streak: info.streak };
     this.grantCores(info.reward, 'daily');
+    this.state.hunt.stamina = Math.min(STAMINA.overCap, this.state.hunt.stamina + STAMINA.dailyBonus); // +20 stamina too
     this.save(); this.emit('change');
-    return { ok: true, cores: info.reward, streak: info.streak, bonus: info.reward > CORES.daily.base };
+    return { ok: true, cores: info.reward, streak: info.streak, bonus: info.reward > CORES.daily.base, stamina: STAMINA.dailyBonus };
   }
   beaconRewards() {
     const out = [];
@@ -754,6 +814,313 @@ class Store extends Emitter {
     this.emit('pull', results);
     this.emit('change');
     return { ok: true, results, cost };
+  }
+
+  // =================================================================== STAGE 3 ==
+
+  // ---- Infirmary -------------------------------------------------------
+  get infirmaryLevel() { return this.state.buildings.infirmary.level; }
+  infirmaryCapacity() { return INFIRMARY.capacity(this.infirmaryLevel); }
+  woundedPool(type) { return ORIGINS.reduce((n, o) => n + this.state.infirmary.wounded[type][o], 0); }
+  woundedQueued(type) { return this.state.infirmary.queue.reduce((n, b) => n + (b.type === type ? b.count : 0), 0); }
+  woundedTotal() { return TROOP_IDS.reduce((n, t) => n + this.woundedPool(t) + this.woundedQueued(t), 0); }
+  infirmaryFree() { return Math.max(0, this.infirmaryCapacity() - this.woundedTotal()); }
+  healUnitTime(type) { return INFIRMARY.heal[type].seconds / INFIRMARY.healSpeed(this.infirmaryLevel); }
+  healQueueSeconds() {
+    return this.state.infirmary.queue.reduce((n, b) => n + b.count * this.healUnitTime(b.type), 0) - (this.state.infirmary.queue[0]?.progress ?? 0);
+  }
+  maxHealable(type) { return Math.min(this.woundedPool(type), Math.floor(this.state.resources.energy / INFIRMARY.heal[type].energy)); }
+
+  healInfo(type, n) {
+    if (!TROOP_CLASSES[type]) return { can: false, reason: 'Unknown troop' };
+    n = Math.floor(n);
+    const pool = this.woundedPool(type), cost = n * INFIRMARY.heal[type].energy;
+    let reason = null;
+    if (pool < 1) reason = `No wounded ${TROOP_CLASSES[type].plural}`;
+    else if (n < 1) reason = 'Not enough Energy';
+    else if (n > pool) reason = `Only ${pool} wounded`;
+    else if (this.state.resources.energy < cost) reason = 'Not enough Energy';
+    return { can: !reason, reason, cost, n };
+  }
+
+  // Queues n wounded of `type` for healing (Energy paid now). Healed troops rejoin their squad.
+  heal(type, n) {
+    const info = this.healInfo(type, n);
+    if (!info.can) return { ok: false, reason: info.reason };
+    const w = this.state.infirmary.wounded[type];
+    const from = Object.fromEntries(ORIGINS.map((o) => [o, 0]));
+    let left = info.n;
+    for (const o of ORIGINS) { const k = Math.min(left, w[o]); w[o] -= k; from[o] += k; left -= k; }
+    this.state.resources.energy -= info.cost;
+    this.state.infirmary.queue.push({ type, count: info.n, energyPer: INFIRMARY.heal[type].energy, progress: 0, from });
+    this.save(); this.emit('change');
+    return { ok: true, n: info.n, cost: info.cost };
+  }
+  healAll() {
+    let n = 0, cost = 0;
+    for (const t of TROOP_IDS) { const m = this.maxHealable(t); if (m > 0) { const r = this.heal(t, m); if (r.ok) { n += r.n; cost += r.cost; } } }
+    return n ? { ok: true, n, cost } : { ok: false, reason: this.woundedTotal() - TROOP_IDS.reduce((k, t) => k + this.woundedQueued(t), 0) > 0 ? 'Not enough Energy' : 'No wounded waiting' };
+  }
+  // Cancels a healing batch: full Energy refund for every unit not yet healed; they go back to waiting.
+  cancelHeal(index) {
+    const q = this.state.infirmary.queue, b = q[index];
+    if (!b) return { ok: false, reason: 'Nothing to cancel' };
+    q.splice(index, 1);
+    const refund = b.count * b.energyPer;
+    this.state.resources.energy += refund;
+    for (const o of ORIGINS) this.state.infirmary.wounded[b.type][o] += b.from[o];
+    this.save(); this.emit('change');
+    return { ok: true, refund, n: b.count };
+  }
+  processHealing(dt) {
+    const healed = {};
+    const q = this.state.infirmary.queue;
+    while (dt > 1e-9 && q.length) {
+      const b = q[0], ut = this.healUnitTime(b.type), need = ut - b.progress;
+      if (dt + 1e-9 < need) { b.progress += dt; break; }
+      dt -= need; b.progress = 0; b.count -= 1;
+      const origin = ORIGINS.find((o) => b.from[o] > 0) ?? 'reserve';
+      if (b.from[origin] > 0) b.from[origin] -= 1;
+      this.state.troops[b.type] += 1;
+      if (origin !== 'reserve' && !this.squadMarch(origin)) {
+        const line = this.state.squads[origin].lines.find((l) => l.type === b.type && l.count < l.full);
+        if (line) line.count += 1;
+      }
+      healed[b.type] = (healed[b.type] ?? 0) + 1;
+      if (b.count <= 0) q.shift();
+    }
+    return healed;
+  }
+
+  // ---- Squads in the field --------------------------------------------
+  squadMarch(id) { return this.world.marchFor(LOCAL_OWNER, id); }
+  squadStatus(id) {
+    if (!this.squadUnlocked(id)) return 'locked';
+    const m = this.squadMarch(id);
+    if (m) return m.phase === 'out' ? 'marching' : 'returning';
+    return this.squadSoldiers(id) > 0 || this.refillable(id) > 0 ? 'home' : 'empty';
+  }
+  refillable(id) {
+    const sq = this.state.squads[id];
+    const need = {};
+    for (const l of sq.lines) if (l.type && l.full > l.count) need[l.type] = (need[l.type] ?? 0) + (l.full - l.count);
+    return Object.entries(need).reduce((n, [t, k]) => n + Math.min(k, this.readyCount(t)), 0);
+  }
+  // Tops lines back up to their saved size from ready (unassigned, healthy) troops.
+  refillSquad(id, { silent = false } = {}) {
+    if (this.squadMarch(id)) return { ok: false, reason: `${SQUADS[id].name} is out on a march` };
+    let added = 0;
+    for (const l of this.state.squads[id].lines) {
+      if (!l.type || l.full <= l.count) continue;
+      const k = Math.min(l.full - l.count, this.readyCount(l.type));
+      if (k > 0) { l.count += k; added += k; }
+    }
+    if (added && !silent) { this.save(); this.emit('squad', id); this.emit('change'); }
+    return { ok: added > 0, added, reason: added ? null : 'Nothing to refill' };
+  }
+  squadArmy(id) { return squadArmy(this.state, id); }
+  squadCombatPower(id) { return combatPower(squadArmy(this.state, id)); }
+
+  // ---- Stamina -----------------------------------------------------------
+  get staminaRegenSeconds() { return 3600 / STAMINA.regenPerHour; }
+  staminaNext() { return this.state.hunt.stamina >= STAMINA.max ? 0 : Math.max(0, this.staminaRegenSeconds - this.state.hunt.staminaCarry); }
+  tickStamina(dt) {
+    const h = this.state.hunt;
+    if (h.stamina >= STAMINA.max) { h.staminaCarry = 0; return; }
+    h.staminaCarry += dt;
+    const per = this.staminaRegenSeconds;
+    while (h.staminaCarry >= per && h.stamina < STAMINA.max) { h.staminaCarry -= per; h.stamina += 1; }
+    if (h.stamina >= STAMINA.max) h.staminaCarry = 0;
+  }
+
+  // ---- Hunting -------------------------------------------------------------
+  maxAttackLevel() { return Math.min(WORLD.maxLevel, this.state.hunt.bestKill + WORLD.levelHeadroom); }
+  creatures() { return this.world.entities('creature'); }
+  creaturePowerOf(e) { return creaturePower(e.level, !!CREATURES[e.type]?.elite); }
+  firstKillCores(level) {
+    if (this.state.hunt.firstKills.includes(level)) return 0;
+    return level % 5 === 0 ? CORES.battle.firstKillElite : CORES.battle.firstKill;
+  }
+  killRewards(e) {
+    const m = CREATURES[e.type]?.elite ? HUNT_REWARDS.eliteMult : 1;
+    return { energy: Math.round(HUNT_REWARDS.energy(e.level) * m), alloy: Math.round(HUNT_REWARDS.alloy(e.level) * m), shards: Math.round(HUNT_REWARDS.shards(e.level) * m) };
+  }
+
+  attackInfo(squadId, targetId) {
+    const t = this.world.get(targetId);
+    const out = { can: false, reason: null, target: t, travel: 0, power: 0, enemy: 0 };
+    if (!t) { out.reason = 'Target is gone'; return out; }
+    out.enemy = this.creaturePowerOf(t);
+    if (!this.squadUnlocked(squadId)) out.reason = `Unlocks at Command Center Lv ${SQUADS[squadId].unlockCC}`;
+    else if (this.squadMarch(squadId)) out.reason = `${SQUADS[squadId].name} is already out`;
+    else if (this.squadSoldiers(squadId) + this.refillable(squadId) < 1) out.reason = `No healthy troops in ${SQUADS[squadId].name}`;
+    else if (t.kind === 'creature' && t.level > this.maxAttackLevel()) out.reason = `Defeat a Lv ${t.level - 1} creature first`;
+    else if (this.state.hunt.stamina < STAMINA.perAttack) out.reason = `Need ${STAMINA.perAttack} stamina`;
+    const c = this.world.canSend({ owner: LOCAL_OWNER, squadId, targetId });
+    if (!out.reason && !c.ok) out.reason = c.reason;
+    out.travel = c.travel ?? marchSeconds(dist(t, { x: WORLD.baseX, y: WORLD.baseY }));
+    // power if it marched now (after refill)
+    const sq = this.state.squads[squadId];
+    const saved = sq.lines.map((l) => l.count);
+    if (!this.squadMarch(squadId)) for (const l of sq.lines) if (l.type && l.full > l.count) l.count += Math.min(l.full - l.count, this.readyCount(l.type));
+    out.power = this.squadCombatPower(squadId);
+    sq.lines.forEach((l, i) => { l.count = saved[i]; });
+    out.odds = odds(out.power, out.enemy);
+    out.can = !out.reason;
+    return out;
+  }
+
+  // Sends a squad (healthy troops only, refilled to its saved formation first) to attack a target.
+  attack(squadId, targetId, { auto = false } = {}) {
+    const info = this.attackInfo(squadId, targetId);
+    if (!info.can) return { ok: false, reason: info.reason };
+    this.refillSquad(squadId, { silent: true });
+    const army = squadArmy(this.state, squadId);
+    const r = this.world.sendMarch({ owner: LOCAL_OWNER, squadId, army, targetId, meta: { auto, power: info.power, enemy: info.enemy, stamina: STAMINA.perAttack } });
+    if (!r.ok) return r;
+    this.state.hunt.stamina -= STAMINA.perAttack;
+    if (!this.simulating) { this.save(); this.emit('march', r.march); this.emit('change'); }
+    return { ok: true, march: r.march, travel: info.travel };
+  }
+  recall(squadId) {
+    const m = this.squadMarch(squadId);
+    if (!m) return { ok: false, reason: 'Not out' };
+    const r = this.world.recallMarch(m.id);
+    if (!r.ok) return r;
+    this.state.hunt.stamina = Math.min(STAMINA.overCap, this.state.hunt.stamina + (m.meta?.stamina ?? 0)); // refund
+    this.save(); this.emit('change');
+    return { ok: true };
+  }
+  setAuto(on) { this.state.hunt.auto = !!on; this.save(); this.emit('change'); if (on) this.autoStep(); return this.state.hunt.auto; }
+
+  // Auto mode: every idle squad attacks the highest-level creature it out-powers by >= 10%, nearest first.
+  autoPick(squadId) {
+    const sq = this.state.squads[squadId];
+    const saved = sq.lines.map((l) => l.count);
+    for (const l of sq.lines) if (l.type && l.full > l.count) l.count += Math.min(l.full - l.count, this.readyCount(l.type));
+    const power = this.squadCombatPower(squadId);
+    sq.lines.forEach((l, i) => { l.count = saved[i]; });
+    if (power <= 0) return null;
+    const home = { x: WORLD.baseX, y: WORLD.baseY }, maxL = this.maxAttackLevel();
+    const ok = this.creatures().filter((e) => !e.busy && e.level <= maxL && power >= WORLD.autoMargin * this.creaturePowerOf(e));
+    ok.sort((a, b) => b.level - a.level || dist(a, home) - dist(b, home));
+    return ok[0] ?? null;
+  }
+  autoStep() {
+    if (!this.state.hunt.auto) return 0;
+    let sent = 0;
+    for (const id of TROOPS.squadIds) {
+      if (this.state.hunt.stamina < STAMINA.perAttack) break;
+      if (!this.squadUnlocked(id) || this.squadMarch(id)) continue;
+      const t = this.autoPick(id);
+      if (t && this.attack(id, t.id, { auto: true }).ok) sent++;
+    }
+    return sent;
+  }
+
+  processWorld(dt) {
+    const events = this.world.tick(dt);
+    for (const ev of events) {
+      if (ev.type === 'battle') this.onBattle(ev);
+      else if (ev.type === 'home' && !this.simulating) this.emit('marchHome', ev.march);
+    }
+    const sent = this.autoStep();
+    if ((events.length || sent) && !this.simulating) { this.save(); this.emit('change'); }
+    return events;
+  }
+
+  // Casualties: the sim decides where losses land; CASUALTIES rates decide how many.
+  applyCasualties(squadId, army, result, win) {
+    const C = win ? CASUALTIES.win : CASUALTIES.loss;
+    const sq = this.state.squads[squadId];
+    const sent = army.lines.map((l, i) => (l.type && sq.lines[i]?.type === l.type ? Math.min(l.count, sq.lines[i].count) : 0));
+    const total = sent.reduce((a, b) => a + b, 0);
+    const out = { dead: {}, wounded: {}, overflow: 0, total: 0 };
+    if (!total) return out;
+    const simRate = result.fallen.A.reduce((a, b) => a + b, 0) / Math.max(1, army.lines.reduce((n, l) => n + (l.count || 0), 0));
+    const n = Math.min(total, Math.round(total * Math.min(C.max, Math.max(C.min, simRate))));
+    // largest-remainder split by exposure
+    const w = sent.map((k, i) => (k ? (result.fallen.A[i] ?? 0) + k * CASUALTIES.lineWeight[i] * 0.5 : 0));
+    const ws = w.reduce((a, b) => a + b, 0) || 1;
+    const raw = w.map((x) => (x / ws) * n);
+    const take = raw.map((x, i) => Math.min(sent[i], Math.floor(x)));
+    let left = n - take.reduce((a, b) => a + b, 0);
+    const order = raw.map((x, i) => ({ i, f: x - Math.floor(x) })).sort((a, b) => b.f - a.f);
+    for (let pass = 0; left > 0 && pass < 3; pass++) for (const { i } of order) if (left > 0 && take[i] < sent[i]) { take[i]++; left--; }
+    // dead share is rounded on the TOTAL (so small fights still lose someone now and then), front lines first
+    const deadPer = take.map(() => 0);
+    let deadLeft = Math.round(n * C.deadShare);
+    for (let pass = 0; deadLeft > 0 && pass < n; pass++) for (let i = 0; i < take.length && deadLeft > 0; i++) if (deadPer[i] < take[i]) { deadPer[i]++; deadLeft--; }
+    let free = this.infirmaryFree();
+    take.forEach((k, i) => {
+      if (!k) return;
+      const t = sq.lines[i].type;
+      const dead = deadPer[i], hurt = k - dead;
+      const admitted = Math.min(hurt, free); free -= admitted;
+      const overflow = hurt - admitted;
+      sq.lines[i].count -= k;
+      this.state.troops[t] -= k;
+      this.state.infirmary.wounded[t][squadId] += admitted;
+      out.dead[t] = (out.dead[t] ?? 0) + dead + overflow;
+      out.wounded[t] = (out.wounded[t] ?? 0) + admitted;
+      out.overflow += overflow;
+    });
+    out.total = n;
+    out.deadTotal = Object.values(out.dead).reduce((a, b) => a + b, 0);
+    out.woundedTotal = Object.values(out.wounded).reduce((a, b) => a + b, 0);
+    this.state.hunt.dead += out.deadTotal;
+    return out;
+  }
+
+  onBattle({ march, target, defender, result }) {
+    const h = this.state.hunt;
+    const win = result.winner === 'attacker';
+    const before = this.power.total;
+    const casualties = this.applyCasualties(march.squadId, march.army, result, win);
+    const loot = { energy: 0, alloy: 0, shards: 0, cores: 0 };
+    let firstKill = false;
+    if (win && target.kind === 'creature') {
+      Object.assign(loot, this.killRewards(target));
+      this.state.resources.energy += loot.energy; this.state.resources.alloy += loot.alloy; this.state.resources.shards += loot.shards;
+      const fk = this.firstKillCores(target.level);
+      if (fk > 0) { h.firstKills.push(target.level); loot.cores = this.grantCores(fk, 'battle'); firstKill = true; }
+      h.bestKill = Math.max(h.bestKill, target.level);
+      h.kills += 1;
+    } else h.losses += 1;
+    const report = {
+      id: `r${++h.reportSeq}`, at: Date.now(), squadId: march.squadId, win, seed: result.seed, rounds: result.rounds,
+      target: { id: target.id, kind: target.kind, type: target.type, level: target.level, x: target.x, y: target.y },
+      power: { squad: march.meta?.power ?? combatPower(march.army), enemy: march.meta?.enemy ?? 0 },
+      attacker: march.army, defender, casualties, loot, firstKill, auto: !!march.meta?.auto, offline: this.simulating,
+    };
+    h.reports.unshift(report);
+    if (h.reports.length > WORLD.reportsKept) h.reports.length = WORLD.reportsKept;
+    const acc = this.simAcc;
+    if (acc) {
+      acc.fights++; if (win) acc.wins++;
+      for (const k of ['energy', 'alloy', 'shards', 'cores']) acc[k] += loot[k];
+      acc.dead += casualties.deadTotal ?? 0; acc.wounded += casualties.woundedTotal ?? 0;
+    }
+    if (!this.simulating) this.emit('hunt', report, { before, after: this.power.total });
+    return report;
+  }
+  // Re-runs the (deterministic) battle of a stored report for the replay.
+  replayOf(report) { return resolveBattle(report.attacker, report.defender, report.seed); }
+
+  // Offline: healing, stamina, marches, respawns and Auto all advance together in 5 s steps.
+  simulateWorld(secs) {
+    const healed = {};
+    const acc = this.simAcc = { fights: 0, wins: 0, energy: 0, alloy: 0, shards: 0, cores: 0, dead: 0, wounded: 0, healed };
+    this.simulating = true;
+    try {
+      for (let t = 0; t < secs; t += 5) {
+        const dt = Math.min(5, secs - t);
+        for (const [k, v] of Object.entries(this.processHealing(dt))) healed[k] = (healed[k] ?? 0) + v;
+        this.tickStamina(dt);
+        this.processWorld(dt);
+      }
+    } finally { this.simulating = false; this.simAcc = null; }
+    return acc;
   }
 }
 
