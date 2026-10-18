@@ -1,3 +1,4 @@
+import { audio } from '../../audio/audio.js';
 import { PALETTE, RARITY, TROOP_CLASSES, LEADERS, GEAR } from '../../config.js';
 import { text, panelBg, hexColor } from '../widgets.js';
 import { store } from '../../state/store.js';
@@ -49,7 +50,7 @@ export function tapZone(ui, c, x, y, w, h, onTap, name) {
   let down = false;
   hit.on('pointerdown', () => { down = true; });
   hit.on('pointerout', () => { down = false; });
-  hit.on('pointerup', () => { if (down) ui.time.delayedCall(0, onTap); down = false; });
+  hit.on('pointerup', () => { if (down) { audio.play(hit.zoneDisabled ? 'error' : 'tap'); ui.time.delayedCall(0, onTap); } down = false; });
   hit.zoneName = name;
   hit.zoneDisabled = false;
   c.add(hit);

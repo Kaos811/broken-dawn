@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE } from '../config.js';
+import { audio } from '../audio/audio.js';
 
 export const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
@@ -58,10 +59,15 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
     t.setColor(s.text);
   };
   draw();
-  hit.on('pointerdown', () => { pressed = true; c.setScale(0.97); });
-  hit.on('pointerout', () => { pressed = false; c.setScale(1); });
+  // juice: squash on press, springy release, click sound + a light haptic tick
+  const springTo = (s, ms, ease) => { if (!c.active) return; scene.tweens.killTweensOf(c); scene.tweens.add({ targets: c, scale: s, duration: ms, ease }); };
+  hit.on('pointerdown', () => {
+    pressed = true; springTo(0.93, 70, 'Quad.easeOut');
+    if (enabled) { audio.play('tap'); audio.haptic(8); } else audio.play('error');
+  });
+  hit.on('pointerout', () => { pressed = false; springTo(1, 120, 'Quad.easeOut'); });
   hit.on('pointerup', () => {
-    c.setScale(1);
+    springTo(1, 220, 'Back.easeOut');
     // defer so handlers can safely destroy this button (e.g. closing a modal)
     if (pressed && enabled) scene.time.delayedCall(0, () => onClick?.());
     pressed = false;
