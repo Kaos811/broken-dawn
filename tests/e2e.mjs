@@ -1,4 +1,4 @@
-// Headless e2e test for stages 1, 2 and 3. Runs against the single-file build
+// Headless e2e test for stages 1, 2, 3 and 4. Runs against the single-file build
 // (file://) and the dist/ build (served over http) at a 390x844 phone viewport.
 //   npm run build && npm test
 import { chromium } from 'playwright-core';
@@ -363,7 +363,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let m = await state();
-    check('v2 save migrates to version 6 (via v3, v4, v5)', m.version === 6);
+    check('v2 save migrates to version 7 (via v3, v4, v5, v6)', m.version === 7);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
@@ -384,7 +384,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v3 save migrates to v6: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 6 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 save migrates to v7: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 7 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
     check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload(); await ready(); return (await state()).resources.cores === 10; })());
 
@@ -400,7 +400,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v4 save migrates to v6: levels, Cores, claims kept; no construction', m.version === 6 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
+    check('v4 save migrates to v7: levels, Cores, claims kept; no construction', m.version === 7 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
     check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
 
     // --- 1. Save migration from a stage-1 (v1) save
@@ -416,7 +416,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v1 save migrates to version 6', s.version === 6);
+    check('v1 save migrates to version 7', s.version === 7);
     check('migration keeps buildings, levels, Energy and Beacon', s.buildings.barracks.gy === 15 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
     check('migration adds Shards (500), 10 Cores, Alloy, troops, squad lines', Math.floor(s.resources.shards) === 500 && s.resources.cores === 10 && s.resources.alloy < 5 && s.troops.sentinel === 0 && s.squads.alpha.lines.length === 3 && s.squads.alpha.leader === null);
     check('migration keeps a backup of the v1 save', await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v1')));
@@ -622,7 +622,7 @@ async function runStage2(url, label, takeShots) {
       st.setSeed(null); st.save();
       return [a.id, a.result, b.result, b.stars, c.result, st.state.resources.shards - sh0];
     });
-    check('duplicate leader stars up, then converts to Shards at 5★', dup[0] === 'kael' && dup[1] === 'new' && dup[2] === 'star' && dup[3] === 2 && dup[4] === 'shards' && dup[5] === 50, JSON.stringify(dup));
+    check('duplicate leader stars up, then converts to Shards at 5★', dup[0] === 'kael' && dup[1] === 'new' && dup[2] === 'star' && dup[3] === 2 && dup[4] === 'shards' && Math.abs(dup[5] - 50) < 1e-6, JSON.stringify(dup));
 
     // --- 5b. Beacon Cores: earned only (daily streak, Beacon levels, milestones)
     const passive = await ev(() => { const st = __BD.store; const snap = JSON.stringify(st.state); st.state.resources.cores = 4; st.tick(3600); const c = st.state.resources.cores; st.state = JSON.parse(snap); return c; });
@@ -861,14 +861,14 @@ async function runStage3(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v5 save migrates to v6', s.version === 6);
+    check('v5 save migrates to v6 (and on to v7)', s.version === 7);
     check('v6 keeps buildings, levels, resources, troops and squads', s.buildings.armory.gx === 16 && s.buildings.armory.gy === 8 && s.buildings.commandCenter.level === 3 && s.beacon.level === 3 && s.resources.cores === 6 && s.troops.sentinel === 8 && s.squads.alpha.level === 2 && s.squads.alpha.lines[0].count === 6, JSON.stringify(s.buildings));
     const inf = s.buildings.infirmary;
     check('v6 adds the Infirmary at Lv 1 on a free platform spot (default tile was taken by the Armory)', inf.level === 1 && !(inf.gx === 16 && inf.gy === 8) && (await ev(() => __BD.store.canPlace('infirmary', __BD.store.state.buildings.infirmary.gx, __BD.store.state.buildings.infirmary.gy))), JSON.stringify(inf));
     check('v6 formation lines get full = saved count', s.squads.alpha.lines[0].full === 6 && s.squads.alpha.lines[1].full === 4);
     check('v6 generates a world: 40 creatures + your base; stamina starts full (100)', s.world.entities.filter((e) => e.kind === 'creature').length === 40 && s.world.entities.some((e) => e.kind === 'base' && e.owner === 'local') && s.hunt.stamina === 100);
     check('v5 migration keeps a backup of the v5 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v5') || '{}').version === 5));
-    check('Infirmary adds +5 Base Power (Lv 1)', (await ev(() => __BD.store.power.building)) === 30 + 10 + 45 + 0 + 5, String(await ev(() => __BD.store.power.building)));
+    check('Infirmary adds +5 Base Power (Lv 1) (+5 Archive, unsealed at Beacon Lv 3)', (await ev(() => __BD.store.power.building)) === 30 + 10 + 45 + 0 + 5 + 5, String(await ev(() => __BD.store.power.building)));
     check('Infirmary sprite is drawn on the base', await ev(() => !!__BD.base().sprites.infirmary?.img.visible));
 
     // --- 1. fresh game with a seeded world and three squads
@@ -1159,6 +1159,294 @@ async function runStage3(url, label, takeShots) {
   await browser.close();
 }
 
+// ------------------------------------------------------------------ STAGE 4 --
+async function runStage4(url, label, takeShots) {
+  console.log(`\n=== stage 4 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('pageerror', (e) => errors.push(e.message));
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(400); };
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
+  const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+  const hideToast = () => ev(() => { const u = __BD.ui(); u.tweens.killTweensOf(u.toastBox); u.toastBox.setVisible(false); });
+  const shot = async (name) => { if (takeShots) { await sleep(350); await hideToast(); await frames(2); await page.screenshot({ path: join(ROOT, 'screens', name) }); console.log(`      saved screens/${name}`); } };
+  const ctl = async (label, { meta, kind } = {}) => {
+    for (let tries = 0; tries < 15; tries++) {
+      const all = await ev(() => __BD.controls());
+      const m = all.filter((c) => (label == null || c.label === label) && (meta === undefined || c.meta === meta) && (!kind || c.kind === kind) && c.enabled);
+      if (m.length) return m[m.length - 1];
+      await sleep(200);
+    }
+    return null;
+  };
+  const click = async (label, opts = {}) => {
+    await frames(2);
+    const c = await ctl(label, opts);
+    if (!c) throw new Error(`control not found: ${label} ${JSON.stringify(opts)}`);
+    await page.mouse.click(c.x, c.y); await frames(4); await sleep(opts.wait ?? 300);
+    return c;
+  };
+  const waitTrue = async (fn, arg) => { for (let i = 0; i < 25; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
+  const tab = async (id) => { const p = await ev((id) => __BD.tabToPage(id), id); await page.mouse.click(p.x, p.y); await frames(4); await sleep(350); };
+  const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload(); await ready(); };
+  const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
+
+  try {
+    await page.goto(url); await ready();
+
+    // --- 0. v6 save -> v7: every troop is T1, lanes/formations/wounded/heal queue carry over, Archive added (sealed)
+    await ev(() => {
+      localStorage.clear();
+      localStorage.setItem('brokenDawn.save.v1', JSON.stringify({
+        version: 6, resources: { energy: 800, shards: 90, alloy: 40, cores: 12 }, beacon: { level: 2, charge: 10 },
+        buildings: { commandCenter: { level: 3, gx: 12, gy: 8 }, barracks: { level: 2, gx: 8, gy: 12 }, armory: { level: 2, gx: 16, gy: 16 }, infirmary: { level: 1, gx: 16, gy: 8 } },
+        troops: { sentinel: 12, bearer: 5, voyager: 0 },
+        training: { sentinel: { count: 3, progress: 1.5 }, bearer: { count: 0, progress: 0 }, voyager: { count: 0, progress: 0 } },
+        squads: { alpha: { level: 2, lines: [{ type: 'sentinel', count: 6, full: 8 }, { type: 'bearer', count: 4, full: 4 }, { type: null, count: 0, full: 0 }], leader: null, armor: null, weapon: null } },
+        infirmary: { wounded: { sentinel: { alpha: 2, bravo: 0, charlie: 0, reserve: 0 }, bearer: { alpha: 0, bravo: 0, charlie: 0, reserve: 0 }, voyager: { alpha: 0, bravo: 0, charlie: 0, reserve: 0 } }, queue: [] },
+        hunt: { stamina: 70, staminaCarry: 0, auto: false, bestKill: 3, firstKills: [1, 2, 3], kills: 5, losses: 1, dead: 2, reports: [], reportSeq: 6 },
+        leaders: {}, gear: {}, construction: [], claims: { beacon: [2], milestones: [] }, lastSaved: Date.now(),
+      }));
+      __BD.store.save = () => {};
+    });
+    await page.reload(); await ready();
+    let s = await state();
+    check('v6 save migrates to v7', s.version === 7);
+    check('v7 keeps every troop as T1 (sentinel/bearer ids unchanged), no higher tiers', s.troops.sentinel === 12 && s.troops.bearer === 5 && s.troops.bulwark === 0 && s.troops.lancer === 0 && s.troops.aegis === 0, JSON.stringify(s.troops));
+    check('v7 keeps the training lane (3 Sentinels, progress 1.5) as a T1 job', s.training.sentinel.count === 3 && near(s.training.sentinel.progress, 1.5, 0.6) && s.training.sentinel.unit === 'sentinel' && s.training.sentinel.from === null, JSON.stringify(s.training.sentinel));
+    check('v7 keeps formations, wounded and hunt progress', s.squads.alpha.lines[0].type === 'sentinel' && s.squads.alpha.lines[0].count === 6 && s.squads.alpha.lines[0].full === 8 && s.infirmary.wounded.sentinel.alpha === 2 && s.hunt.bestKill === 3 && s.hunt.stamina === 70 && s.resources.cores === 12);
+    check('v7 starts with no research', JSON.stringify(s.research) === JSON.stringify({ levels: {}, job: null }));
+    check('v7 adds the Archive at Lv 1 on its default tile (8,8)', s.buildings.archive.level === 1 && s.buildings.archive.gx === 8 && s.buildings.archive.gy === 8);
+    check('v6 migration keeps a backup of the v6 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v6') || '{}').version === 6));
+    check('a sealed Archive (Beacon Lv 2) adds no Power', (await ev(() => __BD.store.power.building)) === 30 + 30 + 10 + 0 + 5, String(await ev(() => __BD.store.power.building)));
+
+    // --- 1. sealed Archive until Beacon Lv 3
+    const sealed = await ev(() => ({ r: __BD.store.researchInfo('energyYield').reason, u: __BD.store.upgradeInfo('archive').reason, label: __BD.base().sprites.archive.label.text }));
+    check('Archive is sealed below Beacon Lv 3 (no research, no upgrade, locked label)', /unlocks at Beacon Lv 3/.test(sealed.r) && sealed.u === 'Unlocks at Beacon Lv 3' && /🔒/.test(sealed.label), JSON.stringify(sealed));
+    await ev(() => __BD.base().select('archive')); await sleep(400);
+    check('sealed Archive panel explains the unlock', await waitTrue(() => /Sealed until Beacon Lv 3/.test(__BD.ui().pStats.text) && __BD.ui().pOpen.labelText.text === 'Research'));
+    await ev(() => { const st = __BD.store; st.state.beacon.level = 2; st.state.beacon.charge = 100; st.state.resources.energy = 5000; st.upgrade('beacon'); st.speedUpConstruction('beacon', 1e6); });
+    check('Beacon Lv 3 unseals the Archive: +5 Power, research possible', await ev(() => __BD.store.archiveUnlocked() && __BD.store.power.building === 30 + 45 + 10 + 0 + 5 + 5 && __BD.store.researchInfo('energyYield').can && !/🔒/.test(__BD.base().sprites.archive.label.text)));
+    await ev(() => __BD.ui().closePanel(true));
+
+    // --- 2. fresh game at Beacon Lv 3: research via the Archive screen
+    await ev(() => { localStorage.clear(); __BD.store.save = () => {}; }); await page.reload(); await ready();
+    await ev(() => {
+      const st = __BD.store; delete st.save;
+      Object.assign(st.state.beacon, { level: 3, charge: 0 });
+      Object.assign(st.state.resources, { energy: 50000, alloy: 5000, shards: 5000 });
+      st.state.buildings.commandCenter.level = 5;
+      st.save();
+    });
+    await page.reload(); await ready();
+    await ev(() => __BD.base().select('archive')); await sleep(400);
+    await click('Research');
+    check('Archive panel → Research opens the research tree', await waitTrue(() => __BD.ui().screen?.id === 'archive'));
+    check('research tree: 4 branches (Economy, Military, Healing, World)', await waitTrue(() => ['Economy', 'Military', 'Healing', 'World'].every((t) => __BD.controls().some((c) => c.kind === 'tab' && c.label === t))));
+    const gate = await ev(() => { const st = __BD.store; return { tier2: st.researchInfo('tier2').reason, tier3: st.researchInfo('tier3').reason, e: st.researchInfo('energyYield') }; });
+    check('Lv 1 research: 150 Energy + 20 Alloy + 30 Shards, 30 s', JSON.stringify(gate.e.cost) === JSON.stringify({ energy: 150, alloy: 20, shards: 30 }) && gate.e.seconds === 30 && gate.e.can);
+    check('tier research gated by Barracks level (T2: Barracks Lv 5, T3: Tier II first)', gate.tier2 === 'Needs Barracks Lv 5' && gate.tier3 === 'Research Tier II Protocols first', JSON.stringify(gate));
+    const r0 = await state();
+    await click('Lv 1', { meta: 'research-energyYield' });
+    s = await state();
+    check('tapping a node starts it in the single research slot (resources paid up front)', s.research.job?.id === 'energyYield' && s.research.job.toLevel === 1 && near(r0.resources.alloy - s.resources.alloy, 20, 0.5) && near(r0.resources.shards - s.resources.shards, 30, 0.5), JSON.stringify(s.research.job));
+    check('only one research at a time', /^Archive busy: Beacon Harmonics Lv 1/.test(await ev(() => __BD.store.researchInfo('alloyYield').reason)));
+    await ev(() => __BD.store.tick(9)); await sleep(300);
+    await shot('stage4-research-in-progress.png');
+    check('the current project shows a countdown', await waitTrue(() => __BD.ui().screen?.container.list.some((o) => o.text && /left$/.test(o.text))));
+    const rc = await ev(() => ({ e: __BD.store.state.resources.energy, a: __BD.store.state.resources.alloy, s: __BD.store.state.resources.shards }));
+    await click('Cancel', { meta: 'cancel-research' });
+    s = await state();
+    check('Cancel refunds the research in full', !s.research.job && near(s.resources.alloy - rc.a, 20, 0.5) && near(s.resources.shards - rc.s, 30, 0.5) && s.resources.energy - rc.e >= 150 - 0.01 && s.resources.energy - rc.e < 160);
+    await click('Lv 1', { meta: 'research-energyYield' });
+    const lv1 = await ev(() => { const st = __BD.store; const before = st.energyRate; st.tick(30.5); return { lv: st.researchLevel('energyYield'), before, after: st.energyRate, next: st.researchInfo('energyYield').reason }; });
+    check('research completes after its timer: Energy income +4%', lv1.lv === 1 && near(lv1.after, lv1.before * 1.04, 1e-9), JSON.stringify(lv1));
+    check('node level is capped by the Archive level (Lv 2 needs Archive Lv 2)', lv1.next === 'Needs Archive Lv 2');
+    // fill the tree a bit for the screenshot
+    await ev(() => { const st = __BD.store; st.state.buildings.archive.level = 4; Object.assign(st.state.research.levels, { alloyYield: 2, buildSpeed: 1, energyYield: 3, sentinelDrills: 2, bearerDrills: 1, trainSpeed: 3 }); st.startResearch('voyagerDrills'); st.tick(12); st.emit('change'); });
+    await click('Military', { kind: 'tab' });
+    check('branch tabs switch the tree (Military shows Tier II Protocols)', await waitTrue(() => __BD.controls().some((c) => c.meta === 'research-tier2')));
+    await sleep(400);
+    await shot('stage4-archive-research-tree.png');
+    await ev(() => { const st = __BD.store; st.cancelResearch(); st.state.buildings.archive.level = 1; st.state.research.levels = {}; });
+
+    // --- 3. research bonuses applied everywhere
+    const bon = await ev(() => {
+      const st = __BD.store, S = st.state, out = {};
+      const base = { e: st.energyRate, a: st.alloyRate, sh: st.shardRate, build: st.upgradeSeconds('commandCenter'), train: st.unitTime('bearer'),
+        beds: st.infirmaryCapacity(), heal: st.healUnitTime('sentinel'), healE: st.healEnergy('sentinel'), smax: st.staminaMax(), regen: st.staminaRegenPerHour(),
+        loot: st.killRewards({ type: 'hound', level: 10 }), atk: st.squadArmy('alpha') };
+      S.research.levels = { energyYield: 5, alloyYield: 2, shardYield: 4, buildSpeed: 2, trainSpeed: 2, beds: 2, triage: 1, medSynth: 2, staminaCells: 2, recovery: 3, striders: 4, salvage: 2 };
+      out.e = st.energyRate / base.e; out.a = st.alloyRate / base.a; out.sh = st.shardRate / base.sh;
+      out.build = st.upgradeSeconds('commandCenter') / base.build; out.train = st.unitTime('bearer') / base.train;
+      out.beds = [base.beds, st.infirmaryCapacity()]; out.heal = st.healUnitTime('sentinel') / base.heal; out.healE = [base.healE, st.healEnergy('sentinel')];
+      out.smax = [base.smax, st.staminaMax()]; out.regen = [base.regen, st.staminaRegenPerHour()];
+      out.loot = [base.loot.energy, st.killRewards({ type: 'hound', level: 10 }).energy, base.loot.shards, st.killRewards({ type: 'hound', level: 10 }).shards];
+      const t = st.creatures()[0];
+      out.march = st.attackInfo('alpha', t.id).travel / (Math.min(60, 5 + __BD.dev.dist(t, { x: 32, y: 32 })));
+      // stamina regen at 13/h: 1 h from 50 -> 63
+      S.hunt.stamina = 50; S.hunt.staminaCarry = 0; st.tick(3600); out.stam = S.hunt.stamina;
+      S.research.levels = {};
+      return out;
+    });
+    check('Economy: Energy +20% (Lv 5), Alloy +10% (Lv 2), Shards +20% (Lv 4) incomes', near(bon.e, 1.2) && near(bon.a, 1.1) && near(bon.sh, 1.2), JSON.stringify([bon.e, bon.a, bon.sh]));
+    check('Economy: Rapid Assembly Lv 2 → building upgrades take 1/1.10 of the time', near(bon.build, 1 / 1.1));
+    check('Military: Drill Cadence Lv 2 → training 1/1.10 of the time', near(bon.train, 1 / 1.1));
+    check('Healing: beds +20% (30 → 36), heal speed +8%, heal cost −10% (3 → 2.7 Energy)', bon.beds[0] === 30 && bon.beds[1] === 36 && near(bon.heal, 1 / 1.08) && bon.healE[0] === 3 && near(bon.healE[1], 2.7), JSON.stringify(bon));
+    check('World: stamina cap 100 → 120, regen 10/h → 13/h (1 h: 50 → 63)', bon.smax[1] === 120 && bon.regen[1] === 13 && bon.stam === 63, JSON.stringify([bon.smax, bon.regen, bon.stam]));
+    check('World: Rift Striders Lv 4 → marches take 1/1.20 of the time; Salvage Lv 2 → hunt loot +10%', near(bon.march, 1 / 1.2) && bon.loot[1] === Math.round(bon.loot[0] * 1.1) && bon.loot[3] === Math.round(bon.loot[2] * 1.1), JSON.stringify(bon.loot));
+    const surv = await ev(() => {
+      const st = __BD.store, S = st.state, snap = JSON.stringify(S);
+      S.troops.sentinel = 200; st.saveFormation('alpha', [{ type: 'sentinel', count: 100 }, { type: null, count: 0 }, { type: null, count: 0 }]);
+      S.buildings.infirmary.level = 20;
+      const army = st.squadArmy('alpha'), fake = { fallen: { A: [100, 0, 0] } };
+      const a = st.applyCasualties('alpha', army, fake, false);
+      st.state = JSON.parse(snap); S.troops.sentinel = 200; st.state.troops.sentinel = 200; st.saveFormation('alpha', [{ type: 'sentinel', count: 100 }, { type: null, count: 0 }, { type: null, count: 0 }]); st.state.buildings.infirmary.level = 20;
+      st.state.research.levels.stabilizers = 5;
+      const b = st.applyCasualties('alpha', st.squadArmy('alpha'), fake, false);
+      st.state = JSON.parse(snap);
+      return { dead0: a.deadTotal, dead5: b.deadTotal, tot: [a.total, b.total] };
+    });
+    check('Healing: Stabilizers Lv 5 → 25% fewer battle deaths (the rest come back wounded)', surv.tot[0] === surv.tot[1] && surv.dead0 === 24 && surv.dead5 === 18, JSON.stringify(surv));
+    const cmb = await ev(() => {
+      const st = __BD.store, S = st.state, d = __BD.dev;
+      S.troops.sentinel = 40; S.troops.bearer = 20; st.saveFormation('alpha', [{ type: 'sentinel', count: 20 }, { type: 'bearer', count: 10 }, { type: null, count: 0 }]);
+      const a0 = st.squadArmy('alpha'), p0 = st.squadCombatPower('alpha');
+      S.research.levels.sentinelDrills = 5;
+      const a1 = st.squadArmy('alpha'), p1 = st.squadCombatPower('alpha');
+      const enemy = d.creatureArmy('hound', 6);
+      const r1 = d.resolveBattle(a1, enemy, 77), r2 = d.resolveBattle(JSON.parse(JSON.stringify(a1)), JSON.parse(JSON.stringify(enemy)), 77);
+      S.research.levels = {};
+      return { hp: a1.lines[0].hp / a0.lines[0].hp, atk: a1.lines[0].atk / a0.lines[0].atk, bearerSame: a1.lines[1].hp === a0.lines[1].hp, p0, p1, same: JSON.stringify(r1) === JSON.stringify(r2) };
+    });
+    check('Military: Shield Drills Lv 5 → Sentinel-class HP and ATK +15% (Bearers unchanged), higher Combat Power', near(cmb.hp, 1.15) && near(cmb.atk, 1.15) && cmb.bearerSame && cmb.p1 > cmb.p0, JSON.stringify(cmb));
+    check('resolver stays deterministic on plain-data armies with research baked in', cmb.same);
+
+    // --- 4. research continues offline
+    await ev(() => { const st = __BD.store; st.startResearch('alloyYield'); st.save(); });
+    await editSave('s.lastSaved = Date.now() - arg;', 40e3);
+    check('research keeps running offline (30 s project done after 40 s away)', await ev(() => __BD.store.researchLevel('alloyYield') === 1 && !__BD.store.researchJob() && __BD.store.offlineReport?.researched?.[0]?.id === 'alloyYield'));
+
+    // --- 5. Tier II unlock: Barracks Lv 5 + Archive Lv 3
+    const t2 = await ev(() => {
+      const st = __BD.store, S = st.state;
+      const lockedTrain = st.trainInfo('bulwark', 1).reason;
+      S.buildings.barracks.level = 5;
+      const needArchive = st.researchInfo('tier2').reason;
+      S.buildings.archive.level = 3;
+      const info = st.researchInfo('tier2');
+      const r = st.startResearch('tier2');
+      st.tick(1200.5);
+      return { lockedTrain, needArchive, cost: info.cost, seconds: info.seconds, ok: r.ok, maxTier: st.maxTier(), t3: st.researchInfo('tier3').reason, done: st.researchInfo('tier2').reason };
+    });
+    check('T2 troops are locked until researched', t2.lockedTrain === 'Research Tier II Protocols in the Archive', t2.lockedTrain);
+    check('Tier II Protocols needs Archive Lv 3 too; costs 1500 E + 200 Alloy + 150 Shards, 20 min', t2.needArchive === 'Needs Archive Lv 3' && JSON.stringify(t2.cost) === JSON.stringify({ energy: 1500, alloy: 200, shards: 150 }) && t2.seconds === 1200 && t2.ok, JSON.stringify(t2));
+    check('Tier II researched → T2 unlocked; Tier III still needs Barracks Lv 9', t2.maxTier === 2 && t2.t3 === 'Needs Barracks Lv 9' && t2.done === 'Fully researched', JSON.stringify(t2));
+
+    // --- 6. Barracks: tier tabs, T2 training, promotion
+    await ev(() => { const st = __BD.store; st.state.troops.sentinel = 30; st.state.troops.bearer = 20; st.state.troops.voyager = 20; for (const id of ['alpha', 'bravo', 'charlie']) st.saveFormation(id, [{ type: null, count: 0 }, { type: null, count: 0 }, { type: null, count: 0 }]); st.save(); });
+    await tab('troops');
+    check('Barracks shows T1/T2/T3 tabs per class (T3 locked)', await waitTrue(() => { const c = __BD.controls(); return ['sentinel', 'bearer', 'voyager'].every((k) => c.some((x) => x.meta === `tier-${k}-2`)) && c.some((x) => x.meta === 'tier-sentinel-3' && /🔒/.test(x.label)); }));
+    await click('T2', { meta: 'tier-sentinel-2' });
+    check('T2 tab shows Bulwarks with their own train buttons', await waitTrue(() => __BD.controls().some((c) => c.label === 'x1' && c.meta === 'bulwark')));
+    const b0 = await state();
+    await click('x1', { meta: 'bulwark' });
+    s = await state();
+    check('training a Bulwark costs 13 Energy + 2 Alloy and uses the Sentinel lane', s.training.sentinel.count === 1 && s.training.sentinel.unit === 'bulwark' && near(b0.resources.alloy - s.resources.alloy, 2, 0.3) && b0.resources.energy - s.resources.energy > 12 && b0.resources.energy - s.resources.energy < 14, JSON.stringify(s.training.sentinel));
+    check('one job per lane: T1 Sentinels wait until the Bulwark is done', /Sentinel lane is busy: training 1 Bulwarks/.test(await ev(() => __BD.store.trainInfo('sentinel', 1).reason)));
+    const bt = await ev(() => { const st = __BD.store; const ut = st.unitTime('bulwark'); st.tick(ut + 0.05); return { ut, n: st.state.troops.bulwark }; });
+    check('T2 trains in 1.8x the T1 time (14.4 s at Lv 1 speed) and lands as a Bulwark', bt.n === 1 && near(bt.ut, 14.4 / 1.8), JSON.stringify(bt));
+    // promotion
+    await click(null, { meta: 'promote-sentinel' });
+    check('Promote opens the promotion picker', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text && /Promote Sentinels → Bulwarks/.test(o.text))));
+    const p0 = await state();
+    await click('x10', { meta: 'promote-go-x10' });
+    s = await state();
+    check('promote x10: 10 ready Sentinels leave, cost = difference (10 × 7 E + 10 × 2 Alloy)', s.troops.sentinel === p0.troops.sentinel - 10 && s.training.sentinel.from === 'sentinel' && s.training.sentinel.unit === 'bulwark' && s.training.sentinel.count === 10 && near(p0.resources.alloy - s.resources.alloy, 20, 0.5) && p0.resources.energy - s.resources.energy > 69 && p0.resources.energy - s.resources.energy < 71.5, JSON.stringify({ tr: s.training.sentinel, de: p0.resources.energy - s.resources.energy }));
+    await sleep(500);
+    await shot('stage4-barracks-tiers-promote.png');
+    check('lane shows the promotion (Sentinel → Bulwark)', await waitTrue(() => __BD.ui().screen?.container.list.some((o) => o.text === 'Sentinel → Bulwark')));
+    const pc = await ev(() => { const st = __BD.store; const e = st.state.resources.energy, s0 = st.state.troops.sentinel; const r = st.cancelLane('sentinel'); return { r, back: st.state.troops.sentinel - s0, de: st.state.resources.energy - e }; });
+    check('cancelling a promotion refunds the cost and gives the Sentinels back', pc.r.ok && pc.back === 10 && pc.r.refund === 70 && pc.r.alloy === 20 && near(pc.de, 70, 1e-6), JSON.stringify(pc));
+    const pr = await ev(() => {
+      const st = __BD.store, S = st.state;
+      const pow0 = st.power.troop;
+      st.promote('sentinel', 4);
+      const t = st.promoteTime('bulwark');
+      st.tick(4 * t + 0.1);
+      const out = { t, bulwark: S.troops.bulwark, sentinel: S.troops.sentinel, gain: st.power.troop - pow0 };
+      // assigned troops can't be promoted
+      st.saveFormation('alpha', [{ type: 'sentinel', count: S.troops.sentinel }, { type: null, count: 0 }, { type: null, count: 0 }]);
+      out.assigned = st.promoteInfo('sentinel', 1).reason;
+      st.saveFormation('alpha', [{ type: null, count: 0 }, { type: null, count: 0 }, { type: null, count: 0 }]);
+      return out;
+    });
+    check('promotion takes 60% of the T2 time per troop; each promoted troop is +1 Troop Power (T2 = 2)', pr.bulwark === 5 && pr.sentinel === 26 && near(pr.t, 0.6 * 14.4 / 1.8) && pr.gain === 4, JSON.stringify(pr));
+    check('only ready troops can be promoted (not assigned or wounded)', /No ready Sentinels/.test(pr.assigned), pr.assigned);
+    check('T3 tab explains its lock (Tier III research + Barracks Lv 9)', await ev(() => /Research Tier III Protocols in the Archive/.test(__BD.store.trainInfo('aegis', 1).reason) && __BD.store.promoteInfo('bulwark', 1).reason === 'Research Tier III Protocols in the Archive'));
+    // T3 path works once researched (Barracks 9 + Archive 5)
+    const t3 = await ev(() => {
+      const st = __BD.store, S = st.state, snap = JSON.stringify(S);
+      S.buildings.barracks.level = 9; S.buildings.archive.level = 5; S.research.levels.tier3 = 1;
+      const r = st.promote('bulwark', 2); st.tick(60);
+      const out = { ok: r.ok, aegis: S.troops.aegis, cost: r.cost, alloy: r.alloy, power: st.power.troop };
+      st.state = JSON.parse(snap);
+      return out;
+    });
+    check('Tier III: Bulwark → Aegis promotion (27−13 = 14 E + 4 Alloy each)', t3.ok && t3.aegis === 2 && t3.cost === 28 && t3.alloy === 8, JSON.stringify(t3));
+
+    // --- 7. formation with a T2 line (one tier per line)
+    await ev(() => { const st = __BD.store; st.state.troops.bulwark = 12; st.save(); });
+    await tab('squads');
+    await click('Edit Formation');
+    await click('Sentinels', { meta: 'line0-sentinel' });
+    await click('T2', { meta: 'line0-bulwark' });
+    await click('Max 12', { meta: 'line0max' });
+    await click('Bearers', { meta: 'line1-bearer' });
+    await sleep(300);
+    await shot('stage4-squad-formation-t2.png');
+    await click('Save Formation');
+    s = await state();
+    check('formation saved with a T2 Front line (12 Bulwarks) + T1 Bearers', s.squads.alpha.lines[0].type === 'bulwark' && s.squads.alpha.lines[0].count === 12 && s.squads.alpha.lines[1].type === 'bearer' && s.squads.alpha.lines[1].count === 10, JSON.stringify(s.squads.alpha.lines));
+    check('Squad details label the tier (Bulwarks (T2))', await waitTrue(() => __BD.ui().screen?.container.list.some((o) => o.text && /^Bulwarks \(T2\)/.test(o.text))));
+    const arm = await ev(() => { const a = __BD.store.squadArmy('alpha'); return a.lines[0]; });
+    check('battle army line keeps class behaviour (Sentinel front wall) with T2 stats', arm.type === 'bulwark' && arm.cls === 'sentinel' && arm.tier === 2 && near(arm.hp, 192) && near(arm.atk, 12.8) && near(arm.def, 20 * 1.2), JSON.stringify(arm));
+
+    // --- 8. T2 in a hunt: wounded per tier, tier heal cost
+    const hunt = await ev(() => {
+      const st = __BD.store, S = st.state;
+      const t = st.creatures().filter((e) => e.level === 1)[0];
+      const r = st.attack('alpha', t.id);
+      for (let i = 0; i < 80 && !S.hunt.reports.length; i++) st.tick(1);
+      const rep = S.hunt.reports[0];
+      const w = st.woundedPool('bulwark');
+      return { ok: r.ok, win: rep?.win, wb: w, cas: rep?.casualties, e: st.healEnergy('bulwark'), ht: st.healUnitTime('bulwark') };
+    });
+    check('a T2 squad hunts; its wounded are tracked per tier', hunt.ok && hunt.win && (hunt.cas.wounded.bulwark ?? 0) === hunt.wb, JSON.stringify(hunt));
+    check('healing cost per tier: Bulwark 6 Energy / 6 s (T1 Sentinel 3 / 4)', hunt.e === 6 && near(hunt.ht, 6));
+    if (hunt.wb > 0) {
+      await ev(() => __BD.ui().closeModal(true));
+      await ev(() => __BD.ui().openScreen('infirmary'));
+      check('Infirmary lists wounded Bulwarks with their own heal buttons', await waitTrue(() => __BD.controls().some((c) => c.meta === 'heal-bulwark')));
+    } else check('Infirmary lists wounded Bulwarks with their own heal buttons', true, 'no Bulwark wounded this fight (all losses in other lines)');
+
+    // --- 9. persistence
+    const before = await state();
+    await ev(() => { __BD.store.state.research.levels.salvage = 1; __BD.store.save(); }); await page.reload(); await ready();
+    s = await state();
+    check('research levels, tier troops and tier formations persist', s.research.levels.tier2 === 1 && s.research.levels.salvage === 1 && s.troops.bulwark === before.troops.bulwark && s.squads.alpha.lines[0].type === 'bulwark');
+  } catch (e) {
+    const diag = await ev(() => ({ screen: __BD.ui().screen?.id, modal: !!__BD.ui().modal, controls: __BD.controls().map((c) => c.label + (c.meta ? `#${c.meta}` : '')) })).catch(() => ({}));
+    check('stage 4 suite ran without exceptions', false, `${e.message} :: ${JSON.stringify(diag)}`);
+  }
+  check('stage 4: no console errors', errors.length === 0, errors.join(' | '));
+  await browser.close();
+}
+
 const srv = await serveDist();
 try {
   if (!process.env.ONLY || process.env.ONLY === '1') {
@@ -1169,6 +1457,8 @@ try {
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '2')) await runStage2(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
   if (!process.env.ONLY || process.env.ONLY === '3') await runStage3(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '3')) await runStage3(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+  if (!process.env.ONLY || process.env.ONLY === '4') await runStage4(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
+  if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '4')) await runStage4(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

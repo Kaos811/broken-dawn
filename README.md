@@ -1,4 +1,4 @@
-# Broken Dawn: Stage 3 (World Map Hunts)
+# Broken Dawn: Stage 4 (Research & Troop Tiers)
 
 Broken Dawn is a sci-fi idle base-builder with auto-battle. It's a mobile web game built with
 [Phaser 3](https://phaser.io) and [Vite](https://vitejs.dev), and it uses only free, open-source tools.
@@ -8,7 +8,8 @@ Stage 1 built the playable base: a zoomable top-down map around **The Beacon**, 
 upgrades, Base Power and passive Energy. Stage 2 adds the army: troop training, squads and formations,
 and the Armory with leaders, gear and a recruitment gacha. Stage 3 adds a separate **World Map**: creatures by level
 in rings around your base, squad marches and auto-battles, troop losses with an **Infirmary**, stamina, and an
-**Auto** hunt mode that keeps going while you're offline.
+**Auto** hunt mode that keeps going while you're offline. Stage 4 adds the **Archive** research tree (Economy,
+Military, Healing and World branches) and **troop tiers** T1–T3, with promotion in the Barracks.
 
 ## Run it
 
@@ -212,6 +213,63 @@ Everything runs locally today, but the world is built to move to a server withou
 4. **Rewards and casualties stay client-side** in `store.onBattle` (they react to `battle` events), so they need no
    change. For anti-cheat, the server would grant them instead.
 
+## Stage 4: Research & troop tiers
+
+### Archive (research)
+- **Archive** is a new building (violet spire, default tile 8,8). It is **sealed until Beacon Lv 3**: it sits on the
+  map greyed out with a 🔒 label, gives no Power, and can't be upgraded or used. Once unsealed it gives +5 Power per level
+  and upgrades like any other building.
+- **One research slot.** Tap the Archive → **Research** to open the tree. Research runs in real time, offline too,
+  and can be cancelled for a full refund. A ◆ marker shows on the Archive while a project runs.
+- **Node level ≤ Archive level.** Every node has Lv 1–5. Costs are 150 Energy / 20 Alloy / 30 Shards × 1.7 per level,
+  and times are 30 s, 2 m, 8 m, 30 m, 2 h. Research uses no Cores. Research doesn't add Base Power; it changes stats.
+
+| Branch | Node | Effect per level |
+|---|---|---|
+| Economy | Beacon Harmonics / Alloy Refining / Shard Resonance | Energy +4% / Alloy +5% / Shards +5% income |
+| Economy | Rapid Assembly | building upgrade speed +5% |
+| Military | Shield / Lance / Rift Drills | Sentinel / Bearer / Voyager-class HP and ATK +3% (all tiers of that class) |
+| Military | Drill Cadence | training speed +5% |
+| Military | Tier II Protocols (1 level) | unlocks T2 + promotion. Needs Barracks Lv 5 + Archive Lv 3. 1,500 E / 200 A / 150 S, 20 m |
+| Military | Tier III Protocols (1 level) | unlocks T3. Needs Barracks Lv 9 + Archive Lv 5 + Tier II. 8,000 E / 900 A / 600 S, 2 h |
+| Healing | Field Cots / Triage | Infirmary beds +10% / heal speed +8% |
+| Healing | Med Synthesis / Stabilizers | heal cost −5% / share of losses that die −5% |
+| World | Stamina Cells / Recovery Loop | stamina cap +10 / regen +1 per hour |
+| World | Rift Striders / Salvage Protocols | march speed +5% / hunt rewards +5% |
+
+Speed bonuses divide the time by (1 + bonus). All bonuses come from one pure function, `researchMods(state)` in
+`src/systems/research.js`. Production, build/train timers, the Infirmary, stamina, marches, loot and combat stats
+all read from it, both live and in the offline simulation.
+
+### Troop tiers
+Each tier is its own unit, so every tier has its own count, wounded pool and portrait (tier chevrons on the badge).
+T1 keeps the old class id (`sentinel`, `bearer`, `voyager`), so old saves and formations keep working.
+
+| Class | T1 | T2 | T3 |
+|---|---|---|---|
+| Frontline Wall | Sentinel | Bulwark | Aegis |
+| Main Damage | Bearer | Lancer | Sunbreaker |
+| Scout / Support | Voyager | Phantom | Riftwalker |
+
+| Tier | HP / ATK | DEF | Energy cost | Alloy | Train time | Power | Heal cost / time |
+|---|---|---|---|---|---|---|---|
+| T1 | ×1 | +0 | ×1 | 0 | ×1 | 1 | ×1 / ×1 |
+| T2 | ×1.6 | +6 | ×2.2 | 2 | ×1.8 | 2 | ×2 / ×1.5 |
+| T3 | ×2.5 | +12 | ×4.5 | 6 | ×3 | 4 | ×4 / ×2.2 |
+
+- **Barracks:** each class card has T1/T2/T3 buttons (🔒 until researched). Train any unlocked tier directly, or
+  **Promote** ready troops one tier up (T1→T2, T2→T3). Promotion costs the difference in cost and takes 60% of the
+  higher tier's train time. Promoted troops leave your army while they're queued, so Troop Power dips until they
+  finish. Cancelling refunds the cost and gives the troops back. There's one lane per class and one job per lane
+  (train or promote).
+- **Formations:** one unit per line. Pick the class, then the tier (T1/T2/T3 chips) for that line.
+- **Battle:** class behaviour (the Sentinel front wall, leader targeting) follows the class, not the tier, so T2/T3
+  fight like their T1 class but with bigger stats. The army stays plain data (`{ type, cls, tier, tags, count, hp,
+  atk, def }`) and `resolveBattle` is unchanged and deterministic, so PvP stays a drop-in.
+- **Saves (v7):** v6 saves migrate automatically, and the old save is kept as `brokenDawn.save.v1.backup-v6`.
+  The Archive is added (sealed or Lv 1), research starts empty, and Barracks lanes gain a unit field.
+  Invalid or impossible research/lane jobs are refunded on load.
+
 ## Code layout
 
 ```
@@ -225,6 +283,7 @@ src/
   world/armies.js      plain-data armies from squads (leader/gear/level buffs) and creatures
   world/worldService.js LocalWorldService: the single boundary for world logic (swap for a remote one for PvP)
   systems/power.js     Base / Building / Troop / Squad power formulas
+  systems/research.js  research levels, Archive seal, researchMods() (every research bonus in one pure function)
   art/portraits.js     procedural troop/leader portraits, gear icons, card back (canvas 2D)
   systems/grid.js      iso <-> world math, platform + placement validation
   scenes/BootScene.js  procedural textures (swap for real art later)
@@ -234,15 +293,16 @@ src/
   ui/world.js          World HUD (stamina, Auto, Reports, squad chips), creature sheet, report card, replay player
   art/creatures.js     procedural creature / world-base / march textures
   ui/widgets.js        buttons, panels, number formatting
-  ui/screens/          troops.js (Barracks), squads.js (details, edit formation, pickers), armory.js, infirmary.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1, 2 and 3 suites × 2 builds (484 checks)
+  ui/screens/          archive.js (research tree), troops.js (Barracks, tiers, promote), squads.js (details, edit formation, pickers), armory.js, infirmary.js, common.js
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–4 suites × 2 builds (596 checks)
 screens/               screenshots from the test run
 ```
 
 ### Hooks for what's next
 - PvP: see **PvP path** above. Player bases are already world entities with an owner.
 - Balance knobs for hunts are all in `src/config.js`: `WORLD`, `CREATURES` (incl. per-type `calib`), `BATTLE`,
-  `CASUALTIES`, `INFIRMARY`, `STAMINA`, `HUNT_REWARDS`, `CORES.battle`.
+  `CASUALTIES`, `INFIRMARY`, `STAMINA`, `HUNT_REWARDS`, `CORES.battle`, and for stage 4 `RESEARCH`,
+  `RESEARCH_TUNING`, `TIERS`, `PROMOTE`.
 
 ## Known gaps
 
@@ -258,4 +318,6 @@ screens/               screenshots from the test run
 - Offline Auto only starts new marches with the stamina you had plus what regenerated (capped at 8 h), so a
   long absence yields at most about 8–10 hunts. Rewards are credited at battle time, not when the squad gets home.
 - The world map is local to this device. Nothing is shared between players yet (see PvP path).
+- Only one research slot, and research can't be sped up with Cores yet (`store.speedUpResearch` exists as a hook).
+- Tier Power (1/2/4) feeds Troop Power; research bonuses don't show up in Base Power.
 - The bundle is about 1.2 MB (330 KB gzipped), almost all of it Phaser.
