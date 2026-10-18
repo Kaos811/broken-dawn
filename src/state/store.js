@@ -7,6 +7,7 @@ import {
   LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION,
   INFIRMARY, CASUALTIES, STAMINA, WORLD, HUNT_REWARDS, CREATURES, creaturePower, MAP,
   CLASS_IDS, TIERS, MAX_TIER, PROMOTE, RESEARCH, RESEARCH_IDS, RESEARCH_TUNING, healBase, classOf, tierOf, nextTier,
+  AUDIO, TUTORIAL,
 } from '../config.js';
 import { researchMods, researchLevel, archiveUnlocked } from '../systems/research.js';
 import { isValidPlacement } from '../systems/grid.js';
@@ -27,6 +28,7 @@ const emptyResearch = () => ({ levels: {}, job: null }); // job: { id, toLevel, 
 const emptySquad = () => ({ level: 1, lines: emptyLines(), leader: null, armor: null, weapon: null });
 const ORIGINS = [...TROOPS.squadIds, 'reserve'];
 const emptyWounded = () => Object.fromEntries(TROOP_IDS.map((t) => [t, Object.fromEntries(ORIGINS.map((o) => [o, 0]))]));
+const defaultSettings = () => ({ music: AUDIO.music, sfx: AUDIO.sfx, muted: AUDIO.muted, haptics: AUDIO.haptics });
 const defaultHunt = () => ({ stamina: STAMINA.max, staminaCarry: 0, auto: false, bestKill: 0, firstKills: [], kills: 0, losses: 0, dead: 0, reports: [], reportSeq: 0 });
 
 function defaultState() {
@@ -58,6 +60,8 @@ function defaultState() {
     infirmary: { wounded: emptyWounded(), queue: [] }, // wounded[type][origin squad] + healing batches
     world: createWorld(),                      // stage 3: shared-world model (entities + marches), see worldService
     research: emptyResearch(),                 // stage 4: Archive research levels + the one running project
+    settings: defaultSettings(),               // stage 5: audio volumes, mute, haptics
+    tutorial: { done: false, step: 0, skipped: false }, // stage 5: first-time guided tutorial
     lastSaved: Date.now(),
   };
 }
@@ -135,6 +139,14 @@ export function migrate(raw) {
     raw.training = Object.fromEntries(CLASS_IDS.map((c) => [c, { count: int(tr[c]?.count), progress: num(tr[c]?.progress, 0), unit: c, from: null }]));
     raw.research = emptyResearch();
     raw.version = 7;
+  }
+  // v7 -> v8: sound + tutorial. Default audio settings; existing players have already learned the game,
+  // so their tutorial is marked done (they can replay it from Settings).
+  if (num(raw.version, 1) < 8) {
+    raw = { ...raw };
+    raw.settings = { ...defaultSettings(), ...(raw.settings ?? {}) };
+    raw.tutorial = { done: true, step: TUTORIAL.steps, skipped: false };
+    raw.version = 8;
   }
   return raw;
 }
@@ -267,6 +279,13 @@ function sanitize(raw) {
       s.research.job = { id: rj.id, toLevel: rj.toLevel, cost, total: rj.total, progress: Math.min(rj.total, Math.max(0, num(rj.progress, 0))) };
     } else { s.resources.energy += cost.energy; s.resources.alloy += cost.alloy; s.resources.shards += cost.shards; }
   }
+  // Stage 5: settings + tutorial
+  const st = raw.settings ?? {};
+  const vol = (v, d) => Math.min(1, Math.max(0, Math.round(num(v, d) * 100) / 100));
+  s.settings = { music: vol(st.music, AUDIO.music), sfx: vol(st.sfx, AUDIO.sfx), muted: st.muted === true, haptics: st.haptics !== false };
+  const tu = raw.tutorial ?? {};
+  const step = Math.min(TUTORIAL.steps, int(tu.step));
+  s.tutorial = { done: tu.done === true || step >= TUTORIAL.steps, step, skipped: tu.skipped === true, rewarded: tu.rewarded === true };
   return s;
 }
 
@@ -344,6 +363,55 @@ class Store extends Emitter {
     this.save();
     this.emit('reset');
     this.emit('change');
+  }
+
+  // ------------------------------------------------ stage 5: settings + tutorial --
+  setSetting(key, value) {
+    const st = this.state.settings;
+    if (key === 'music' || key === 'sfx') st[key] = Math.min(1, Math.max(0, Math.round(Number(value) * 100) / 100 || 0));
+    else if (key === 'muted' || key === 'haptics') st[key] = !!value;
+    else return { ok: false };
+    this.save();
+    this.emit('settings', key, st[key]);
+    return { ok: true, value: st[key] };
+  }
+
+  tutorialActive() { return !this.state.tutorial.done; }
+
+  // Advance to `step` (never backwards). Finishing the last step pays the small completion reward once.
+  tutorialAdvance(step) {
+    const t = this.state.tutorial;
+    if (t.done || step <= t.step) return false;
+    t.step = Math.min(TUTORIAL.steps, step);
+    if (t.step >= TUTORIAL.steps) {
+      t.done = true;
+      if (!t.rewarded) {
+        t.rewarded = true;
+        this.state.resources.energy += TUTORIAL.reward.energy;
+        this.state.resources.cores += TUTORIAL.reward.cores;
+      }
+    }
+    this.save();
+    this.emit('tutorial', t.step, t.done);
+    this.emit('change');
+    return true;
+  }
+
+  skipTutorial() {
+    const t = this.state.tutorial;
+    if (t.done) return false;
+    t.done = true; t.skipped = true;
+    this.save();
+    this.emit('tutorial', t.step, true);
+    return true;
+  }
+
+  replayTutorial() {
+    const t = this.state.tutorial;
+    t.done = false; t.step = 0; t.skipped = false;
+    this.save();
+    this.emit('tutorial', 0, false);
+    return true;
   }
 
   // Called every frame with seconds elapsed.

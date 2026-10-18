@@ -350,7 +350,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 7; // v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 8; // v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -508,3 +508,11 @@ export const RESEARCH_TUNING = {
   // seconds to research TO level L: 30 s, 2 m, 8 m, 30 m, 2 h, then x3
   seconds: (L) => [0, 30, 120, 480, 1800, 7200][L] ?? 7200 * Math.pow(3, L - 5),
 };
+
+// ------------------------------------------------------------------ stage 5 --
+// Audio / haptics defaults (saved per device in state.settings). Volumes are 0..1.
+export const AUDIO = { music: 0.7, sfx: 0.9, muted: false, haptics: true, crossfade: 0.5, step: 0.1 };
+// Idle frame cap: after this long without input (and nothing animating) the game drops to ~30 fps.
+export const PERF = { idleMs: 8000, idleFps: 30 };
+// First-time tutorial: number of steps and the completion reward.
+export const TUTORIAL = { steps: 8, reward: { energy: 500, cores: 2 } };
