@@ -1,4 +1,4 @@
-# Broken Dawn: Stage 2 (Troops, Squads, Armory)
+# Broken Dawn: Stage 3 (World Map Hunts)
 
 Broken Dawn is a sci-fi idle base-builder with auto-battle. It's a mobile web game built with
 [Phaser 3](https://phaser.io) and [Vite](https://vitejs.dev), and it uses only free, open-source tools.
@@ -6,7 +6,9 @@ Broken Dawn is a sci-fi idle base-builder with auto-battle. It's a mobile web ga
 
 Stage 1 built the playable base: a zoomable top-down map around **The Beacon**, with movable buildings,
 upgrades, Base Power and passive Energy. Stage 2 adds the army: troop training, squads and formations,
-and the Armory with leaders, gear and a recruitment gacha.
+and the Armory with leaders, gear and a recruitment gacha. Stage 3 adds a separate **World Map**: creatures by level
+in rings around your base, squad marches and auto-battles, troop losses with an **Infirmary**, stamina, and an
+**Auto** hunt mode that keeps going while you're offline.
 
 ## Run it
 
@@ -16,7 +18,7 @@ npm run dev        # dev server at http://localhost:5173 (with --host, so phones
 npm run build      # -> dist/ (multi-file) AND broken-dawn.html (single self-contained file)
 npm run preview    # serve dist/
 npm test           # headless Chromium e2e test (needs a build; CHROME_PATH=/path/to/chrome to override)
-                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=2 runs just the stage-2 suite
+                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=1|2|3 runs one suite, QUICK=1 skips the dist/ pass
 ```
 
 `broken-dawn.html` has everything inlined, so you can open it directly from disk or host it
@@ -147,6 +149,69 @@ All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RES
   and the old save is kept as `brokenDawn.save.v1.backup-v1`. Loaded saves are sanitized: formations are clamped to the troops you own,
   and unknown leaders or gear are dropped.
 
+## Stage 3: World Map hunts
+
+Tap **World** in the bottom nav. The base view sleeps and the World Map takes over (drag to pan, pinch or wheel to zoom 0.25x–1.6x).
+
+- **Map:** a 64×64-tile world with your base in the middle. 40 creatures sit in 4 rings: Zone 1 Lv 1–5 (12 creatures),
+  Zone 2 Lv 6–10 (11), Zone 3 Lv 11–15 (9) and Zone 4 Lv 16–20 (8). Level rises with distance, every level 1–20 is
+  always present, and a killed creature respawns somewhere in its ring after 10 minutes.
+- **Creatures:** Husk Scuttlers (swarm, front line), Rift Drones (hit your back line), Void Hounds (strike first),
+  Shard Golems (heavy armor) and a **Dusk Wyrm** elite (boss plus Scuttler brood) on every 5th level.
+  Shown power is `20 × 1.2^(Lv−1)`, ×1.25 for elites.
+- **Attacking:** tap a creature to open its sheet. It shows your power against its power, your odds, travel time,
+  rewards and an attack button per squad. You can attack up to one level above your best kill.
+  Each attack costs 10 stamina. The squad first refills its formation from ready reserve troops, marches out
+  (5 s + 1 s per tile, max 60 s), auto-battles on arrival, then marches home. Up to 3 squads can be out at once.
+  Tap a squad chip that's out to **Recall** it, which refunds its stamina.
+- **Battle report + replay:** every fight produces a report card with power, rewards and casualties per class.
+  **▶ Watch Replay** re-runs the same seeded battle volley by volley, with HP bars, tracers and damage numbers,
+  at 1x/2x/4x speed with Skip. The last 12 reports are in **Reports**.
+- **Rewards:** 30 Energy, 4 Alloy and 8 + 2 Shards per level (elites ×1.5). The first kill of each level grants
+  Beacon Cores through `grantCores(n, 'battle')`: 1 Core, or 2 for a Wyrm, so 24 Cores across Lv 1–20.
+- **Troop losses:** a win costs 10–20% of the troops sent (about 80% wounded, 20% dead). A loss costs 35–60%
+  (60/40). The front line takes the most. Dead troops are gone and must be retrained in the Barracks.
+  Wounded troops go to the **Infirmary**. Any wounded beyond its free beds die.
+- **Infirmary (new building):** you can place and move it, and you upgrade it with the normal timer and single
+  builder. It adds +5 Power per level. Beds: 30 + 15 per level. Heal speed: ×(1 + 0.25 per level).
+  Healing costs Energy and time per troop: Sentinel 3 E / 4 s, Bearer 4 E / 5 s, Voyager 3 E / 4.5 s.
+  It has a queue with progress bars, and ✕ cancels a batch with a full refund. Healed troops rejoin their own
+  squad line if that squad is home; otherwise they go to reserve. Healing also runs while you're offline.
+- **Healthy troops only:** a squad marches with the troops it actually has. **Refill +n** on the Squads screen,
+  or any attack, tops lines back up to the saved formation from reserve. You can't edit a formation while its squad is out.
+  The old "losing squad rests 60 s" rule is gone; losses replace it.
+- **Stamina:** caps at 100, regenerates 10 per hour, and each attack costs 10. You get +20 from the daily login
+  claim, and a Beacon level-up refills it.
+- **Auto:** the **AUTO** toggle in the World HUD sends every idle squad at the highest-level creature it
+  out-powers by at least 10% (nearest first), until stamina runs out. It stays armed and resumes when stamina
+  refills. It keeps hunting **offline**: on load the game simulates the time away in 5 s steps (up to the 8 h
+  offline cap), covering marches, battles, casualties, healing and stamina, and the welcome-back toast summarizes the hunts.
+- **Saves (v6):** v5 saves migrate automatically, and the old save is kept as `brokenDawn.save.v1.backup-v5`.
+  The Infirmary is added on its default tile, or on the first free spot if that tile is taken. Formation lines
+  record their saved size, a world is generated, and stamina starts full.
+
+### PvP path (how this goes multiplayer later)
+
+Everything runs locally today, but the world is built to move to a server without rewriting the game:
+
+1. **One generic world state** (`src/world/worldState.js`) holds plain-JSON `entities`, each with `{ id, kind:
+   'creature' | 'base', owner, x, y, ... }`, plus `marches` `{ id, owner, squadId, army, from, to, targetId, phase,
+   t, travel }`. Creatures belong to `'world'` and your base belongs to `'local'`. Another player's base is just
+   another entity with a different owner.
+2. **A deterministic, pure battle resolver** (`src/world/battle.js`) has no Phaser, no store and no `Math.random`.
+   `resolveBattle(attackerArmy, defenderArmy, seed)` takes plain-data armies (`src/world/armies.js` builds them
+   from a squad or a creature) and a seed (`hashSeed(world.seed, march.id, target.id)`). The same inputs always
+   give the same result, so a server can compute a fight once and every client can replay it identically.
+3. **A world service boundary** (`src/world/worldService.js`): the game only talks to `store.world`, a
+   `LocalWorldService` with `entities() / get() / marches() / marchFor() / canSend() / sendMarch() / recallMarch() /
+   tick(dt) → events / defenderArmy()`. For PvP, swap in a `RemoteWorldService` with the same methods, backed by a
+   server or realtime DB (e.g. Supabase or Firebase): `sendMarch` becomes a request, `tick` becomes a subscription
+   that yields the same `battle / home / respawn` events, and the server runs `resolveBattle` with the stored seed
+   to stay authoritative. Attacking a player base is `sendMarch` at an entity with `kind: 'base'`;
+   `defenderArmy()` already dispatches on the entity kind.
+4. **Rewards and casualties stay client-side** in `store.onBattle` (they react to `battle` events), so they need no
+   change. For anti-cheat, the server would grant them instead.
+
 ## Code layout
 
 ```
@@ -154,23 +219,30 @@ src/
   main.js              Phaser game config, scene list, window.__BD debug/test hook
   config.js            ALL tuning numbers: power per level, costs, income, map size, zoom, palette
   state/store.js       game state, save/load/migration/offline, upgrades, placement, training,
-                       squads, leaders, gear, gacha (seedable RNG), event emitter
+                       squads, leaders, gear, gacha (seedable RNG), hunts, infirmary, stamina, auto + offline sim
+  world/worldState.js  generic world entities + marches, ring generation, respawn spawning (plain JSON)
+  world/battle.js      pure deterministic seeded battle resolver + combat power + odds
+  world/armies.js      plain-data armies from squads (leader/gear/level buffs) and creatures
+  world/worldService.js LocalWorldService: the single boundary for world logic (swap for a remote one for PvP)
   systems/power.js     Base / Building / Troop / Squad power formulas
   art/portraits.js     procedural troop/leader portraits, gear icons, card back (canvas 2D)
   systems/grid.js      iso <-> world math, platform + placement validation
   scenes/BootScene.js  procedural textures (swap for real art later)
   scenes/BaseScene.js  map, camera (pan/pinch/wheel), picking, long-press, drag and snap
+  scenes/WorldScene.js World Map: zones, creatures, marches, battle fx, pan/pinch/wheel, tap-to-select
   scenes/UIScene.js    HUD, bottom nav, info panel, move banner, screens, overlays, gacha reveal, toasts, game tick
+  ui/world.js          World HUD (stamina, Auto, Reports, squad chips), creature sheet, report card, replay player
+  art/creatures.js     procedural creature / world-base / march textures
   ui/widgets.js        buttons, panels, number formatting
-  ui/screens/          troops.js (Barracks), squads.js (details, edit formation, pickers), armory.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1 + stage 2 suites × 2 builds (336 checks)
+  ui/screens/          troops.js (Barracks), squads.js (details, edit formation, pickers), armory.js, infirmary.js, common.js
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1, 2 and 3 suites × 2 builds (484 checks)
 screens/               screenshots from the test run
 ```
 
-### Hooks for stage 3
-- `store.squadStats(id)` returns each squad's total HP/ATK/DEF with leader and gear buffs applied, ready for auto-battle.
-- Per-soldier base stats are in `TROOP_CLASSES`. Squads have three ordered lines (Front/Middle/Back).
-- Battle and Maps are placeholders ("Coming in stage 3") in Squad Details and Settings.
+### Hooks for what's next
+- PvP: see **PvP path** above. Player bases are already world entities with an owner.
+- Balance knobs for hunts are all in `src/config.js`: `WORLD`, `CREATURES` (incl. per-type `calib`), `BATTLE`,
+  `CASUALTIES`, `INFIRMARY`, `STAMINA`, `HUNT_REWARDS`, `CORES.battle`.
 
 ## Known gaps
 
@@ -179,6 +251,11 @@ screens/               screenshots from the test run
   game but doesn't re-layout it, so reload after rotating. It's built for portrait.
 - Only tested in headless Chromium with phone emulation (390×844, touch and mouse). It hasn't been tried on a real iPhone or Android device yet.
 - Balance numbers are first-pass placeholders. Tune them in `src/config.js`.
-- Troops are never lost yet (that comes with battles), so the only Troop Power limit is the per-lane training cap.
-- Gear and leader buffs only change squad HP/ATK/DEF (used in stage 3), not Base Power.
+- Gear and leader buffs only change squad HP/ATK/DEF (and so World combat power), not Base Power.
+- The Squads screen shows two numbers: the stage 2 "Squad Power" (soldiers + level) and the stage 3 "Combat Power"
+  used on the World Map. Only Combat Power decides hunts.
+- Wins always cost at least 10% casualties, even against a creature far weaker than the squad.
+- Offline Auto only starts new marches with the stamina you had plus what regenerated (capped at 8 h), so a
+  long absence yields at most about 8–10 hunts. Rewards are credited at battle time, not when the squad gets home.
+- The world map is local to this device. Nothing is shared between players yet (see PvP path).
 - The bundle is about 1.2 MB (330 KB gzipped), almost all of it Phaser.

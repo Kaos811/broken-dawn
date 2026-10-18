@@ -1,4 +1,4 @@
-// Headless e2e test for stages 1 and 2. Runs against the single-file build
+// Headless e2e test for stages 1, 2 and 3. Runs against the single-file build
 // (file://) and the dist/ build (served over http) at a 390x844 phone viewport.
 //   npm run build && npm test
 import { chromium } from 'playwright-core';
@@ -253,7 +253,8 @@ async function run(url, label, takeShots) {
   check('Beacon upgrade adds +15 power when the timer finishes', (await power()) === bp0 + 15 && (await state()).beacon.level === 2);
 
   // --- Nav: Troops / Armory / Squads open real screens now; Settings > Reset
-  const tabPt = (i) => ev((i) => __BD.gameToPage((720 / 5) * (i + 0.5), __BD.ui().scale.height - 65), i);
+  // (indices kept from stage 1/2; the nav now also has a World tab, so look tabs up by id)
+  const tabPt = (i) => ev((id) => __BD.tabToPage(id), ['base', 'troops', 'armory', 'squads', 'settings'][i]);
   let t = await tabPt(1); await page.mouse.click(t.x, t.y); await sleep(300);
   check('Troops tab opens the Barracks screen', await ev(() => __BD.ui().screen?.id === 'troops' && __BD.ui().activeTab === 'troops'));
   // map is blocked while a screen is open
@@ -286,11 +287,11 @@ async function run(url, label, takeShots) {
   rb = await btn('Reset Save'); await page.mouse.click(rb.x, rb.y); await sleep(250);
   rb = await btn('Reset'); await page.mouse.click(rb.x, rb.y); await sleep(300);
   const fresh = await state();
-  check('Reset restores defaults', fresh.beacon.level === 1 && fresh.buildings.commandCenter.level === 1 && fresh.buildings.barracks.gy === 12 && (await power()) === 30);
+  check('Reset restores defaults (Base Power 35 incl. Infirmary Lv 1)', fresh.beacon.level === 1 && fresh.buildings.commandCenter.level === 1 && fresh.buildings.barracks.gy === 12 && (await power()) === 35);
   const sp2 = await ev(() => { const b = __BD.base(); return [b.sprites.barracks.img.x, b.sprites.barracks.img.y]; });
   check('Reset moves sprites back', Math.abs(sp2[0] - (26 * 48 + (8 - 12) * 48)) < 0.5);
   await page.reload(); await ready();
-  check('Reset persists after reload', (await state()).buildings.barracks.gy === 12 && (await power()) === 30);
+  check('Reset persists after reload', (await state()).buildings.barracks.gy === 12 && (await power()) === 35);
 
   // --- Viewport fill
   const rect = await ev(() => { const r = __BD.game.canvas.getBoundingClientRect(); return [r.width, r.height]; });
@@ -339,7 +340,7 @@ async function runStage2(url, label, takeShots) {
   // Polls a page predicate (up to ~2.5 s) so UI-timing checks don't flake under load.
   const waitTrue = async (fn, arg) => { for (let i = 0; i < 25; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
   const refresh = async () => { await ev(() => __BD.ui().renderScreen()); await sleep(150); };
-  const tab = async (i) => { const p = await ev((i) => __BD.gameToPage((720 / 5) * (i + 0.5), __BD.ui().scale.height - 65), i); await page.mouse.click(p.x, p.y); await sleep(350); };
+  const tab = async (i) => { const p = await ev((id) => __BD.tabToPage(id), ['base', 'troops', 'armory', 'squads', 'settings'][i]); await page.mouse.click(p.x, p.y); await sleep(350); };
   // Overwrite the save while the page can't overwrite it back, then reload.
   const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload(); await ready(); };
 
@@ -362,7 +363,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let m = await state();
-    check('v2 save migrates to version 5 (via v3, v4)', m.version === 5);
+    check('v2 save migrates to version 6 (via v3, v4, v5)', m.version === 6);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
@@ -383,7 +384,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v3 save migrates to v5: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 5 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 save migrates to v6: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 6 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
     check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload(); await ready(); return (await state()).resources.cores === 10; })());
 
@@ -399,7 +400,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v4 save migrates to v5: levels, Cores, claims kept; no construction', m.version === 5 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
+    check('v4 save migrates to v6: levels, Cores, claims kept; no construction', m.version === 6 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
     check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
 
     // --- 1. Save migration from a stage-1 (v1) save
@@ -415,11 +416,11 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v1 save migrates to version 5', s.version === 5);
+    check('v1 save migrates to version 6', s.version === 6);
     check('migration keeps buildings, levels, Energy and Beacon', s.buildings.barracks.gy === 15 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
     check('migration adds Shards (500), 10 Cores, Alloy, troops, squad lines', Math.floor(s.resources.shards) === 500 && s.resources.cores === 10 && s.resources.alloy < 5 && s.troops.sentinel === 0 && s.squads.alpha.lines.length === 3 && s.squads.alpha.leader === null);
     check('migration keeps a backup of the v1 save', await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v1')));
-    check('Base Power after migration = buildings only (70)', (await power()).total === 70, JSON.stringify(await power()));
+    check('Base Power after migration = buildings only (75 incl. new Infirmary)', (await power()).total === 75, JSON.stringify(await power()));
     await ev(() => { __BD.store.state.resources.energy = 200; __BD.store.state.resources.shards = 500; __BD.store.save(); });
 
     // --- 2. Training via the Troops tab (three parallel lanes)
@@ -441,8 +442,8 @@ async function runStage2(url, label, takeShots) {
     check('timer completes: Sentinel trained, lane empty', s.troops.sentinel === 1 && s.training.sentinel.count === 0 && s.training.sentinel.progress === 0);
     await sleep(300);
     const p1 = await power();
-    check('Troop Power: trained soldier adds 1 to Base Power', p1.troop === 1 && p1.total === 71, JSON.stringify(p1));
-    check('HUD breakdown shows Troops', await waitTrue(() => /Troops 1\b/.test(__BD.ui().powerSub.text) && __BD.ui().powerText.text === '71'));
+    check('Troop Power: trained soldier adds 1 to Base Power', p1.troop === 1 && p1.total === 76, JSON.stringify(p1));
+    check('HUD breakdown shows Troops', await waitTrue(() => /Troops 1\b/.test(__BD.ui().powerSub.text) && __BD.ui().powerText.text === '76'));
 
     await ev(() => { __BD.store.state.resources.energy = 150; }); await refresh();
     await click('x10', { meta: 'bearer' });
@@ -516,7 +517,7 @@ async function runStage2(url, label, takeShots) {
     });
     check('cancelLane refunds every unit incl. the one in progress (4 × 6 = 24), other lanes untouched', cr.refund === 24 && cr.energy === 24 && cr.voy.count === 2 && cr.voy.progress === 1 && cr.again === false, JSON.stringify(cr));
     const p2 = await power();
-    check('Base Power = Building + Troop Power after offline training', p2.troop === 30 && p2.total === 70 + 30, JSON.stringify(p2));
+    check('Base Power = Building + Troop Power after offline training', p2.troop === 30 && p2.total === 75 + 30, JSON.stringify(p2));
     check('offline earned (modest) Shards and Alloy, but no Cores', s.resources.shards > 500.2 && s.resources.shards < 501 && s.resources.alloy > 4.7 && s.resources.cores === 10, `shards ${s.resources.shards.toFixed(2)} alloy ${s.resources.alloy.toFixed(2)}`);
 
     // --- 4. Squads: formation save limited by available troops
@@ -533,10 +534,10 @@ async function runStage2(url, label, takeShots) {
     await shot('stage2-squad-formation-edit.png');
     await click('Save Formation');
     s = await state();
-    check('formation saved (10 Sentinels, 9 Bearers, 9 Voyagers)', s.squads.alpha.lines[0].count === 10 && s.squads.alpha.lines[1].count === 9 && s.squads.alpha.lines[2].type === 'voyager' && s.squads.alpha.lines[2].count === 9 && !(await ev(() => __BD.ui().screenState.edit)), JSON.stringify(s.squads.alpha.lines));
+    check('formation saved (10 Sentinels, 9 Bearers, 9 Voyagers)', s.squads.alpha.lines[0].count === 10 && s.squads.alpha.lines[1].count === 9 && s.squads.alpha.lines[2].type === 'voyager' && s.squads.alpha.lines[2].count === 9 && s.squads.alpha.lines[2].full === 9 && !(await ev(() => __BD.ui().screenState.edit)), JSON.stringify(s.squads.alpha.lines));
     check('ready vs assigned counts', await ev(() => __BD.store.readyCount('bearer') === 0 && __BD.store.assignedCount('bearer') === 9 && __BD.store.readyCount('voyager') === 1));
     check('Squad Power = troops + 10 x level (28 + 10)', (await ev(() => __BD.store.squadPower('alpha'))) === 38);
-    check('assigning troops does not change Base Power', (await power()).total === 100);
+    check('assigning troops does not change Base Power', (await power()).total === 105);
     const over = await ev(() => __BD.store.saveFormation('bravo', [{ type: 'bearer', count: 1 }, { type: null, count: 0 }, { type: null, count: 0 }]));
     check('Bravo cannot take Bearers already in Alpha', over.ok === false && /Only 0 Bearers/.test(over.reason), over.reason);
     const over2 = await ev(() => __BD.store.saveFormation('alpha', [{ type: 'sentinel', count: 12 }, { type: null, count: 0 }, { type: null, count: 0 }]));
@@ -729,7 +730,7 @@ async function runStage2(url, label, takeShots) {
     s = await state();
     check('squads, leaders, gear, troops and gacha persist after reload', JSON.stringify(s.squads) === JSON.stringify(before.squads) && JSON.stringify(Object.entries(s.leaders).sort()) === JSON.stringify(Object.entries(before.leaders).sort()) && s.gear.arcRifle === 1 && s.troops.bearer === 9 && s.gacha.total === before.gacha.total);
 
-    // --- 9. Tapping buildings opens their screens; Battle is stage 3
+    // --- 9. Tapping buildings opens their screens; World button opens the World map
     await ev(() => __BD.base().select('barracks')); await sleep(300);
     await click('Train');
     check('Barracks panel → Train opens Troops screen', await ev(() => __BD.ui().screen?.id === 'troops'));
@@ -738,9 +739,8 @@ async function runStage2(url, label, takeShots) {
     await click('Recruit');
     check('Armory panel → Recruit opens the Armory', await ev(() => __BD.ui().screen?.id === 'armory'));
     await tab(3);
-    await click('Battle');
-    check('Battle says "Coming in stage 3"', await ev(() => __BD.ui().modal?.list.some((o) => o.text && /Coming in stage 3/.test(o.text))));
-    await ev(() => __BD.ui().closeModal());
+    await click('World');
+    check('Squads → World button opens the World map (stage 3)', await waitTrue(() => __BD.ui().worldMode && __BD.ui().activeTab === 'world'));
     await tab(0);
     // tap the Base Power pill -> breakdown
     const pp = await ev(() => __BD.gameToPage(348, 90));
@@ -805,14 +805,370 @@ async function runStage2(url, label, takeShots) {
   await browser.close();
 }
 
+// ------------------------------------------------------------------ STAGE 3 --
+async function runStage3(url, label, takeShots) {
+  console.log(`\n=== stage 3 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('pageerror', (e) => errors.push(e.message));
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, i) => ({ x: p.x, y: p.y, id: i })) });
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(400); };
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
+  const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+  const shot = async (name) => { if (takeShots) { await sleep(350); await page.screenshot({ path: join(ROOT, 'screens', name) }); console.log(`      saved screens/${name}`); } };
+  const ctl = async (label, { meta, kind } = {}) => {
+    for (let tries = 0; tries < 15; tries++) {
+      const all = await ev(() => __BD.controls());
+      const m = all.filter((c) => c.label === label && (meta === undefined || c.meta === meta) && (!kind || c.kind === kind) && c.enabled);
+      if (m.length) return m[m.length - 1];
+      await sleep(200);
+    }
+    return null;
+  };
+  const click = async (label, opts = {}) => {
+    await frames(2);
+    const c = await ctl(label, opts);
+    if (!c) throw new Error(`control not found: ${label} ${JSON.stringify(opts)}`);
+    await page.mouse.click(c.x, c.y); await frames(4); await sleep(opts.wait ?? 300);
+    return c;
+  };
+  const waitTrue = async (fn, arg) => { for (let i = 0; i < 25; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
+  const tab = async (id) => { const p = await ev((id) => __BD.tabToPage(id), id); await page.mouse.click(p.x, p.y); await frames(4); await sleep(350); };
+  const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload(); await ready(); };
+  // advance game time in 1 s steps until a predicate holds (marches, battles, healing)
+  const runUntil = (pred, max = 120) => ev(([pred, max]) => { const f = new Function('st', `return (${pred})(st)`); for (let i = 0; i < max; i++) { if (f(__BD.store)) return i; __BD.store.tick(1); } return f(__BD.store) ? max : -1; }, [pred.toString(), max]);
+  const cam = () => ev(() => { const c = __BD.world().cameras.main; return { zoom: c.zoom, x: c.scrollX, y: c.scrollY }; });
+
+  try {
+    await page.goto(url); await ready();
+
+    // --- 0. v5 save -> v6: Infirmary added (on a free spot: its default tile is taken here), world, stamina
+    await ev(() => {
+      localStorage.clear();
+      localStorage.setItem('brokenDawn.save.v1', JSON.stringify({
+        version: 5, resources: { energy: 900, shards: 120, alloy: 30, cores: 6 }, beacon: { level: 3, charge: 40 },
+        buildings: { commandCenter: { level: 3, gx: 12, gy: 8 }, barracks: { level: 2, gx: 8, gy: 12 }, armory: { level: 2, gx: 16, gy: 8 } },
+        troops: { sentinel: 8, bearer: 4, voyager: 0 }, training: { sentinel: { count: 0, progress: 0 }, bearer: { count: 0, progress: 0 }, voyager: { count: 0, progress: 0 } },
+        squads: { alpha: { level: 2, lines: [{ type: 'sentinel', count: 6 }, { type: 'bearer', count: 4 }, { type: null, count: 0 }], leader: null, armor: null, weapon: null } },
+        leaders: {}, gear: {}, construction: [], claims: { beacon: [2, 3], milestones: [] }, lastSaved: Date.now(),
+      }));
+      __BD.store.save = () => {};
+    });
+    await page.reload(); await ready();
+    let s = await state();
+    check('v5 save migrates to v6', s.version === 6);
+    check('v6 keeps buildings, levels, resources, troops and squads', s.buildings.armory.gx === 16 && s.buildings.armory.gy === 8 && s.buildings.commandCenter.level === 3 && s.beacon.level === 3 && s.resources.cores === 6 && s.troops.sentinel === 8 && s.squads.alpha.level === 2 && s.squads.alpha.lines[0].count === 6, JSON.stringify(s.buildings));
+    const inf = s.buildings.infirmary;
+    check('v6 adds the Infirmary at Lv 1 on a free platform spot (default tile was taken by the Armory)', inf.level === 1 && !(inf.gx === 16 && inf.gy === 8) && (await ev(() => __BD.store.canPlace('infirmary', __BD.store.state.buildings.infirmary.gx, __BD.store.state.buildings.infirmary.gy))), JSON.stringify(inf));
+    check('v6 formation lines get full = saved count', s.squads.alpha.lines[0].full === 6 && s.squads.alpha.lines[1].full === 4);
+    check('v6 generates a world: 40 creatures + your base; stamina starts full (100)', s.world.entities.filter((e) => e.kind === 'creature').length === 40 && s.world.entities.some((e) => e.kind === 'base' && e.owner === 'local') && s.hunt.stamina === 100);
+    check('v5 migration keeps a backup of the v5 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v5') || '{}').version === 5));
+    check('Infirmary adds +5 Base Power (Lv 1)', (await ev(() => __BD.store.power.building)) === 30 + 10 + 45 + 0 + 5, String(await ev(() => __BD.store.power.building)));
+    check('Infirmary sprite is drawn on the base', await ev(() => !!__BD.base().sprites.infirmary?.img.visible));
+
+    // --- 1. fresh game with a seeded world and three squads
+    await ev(() => { localStorage.clear(); __BD.store.save = () => {}; }); await page.reload(); await ready();
+    await ev(() => {
+      const st = __BD.store;
+      delete st.save; // restore the prototype save()
+      st.state.world = __BD.dev.createWorld(424242);
+      Object.assign(st.state.troops, { sentinel: 60, bearer: 60, voyager: 60 });
+      st.state.buildings.commandCenter.level = 5;
+      st.state.resources.energy = 20000;
+      st.saveFormation('alpha', [{ type: 'sentinel', count: 14 }, { type: 'bearer', count: 12 }, { type: 'voyager', count: 10 }]);
+      st.saveFormation('bravo', [{ type: 'sentinel', count: 8 }, { type: 'bearer', count: 6 }, { type: null, count: 0 }]);
+      st.saveFormation('charlie', [{ type: 'bearer', count: 4 }, { type: null, count: 0 }, { type: 'voyager', count: 4 }]);
+      st.save();
+    });
+    await page.reload(); await ready();
+
+    // --- 2. world layout
+    const lay = await ev(() => {
+      const st = __BD.store, base = { x: 32, y: 32 }, cr = st.creatures();
+      const ringOk = cr.every((e) => e.level === __BD.dev.ringLevel(e.ring, __BD.dev.dist(e, base)));
+      const avgD = [0, 1, 2, 3].map((r) => { const xs = cr.filter((e) => e.ring === r); return xs.reduce((n, e) => n + __BD.dev.dist(e, base), 0) / xs.length; });
+      const levels = new Set(cr.map((e) => e.level));
+      return { n: cr.length, ringOk, avgD, all: [...Array(20)].every((_, i) => levels.has(i + 1)), wyrm: cr.every((e) => (e.level % 5 === 0) === (e.type === 'wyrm')), types: [...new Set(cr.map((e) => e.type))].sort() };
+    });
+    check('world has ~40 creatures (40)', lay.n === 40);
+    check('creature level follows its ring + distance (Lv 1-5 near base … Lv 16-20 at the edge)', lay.ringOk && lay.avgD.every((d, i) => i === 0 || d > lay.avgD[i - 1]), lay.avgD.map((d) => d.toFixed(1)).join(' < '));
+    check('every level 1-20 is on the map', lay.all);
+    check('Dusk Wyrm elites exactly on every 5th level; all 5 creature types present', lay.wyrm && lay.types.join() === 'drone,golem,hound,scuttler,wyrm', lay.types.join());
+    const pw = await ev(() => [1, 5, 10, 20].map((L) => __BD.store.creaturePowerOf({ level: L, type: L % 5 ? 'hound' : 'wyrm' })));
+    check('creature power: Lv1 20, +20%/level, elites x1.25 (Lv5 52, Lv10 129, Lv20 799)', JSON.stringify(pw) === JSON.stringify([20, 52, 129, 799]), JSON.stringify(pw));
+
+    // --- 3. World tab: separate view, pan + pinch + wheel
+    await tab('world');
+    check('World tab opens the World map (base view sleeps)', await waitTrue(() => __BD.ui().worldMode && __BD.ui().activeTab === 'world' && __BD.world().scene.isVisible() && __BD.base().scene.isSleeping()));
+    check('World HUD shows stamina, Auto and squads', await waitTrue(() => __BD.ui().worldHud.visible && __BD.controls().some((c) => c.meta === 'auto') && __BD.controls().some((c) => c.label === 'chip-alpha')));
+    let c0 = await cam();
+    await touch('touchStart', [{ x: 200, y: 450 }]);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', [{ x: 200 - i * 12, y: 450 - i * 8 }]); await sleep(16); }
+    await touch('touchEnd', []); await frames(3);
+    let c1 = await cam();
+    check('touch drag pans the World map', Math.abs(c1.x - c0.x) > 60 && Math.abs(c1.y - c0.y) > 40, `dx ${(c1.x - c0.x).toFixed(0)} dy ${(c1.y - c0.y).toFixed(0)}`);
+    await touch('touchStart', [{ x: 170, y: 450 }, { x: 230, y: 450 }]);
+    for (let i = 1; i <= 10; i++) { await touch('touchMove', [{ x: 170 - i * 6, y: 450 }, { x: 230 + i * 6, y: 450 }]); await sleep(16); }
+    await touch('touchEnd', []); await frames(3);
+    const zp = (await cam()).zoom;
+    check('pinch-out zooms the World map in', zp > c1.zoom * 1.4, `${c1.zoom.toFixed(2)} -> ${zp.toFixed(2)}`);
+    await page.mouse.move(195, 450);
+    for (let i = 0; i < 30; i++) { await page.mouse.wheel(0, 200); await sleep(10); }
+    check('wheel zoom clamps at 0.25', Math.abs((await cam()).zoom - 0.25) < 1e-6);
+    await ev(() => { const w = __BD.world(); w.cameras.main.setZoom(0.55); w.cameras.main.centerOn(32.5 * 72, 32.5 * 72); }); await frames(3);
+
+    // --- 4. tap a Lv 1 creature -> sheet -> Attack · Alpha
+    const lv1 = await ev(() => { const st = __BD.store; return st.creatures().filter((e) => e.level === 1).sort((a, b) => __BD.dev.dist(a, { x: 32, y: 32 }) - __BD.dev.dist(b, { x: 32, y: 32 }))[0].id; });
+    const tp = await ev((id) => { const e = __BD.store.world.get(id); return __BD.tileToPage(e.x, e.y); }, lv1);
+    await page.mouse.click(tp.x, tp.y - 3); await frames(4); await sleep(300);
+    check('tapping a creature opens its attack sheet', await waitTrue((id) => __BD.ui().worldHud.sheetFor === id, lv1));
+    check('locked levels: can only attack up to best kill + 1 (Lv 1 now)', (await ev(() => __BD.store.maxAttackLevel())) === 1 && /Defeat a Lv 1/.test(await ev(() => __BD.store.attackInfo('alpha', __BD.store.creatures().find((e) => e.level === 2).id).reason)));
+    const e0 = await state();
+    await click('Attack · Alpha', { meta: 'attack-alpha' });
+    s = await state();
+    const m0 = s.world.marches[0];
+    check('Attack sends a march: −10 stamina, target reserved, travel 5 s + 1 s/tile', !!m0 && m0.squadId === 'alpha' && m0.phase === 'out' && s.hunt.stamina === 90 && s.world.entities.find((e) => e.id === lv1).busy === m0.id && Math.abs(m0.travel - Math.min(60, 5 + Math.hypot(m0.to.x - 32, m0.to.y - 32))) < 1e-6, JSON.stringify(m0 && { t: m0.travel, st: s.hunt.stamina }));
+    check('only healthy troops march (army snapshot = Alpha lines 14/12/10)', JSON.stringify(m0.army.lines.map((l) => l.count)) === '[14,12,10]');
+    check('formation is locked while marching', (await ev(() => __BD.store.saveFormation('alpha', [{ type: 'sentinel', count: 1 }, { type: null, count: 0 }, { type: null, count: 0 }]).reason)) === 'Alpha is out on a march');
+    check('a second squad can\'t attack the same creature', /already on its way/.test(await ev((id) => __BD.store.attackInfo('bravo', id).reason, lv1)));
+    await sleep(600);
+    await shot('stage3-world-march.png');
+    const steps = await runUntil((st) => st.state.hunt.reports.length > 0, 70);
+    s = await state();
+    const r1 = s.hunt.reports[0];
+    check('march arrives after its travel time and auto-battles', steps >= 0 && steps <= Math.ceil(m0.travel) + 1 && !!r1, `steps ${steps}, travel ${m0.travel.toFixed(1)}`);
+    check('Lv 1 hunt won: +30 Energy, +4 Alloy, +10 Shards', r1.win && r1.loot.energy === 30 && r1.loot.alloy === 4 && r1.loot.shards === 10);
+    check('first Lv 1 kill pays +1 Beacon Core via grantCores(…,"battle")', r1.loot.cores === 1 && s.resources.cores === e0.resources.cores + 1 && r1.firstKill && s.hunt.firstKills.includes(1));
+    const sent1 = 36, cas = r1.casualties;
+    check('win casualties are 10-20% of troops sent, mostly wounded', cas.total >= Math.round(sent1 * 0.1) && cas.total <= Math.round(sent1 * 0.2) && cas.woundedTotal >= cas.deadTotal && cas.woundedTotal + cas.deadTotal === cas.total, JSON.stringify(cas));
+    check('casualties leave the squad + troop count; wounded wait in the Infirmary', s.troops.sentinel + s.troops.bearer + s.troops.voyager === 180 - cas.total && (await ev(() => __BD.store.woundedTotal())) === cas.woundedTotal && s.squads.alpha.lines.reduce((n, l) => n + l.count, 0) === 36 - cas.total && s.squads.alpha.lines[0].full === 14);
+    check('killed creature leaves the map and is scheduled to respawn in 10 min', !s.world.entities.some((e) => e.id === lv1) && s.world.respawns.length === 1 && Math.abs(s.world.respawns[0].at - s.world.clock - 600) < 2);
+    check('best kill raised: Lv 2 now attackable', s.hunt.bestKill === 1 && (await ev(() => __BD.store.maxAttackLevel())) === 2);
+    check('manual attack pops the battle report card', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'VICTORY')));
+    await shot('stage3-battle-report.png');
+    // replay
+    await click('▶ Watch Replay', { wait: 400 });
+    check('Watch Replay opens the battle replay', await waitTrue(() => !!__BD.ui().replay));
+    await sleep(2600);
+    await shot('stage3-battle-replay.png');
+    check('replay advances through the battle volley by volley', await waitTrue(() => __BD.ui().replayState().i >= 1));
+    const det = await ev(() => { const st = __BD.store, r = st.state.hunt.reports[0]; const a = st.replayOf(r), b = st.replayOf(r); return JSON.stringify(a) === JSON.stringify(b) && (a.winner === 'attacker') === r.win && a.seed === r.seed; });
+    check('replay is the exact same deterministic battle (same seed → same result)', det);
+    await click('Skip', { wait: 300 });
+    check('Skip jumps to the result', await waitTrue(() => __BD.ui().replayState().done));
+    await click('Close', { wait: 300 });
+    check('replay closes', await waitTrue(() => __BD.ui().replay === null));
+    await runUntil((st) => !st.squadMarch('alpha'), 60);
+    check('squad marches back home and is free again', await ev(() => !__BD.store.squadMarch('alpha') && __BD.store.squadStatus('alpha') === 'home'));
+
+    // --- 5. resolver: deterministic, plain data, seed-dependent, strength matters
+    const rz = await ev(() => {
+      const d = __BD.dev, st = __BD.store.state;
+      const atk = d.squadArmy(st, 'alpha'), def = d.creatureArmy('hound', 4);
+      const a = d.resolveBattle(atk, def, 99), b = d.resolveBattle(JSON.parse(JSON.stringify(atk)), JSON.parse(JSON.stringify(def)), 99);
+      const seeds = new Set(); for (let k = 1; k <= 8; k++) seeds.add(JSON.stringify(d.resolveBattle(atk, def, k).events.map((e) => e.dmg)));
+      const weak = d.squadArmy({ ...st, squads: { alpha: { ...st.squads.alpha, lines: [{ type: 'sentinel', count: 2 }, { type: null, count: 0 }, { type: null, count: 0 }] } } }, 'alpha');
+      let weakWins = 0, strongWins = 0;
+      for (let k = 1; k <= 20; k++) { if (d.resolveBattle(weak, d.creatureArmy('golem', 8), k).winner === 'attacker') weakWins++; if (d.resolveBattle(atk, d.creatureArmy('scuttler', 2), k).winner === 'attacker') strongWins++; }
+      return { same: JSON.stringify(a) === JSON.stringify(b), variety: seeds.size, weakWins, strongWins, plain: JSON.stringify(atk).length > 0 && !('state' in atk) };
+    });
+    check('battle resolver: plain-data armies, same seed → identical result', rz.same && rz.plain);
+    check('battle resolver: different seeds roll different damage', rz.variety > 1, `${rz.variety} distinct`);
+    check('battle resolver: strength decides (strong squad 20/20 vs Lv 2, 2 Sentinels 0/20 vs Lv 8 Golems)', rz.strongWins === 20 && rz.weakWins === 0, JSON.stringify(rz));
+
+    // --- 6. second kill of the same level: loot, but no Core
+    const second = await ev(() => {
+      const st = __BD.store; const c0 = st.state.resources.cores;
+      const t = st.creatures().filter((e) => !e.busy && e.ring === 0).sort((a, b) => a.level - b.level)[0];
+      t.level = 1; // fixture: this seed has a single Lv 1 creature, make another
+      const r = st.attack('bravo', t.id);
+      for (let i = 0; i < 70 && st.state.hunt.reports[0].squadId !== 'bravo'; i++) st.tick(1);
+      const rep = st.state.hunt.reports[0];
+      return { ok: r.ok, win: rep.win, cores: rep.loot.cores, delta: st.state.resources.cores - c0, energy: rep.loot.energy };
+    });
+    check('repeat Lv 1 kill: loot again but no Core (first kill only)', second.ok && second.win && second.cores === 0 && second.delta === 0 && second.energy === 30, JSON.stringify(second));
+    await ev(() => __BD.ui().closeModal(true));
+
+    // --- 7. respawn after 10 min, back to 40
+    const resp = await ev(() => { const st = __BD.store; const before = st.creatures().length; for (let i = 0; i < 61; i++) st.tick(10); return [before, st.creatures().length, st.state.world.respawns.length]; });
+    check('creatures respawn after 10 min (back to 40)', resp[0] === 38 && resp[1] === 40 && resp[2] === 0, JSON.stringify(resp));
+
+    // --- 8. defeat: heavier losses
+    const loss = await ev(() => {
+      const st = __BD.store; st.state.hunt.bestKill = 19;
+      st.refillSquad('charlie');
+      const t = st.creatures().filter((e) => e.level >= 12 && !e.busy)[0];
+      const r = st.attack('charlie', t.id);
+      for (let i = 0; i < 70 && st.state.hunt.reports[0].squadId !== 'charlie'; i++) st.tick(1);
+      st.state.hunt.bestKill = 1;
+      const rep = st.state.hunt.reports[0];
+      return { ok: r.ok, win: rep.win, total: rep.casualties.total, dead: rep.casualties.deadTotal, loot: rep.loot.energy, losses: st.state.hunt.losses };
+    });
+    check('a weak squad loses to a Lv 12+ creature: no loot', loss.ok && !loss.win && loss.loot === 0 && loss.losses === 1, JSON.stringify(loss));
+    check('defeat casualties are heavier (35-60% of 8 sent, ~40% of them dead)', loss.total >= 3 && loss.total <= 5 && loss.dead >= 1 && loss.dead < loss.total, JSON.stringify(loss));
+
+    // --- 9. Infirmary capacity: wounded beyond beds die
+    const ovf = await ev(() => {
+      const st = __BD.store; const cap = st.infirmaryCapacity();
+      st.state.infirmary.wounded.voyager.reserve += cap - st.woundedTotal() - 1; // one bed left
+      st.refillSquad('alpha');
+      const t = st.creatures().find((e) => e.level <= 2 && !e.busy);
+      const dead0 = st.state.hunt.dead;
+      st.attack('alpha', t.id);
+      for (let i = 0; i < 70 && st.state.hunt.reports[0].squadId !== 'alpha'; i++) st.tick(1);
+      const rep = st.state.hunt.reports[0];
+      const res = { cap, used: st.woundedTotal(), overflow: rep.casualties.overflow, wounded: rep.casualties.woundedTotal, dead: st.state.hunt.dead - dead0, tot: rep.casualties.total };
+      st.state.infirmary.wounded.voyager.reserve = 0;
+      return res;
+    });
+    check('Infirmary full: only 1 wounded admitted, the rest die', ovf.used === ovf.cap && ovf.wounded === 1 && ovf.overflow >= 1 && ovf.dead === ovf.tot - 1, JSON.stringify(ovf));
+
+    // --- 10. healing via the base panel -> Infirmary screen
+    await tab('base');
+    await ev(() => { __BD.store.state.resources.energy = 5000; __BD.base().select('infirmary'); }); await sleep(400);
+    check('Infirmary panel shows beds + heal speed', await waitTrue(() => /Beds \d+\/30/.test(__BD.ui().pStats.text) && __BD.ui().pOpen.labelText.text === 'Heal'));
+    await click('Heal');
+    check('Heal opens the Infirmary screen', await waitTrue(() => __BD.ui().screen?.id === 'infirmary'));
+    const w0 = await ev(() => { const st = __BD.store; return { s: st.woundedPool('sentinel'), b: st.woundedPool('bearer'), e: st.state.resources.energy, alpha: st.state.squads.alpha.lines.map((l) => [l.count, l.full]) }; });
+    const sLbl = `Heal all (${w0.s})`;
+    await click(sLbl, { meta: 'heal-sentinel' });
+    s = await state();
+    check('Heal all Sentinels queues them for 3 Energy each', s.infirmary.queue.length === 1 && s.infirmary.queue[0].type === 'sentinel' && s.infirmary.queue[0].count === w0.s && s.infirmary.queue[0].energyPer === 3 && w0.e - s.resources.energy > 3 * w0.s - 6 && w0.e - s.resources.energy <= 3 * w0.s + 1e-6, `${w0.s} wounded, spent ${(w0.e - s.resources.energy).toFixed(1)}`);
+    await ev(() => __BD.store.tick(2)); await sleep(500);
+    await shot('stage3-infirmary-healing.png');
+    check('healing progress runs (4 s per Sentinel at Lv 1)', (await ev((n) => { const b = __BD.store.state.infirmary.queue[0]; return b && (b.progress >= 2 || b.count < n); }, w0.s)) && (await ev(() => __BD.store.healUnitTime('sentinel'))) === 4);
+    // cancel refund on a second batch
+    const cr = await ev(() => { const st = __BD.store; const e = st.state.resources.energy; const n = st.woundedPool('bearer'); st.heal('bearer', n); const mid = st.state.resources.energy; const r = st.cancelHeal(1); return { n, paid: e - mid, refund: r.refund, back: st.state.resources.energy - e, pool: st.woundedPool('bearer') }; });
+    check('cancel a healing batch: full Energy refund, wounded go back to waiting', cr.n > 0 && cr.paid === 4 * cr.n && cr.refund === cr.paid && Math.abs(cr.back) < 1e-9 && cr.pool === cr.n, JSON.stringify(cr));
+    await ev(() => { const b = __BD.store.state.infirmary.queue[0]; if (b) b.progress = 0; });
+    const qn = await ev(() => ({ q: __BD.store.state.infirmary.queue[0]?.count ?? 0, p: __BD.store.woundedPool('sentinel') }));
+    await click('✕', { meta: 'cancel-heal-0', wait: 300 });
+    check('✕ in the queue cancels via the UI too', qn.q > 0 && (await ev(() => __BD.store.state.infirmary.queue.length)) === 0 && (await ev(() => __BD.store.woundedPool('sentinel'))) === qn.p + qn.q, JSON.stringify(qn));
+    const healed = await ev(() => {
+      const st = __BD.store;
+      for (let i = 0; i < 120 && st.state.world.marches.length; i++) st.tick(1); // squads home (healed troops only rejoin squads that are home)
+      st.state.infirmary.queue.length = 0;
+      const n = st.woundedPool('sentinel'); const t0 = st.state.troops.sentinel;
+      const fromAlpha = st.state.infirmary.wounded.sentinel.alpha; const a0 = st.state.squads.alpha.lines[0].count; const room = st.state.squads.alpha.lines[0].full - a0;
+      st.heal('sentinel', n); for (let i = 0; i < n * 4 + 2; i++) st.tick(1);
+      return { n, gained: st.state.troops.sentinel - t0, fromAlpha, room, alphaGain: st.state.squads.alpha.lines[0].count - a0, left: st.state.infirmary.queue.length };
+    });
+    check('healed troops return to the army and rejoin their own squad line', healed.n > 0 && healed.gained === healed.n && healed.fromAlpha > 0 && healed.alphaGain === Math.min(healed.fromAlpha, healed.room) && healed.left === 0, JSON.stringify(healed));
+    check('dead troops are gone (Refill pulls retrained/ready troops back into lines)', await ev(() => { const st = __BD.store; const before = st.refillable('alpha'); const r = st.refillSquad('alpha'); return before === r.added && st.state.squads.alpha.lines.every((l) => !l.type || l.count === l.full || st.readyCount(l.type) === 0); }));
+    // healing continues offline
+    const nb = await ev(() => { const st = __BD.store; st.state.infirmary.wounded.bearer.bravo += 6; st.state.troops.bearer -= 6; const n = st.woundedPool('bearer'); st.heal('bearer', n); st.save(); return n; });
+    const tb = await ev(() => __BD.store.state.troops.bearer);
+    await editSave('s.lastSaved = Date.now() - arg;', (nb * 5 + 3) * 1000);
+    check(`healing keeps running offline (${nb} Bearers × 5 s)`, await ev(([tb, nb]) => __BD.store.state.infirmary.queue.length === 0 && __BD.store.woundedPool('bearer') === 0 && __BD.store.state.troops.bearer === tb + nb, [tb, nb]));
+
+    // --- 11. healthy-only marching, stamina rules
+    const hz = await ev(() => {
+      const st = __BD.store; const snap = JSON.stringify(st.state);
+      for (const l of st.state.squads.charlie.lines) l.count = 0;
+      for (const t of ['sentinel', 'bearer', 'voyager']) st.state.troops[t] = st.assignedCount(t);
+      const t = st.creatures().find((e) => e.level <= st.maxAttackLevel() && !e.busy);
+      const a = st.attack('charlie', t.id).reason;
+      st.state = JSON.parse(snap);
+      st.state.hunt.stamina = 5;
+      const b = st.attack('alpha', t.id).reason;
+      st.state.hunt.stamina = 50; st.state.hunt.staminaCarry = 0; st.tick(3600);
+      const regen = st.state.hunt.stamina;
+      st.state.hunt.stamina = 100; st.tick(3600);
+      const capped = st.state.hunt.stamina;
+      st.state.daily = { lastDay: null, streak: 0 }; st.state.hunt.stamina = 30; st.claimDaily();
+      const daily = st.state.hunt.stamina;
+      st.state.hunt.stamina = 12; st.state.beacon.charge = 100; st.state.construction = []; st.upgrade('beacon'); st.speedUpConstruction('beacon', 1e6);
+      const beacon = st.state.hunt.stamina;
+      st.state.hunt.stamina = 100;
+      return { a, b, regen, capped, daily, beacon };
+    });
+    check('a squad with no healthy troops can\'t march', /No healthy troops in Charlie/.test(hz.a), hz.a);
+    check('attacks need 10 stamina', hz.b === 'Need 10 stamina', hz.b);
+    check('stamina regenerates 10 per hour, capped at 100', hz.regen === 60 && hz.capped === 100, JSON.stringify(hz));
+    check('daily login gives +20 stamina; Beacon level-up refills to 100', hz.daily === 50 && hz.beacon === 100, JSON.stringify(hz));
+    // recall refunds stamina
+    const rc = await ev(() => { const st = __BD.store; const t = st.creatures().find((e) => e.level <= 2 && !e.busy); st.attack('bravo', t.id); st.tick(2); const mid = st.state.hunt.stamina; const r = st.recall('bravo'); const m = st.squadMarch('bravo'); const out = { ok: r.ok, mid, after: st.state.hunt.stamina, phase: m?.phase, free: !t.busy }; for (let i = 0; i < 5; i++) st.tick(1); out.home = !st.squadMarch('bravo'); return out; });
+    check('recall turns a march around (refunds its 10 stamina, frees the target)', rc.ok && rc.after === rc.mid + 10 && rc.phase === 'back' && rc.free && rc.home, JSON.stringify(rc));
+
+    // --- 12. Auto mode (UI toggle): picks highest beatable level, nearest; all idle squads; stamina-limited
+    await tab('world');
+    await ev(() => { const st = __BD.store; st.state.hunt.bestKill = 6; st.state.hunt.stamina = 20; for (const id of ['alpha', 'bravo', 'charlie']) st.refillSquad(id); });
+    const expect = await ev(() => {
+      const st = __BD.store, out = {};
+      for (const id of ['alpha', 'bravo']) {
+        const p = st.squadCombatPower(id), home = { x: 32, y: 32 };
+        const ok = st.creatures().filter((e) => !e.busy && e.level <= 7 && p >= 1.1 * st.creaturePowerOf(e) && !Object.values(out).includes(e.id));
+        ok.sort((a, b) => b.level - a.level || __BD.dev.dist(a, home) - __BD.dev.dist(b, home));
+        out[id] = ok[0]?.id ?? null;
+      }
+      return out;
+    });
+    await click('AUTO: OFF', { meta: 'auto' });
+    s = await state();
+    const am = Object.fromEntries(s.world.marches.map((m) => [m.squadId, m.targetId]));
+    check('Auto toggled ON from the World HUD', s.hunt.auto === true);
+    check('Auto sends idle squads at the highest-level creature they out-power by 10%+ (nearest first)', am.alpha === expect.alpha && am.bravo === expect.bravo && !!expect.alpha, `${JSON.stringify(am)} vs ${JSON.stringify(expect)}`);
+    check('Auto stops when stamina runs out (20 stamina → 2 marches, Charlie waits)', s.world.marches.length === 2 && s.hunt.stamina === 0 && !am.charlie);
+    await sleep(800);
+    await ev(() => { const u = __BD.ui(); u.tweens.killTweensOf(u.toastBox); u.toastBox.setVisible(false); });
+    await shot('stage3-world-map.png');
+    const auto2 = await ev(() => { const st = __BD.store; const k0 = st.state.hunt.kills + st.state.hunt.losses; for (let i = 0; i < 400; i++) st.tick(1); return { fights: st.state.hunt.kills + st.state.hunt.losses - k0, marches: st.state.world.marches.length, stamina: st.state.hunt.stamina }; });
+    check('Auto keeps hunting as stamina regenerates (no new march until 10 stamina)', auto2.fights === 2 && auto2.marches === 0 && auto2.stamina === 1, JSON.stringify(auto2));
+    const autoSee = await ev(() => { const st = __BD.store; st.state.hunt.stamina = 10; st.tick(1); return st.state.world.marches.length; });
+    check('Auto resumes as soon as stamina reaches 10', autoSee === 1);
+    await ev(() => { const st = __BD.store; for (let i = 0; i < 200 && st.state.world.marches.length; i++) st.tick(1); });
+
+    // --- 13. Auto keeps hunting OFFLINE (stamina-limited, 8 h cap)
+    await ev(() => { const st = __BD.store; st.state.hunt.stamina = 40; st.state.hunt.staminaCarry = 0; st.state.hunt.auto = true; for (const id of ['alpha', 'bravo', 'charlie']) st.refillSquad(id); st.save(); });
+    const k0 = await ev(() => __BD.store.state.hunt.kills + __BD.store.state.hunt.losses);
+    await editSave('s.lastSaved = Date.now() - arg;', 3 * 3600e3);
+    const off = await ev(() => ({ hu: __BD.store.offlineReport?.hunts, fights: __BD.store.state.hunt.kills + __BD.store.state.hunt.losses, stamina: __BD.store.state.hunt.stamina, offlineReports: __BD.store.state.hunt.reports.filter((r) => r.offline).length, out: __BD.store.state.world.marches.length }));
+    check('offline Auto: 3 h away = 40 + 30 regen stamina → 7 marches (fought or still out), simulated on load', off.hu?.fights >= 5 && off.hu.fights + off.out === 7 && off.fights - k0 === off.hu.fights && off.stamina < 10 && off.offlineReports === off.hu.fights, JSON.stringify(off));
+    check('offline hunt summary (wins, loot, wounded/fallen) is reported', off.hu.wins >= 1 && off.hu.energy > 0 && off.hu.wounded + off.hu.dead > 0);
+    await ev(() => { const st = __BD.store; st.state.hunt.stamina = 200; st.save(); });
+    await editSave('s.lastSaved = Date.now() - arg; s.hunt.stamina = 0; s.hunt.staminaCarry = 0;', 30 * 3600e3);
+    const cap8 = await ev(() => ({ secs: __BD.store.offlineReport.seconds, fights: __BD.store.offlineReport.hunts.fights }));
+    check('offline Auto is capped at 8 h (≤ 80 stamina regen → ≤ 8 hunts)', cap8.secs === 8 * 3600 && cap8.fights <= 8 && cap8.fights >= 1, JSON.stringify(cap8));
+    await ev(() => __BD.store.setAuto(false));
+
+    // --- 14. persistence + reports list
+    const before = await state();
+    await ev(() => __BD.store.save()); await page.reload(); await ready();
+    s = await state();
+    check('world, hunt progress and infirmary persist across reload', JSON.stringify(s.world.entities) === JSON.stringify(before.world.entities) && s.hunt.kills === before.hunt.kills && JSON.stringify(s.hunt.firstKills) === JSON.stringify(before.hunt.firstKills) && JSON.stringify(s.infirmary) === JSON.stringify(before.infirmary) && s.hunt.reports.length === before.hunt.reports.length);
+    const cores = await ev(() => { const st = __BD.store; return { fk: st.state.hunt.firstKills.length, tot: [...Array(20)].reduce((n, _, i) => n + ((i + 1) % 5 === 0 ? 2 : 1), 0) }; });
+    check('lifetime first-kill Cores total 24 (16 × 1 + 4 Wyrm × 2)', cores.tot === 24);
+    await tab('world');
+    await click('Reports', { meta: 'reports' }).catch(async () => click(`Reports (${s.hunt.reports.length})`, { meta: 'reports' }));
+    check('Reports list opens with the latest battles', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'Battle Reports')));
+    await click('report-0', { kind: 'zone' });
+    check('tapping a report opens its card', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'VICTORY' || o.text === 'DEFEAT')));
+    await ev(() => __BD.ui().closeModal(true));
+    await tab('base');
+    check('Base tab returns to the base view', await waitTrue(() => !__BD.ui().worldMode && !__BD.base().scene.isSleeping() && __BD.world().scene.isSleeping()));
+  } catch (e) {
+    const diag = await ev(() => ({ screen: __BD.ui().screen?.id, world: __BD.ui().worldMode, modal: !!__BD.ui().modal, controls: __BD.controls().map((c) => c.label + (c.meta ? `#${c.meta}` : '')) })).catch(() => ({}));
+    check('stage 3 suite ran without exceptions', false, `${e.message} :: ${JSON.stringify(diag)}`);
+  }
+  check('stage 3: no console errors', errors.length === 0, errors.join(' | '));
+  await browser.close();
+}
+
 const srv = await serveDist();
 try {
-  if (process.env.ONLY !== '2') {
+  if (!process.env.ONLY || process.env.ONLY === '1') {
     await run(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
     if (!process.env.QUICK) await run(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
   }
-  if (process.env.ONLY !== '1') await runStage2(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
-  if (!process.env.QUICK && process.env.ONLY !== '1') await runStage2(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+  if (!process.env.ONLY || process.env.ONLY === '2') await runStage2(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
+  if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '2')) await runStage2(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+  if (!process.env.ONLY || process.env.ONLY === '3') await runStage3(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
+  if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '3')) await runStage3(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
