@@ -101,6 +101,24 @@ export const BUILDING_IDS = Object.keys(BUILDINGS);
 // Buildings can't be upgraded past Beacon level + this many levels.
 export const BUILDING_LEVEL_HEADROOM = 2;
 
+// Building upgrades take time. Applies to the Command Center, Barracks, Armory AND the Beacon.
+// Cost is paid up front; level, power and unlocks apply only when the timer finishes.
+export const CONSTRUCTION = {
+  builders: 1,                       // upgrades that can run at the same time
+  // Seconds to upgrade TO a level. Past the table, each level takes `growth`x the previous one.
+  table: { 2: 10, 3: 30, 4: 120, 5: 360, 6: 1200 },
+  growth: 3,
+  seconds(toLevel) {
+    if (toLevel <= 1) return 0;
+    const t = this.table[toLevel];
+    if (t != null) return t;
+    const top = Math.max(...Object.keys(this.table).map(Number));
+    return this.table[top] * Math.pow(this.growth, toLevel - top);
+  },
+  // Hook for future Beacon Core speed-ups (no UI yet): store.speedUpConstruction(id, seconds).
+  speedUp: { secondsPerCore: 300 },
+};
+
 export const buildingUpgradeCost = (id, level) => {
   const b = BUILDINGS[id];
   return Math.round(b.baseCost * Math.pow(b.costGrowth, level - 1));
@@ -264,4 +282,4 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 4; // v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels
+export const SAVE_VERSION = 5; // v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH as W, GAME_HEIGHT as H, PALETTE, BEACON, BUILDINGS, ECONOMY, BARRACKS, TROOP_CLASSES, TROOP_IDS, SQUADS, TROOPS } from '../config.js';
+import { fmtClock } from '../ui/widgets.js';
 import { store } from '../state/store.js';
 import { buildingPower } from '../systems/power.js';
 import { text, fmt, fmtDuration, panelBg, button } from '../ui/widgets.js';
@@ -41,7 +42,13 @@ export default class UIScene extends Phaser.Scene {
     ev.on('base:moveMode', (id) => this.showBanner(id), this);
     ev.on('toast', (msg) => this.toast(msg), this);
     this.unsubs = [
-      store.on('upgrade', (id) => { this.bump(this.powerText); this.refreshPanel(); if (id === BEACON.id) this.time.delayedCall(900, () => this.toast(`Beacon Lv ${store.state.beacon.level}: +${CORES.beaconLevel} Beacon Cores ready. Tap the Cores counter to claim.`, 2600)); }),
+      store.on('upgrade', (id) => {
+        this.bump(this.powerText); this.refreshPanel();
+        const lv = store.levelOf(id);
+        this.toast(id === BEACON.id ? `${BEACON.name} reached Lv ${lv}. +${CORES.beaconLevel} Beacon Cores ready: tap the Cores counter to claim.` : `${BUILDINGS[id].name} reached Lv ${lv}`, 2600);
+      }),
+      store.on('upgradeStart', () => this.refreshPanel()),
+      store.on('upgradeCancel', () => this.refreshPanel()),
       store.on('reset', () => { this.closePanel(false); this.screenState.edit = null; if (this.screen) this.renderScreen(); }),
       store.on('change', () => { this.screenDirty = true; }),
       store.on('trained', (done, d) => { if (d.after > d.before) this.bump(this.powerText); }),
@@ -58,7 +65,8 @@ export default class UIScene extends Phaser.Scene {
     const off = store.offlineReport;
     if (off && off.energy >= 1) {
       const trained = Object.entries(off.trained ?? {}).map(([t, n]) => `${n} ${TROOP_CLASSES[t].plural}`).join(', ');
-      this.time.delayedCall(400, () => this.toast(`Welcome back, Commander. Away ${fmtDuration(off.seconds)}${off.capped ? ' (capped)' : ''}: +${fmt(off.energy)} Energy, +${fmt(off.shards)} Shards, +${fmt(off.alloy)} Alloy${trained ? `\nTrained while away: ${trained}` : ''}`, 4600));
+      const built = (off.built ?? []).map((b) => `${store.nameOf(b.id)} Lv ${b.level}`).join(', ');
+      this.time.delayedCall(400, () => this.toast(`Welcome back, Commander. Away ${fmtDuration(off.seconds)}${off.capped ? ' (capped)' : ''}: +${fmt(off.energy)} Energy, +${fmt(off.shards)} Shards, +${fmt(off.alloy)} Alloy${trained ? `\nTrained while away: ${trained}` : ''}${built ? `\nUpgrades finished: ${built}` : ''}`, 4600));
     } else if (store.migratedFrom && store.migratedFrom < 4) {
       this.time.delayedCall(400, () => this.toast(`Recruitment now uses Beacon Cores. Here are ${CORES.migrationGrant} to start. Your Shards stay for upgrades.`, 4600));
     }
@@ -456,6 +464,7 @@ export default class UIScene extends Phaser.Scene {
     this.pDesc = text(this, x + 28, y + 80, '', 21, PALETTE.textDim, { wordWrap: { width: w - 56 }, lineSpacing: 4 });
     this.pStats = text(this, x + 28, y + 172, '', 23, PALETTE.text, { lineSpacing: 10 });
     this.pReason = text(this, x + 28, y + 330, '', 20, '#ff8a95');
+    this.pBar = this.add.graphics();
     const close = button(this, x + w - 40, y + 44, 56, 56, '✕', () => this.closePanel(true), { style: 'ghost', size: 26 });
     this.pUpgrade = button(this, x + 28 + 210, y + h - 56, 420, 76, 'Upgrade', () => this.doUpgrade(), { style: 'gold', size: 28 });
     this.pMove = button(this, x + w - 28 - 105, y + h - 56, 210, 76, 'Move', () => {
@@ -466,7 +475,7 @@ export default class UIScene extends Phaser.Scene {
       const target = { barracks: 'troops', armory: 'armory', commandCenter: 'squads' }[id];
       if (target) this.openScreen(target);
     }, { style: 'cyan', size: 26 });
-    c.add([g, block, this.pTitle, this.pLevel, this.pDesc, this.pStats, this.pReason, close, this.pUpgrade, this.pMove, this.pOpen]);
+    c.add([g, block, this.pTitle, this.pLevel, this.pDesc, this.pStats, this.pReason, this.pBar, close, this.pUpgrade, this.pMove, this.pOpen]);
   }
 
   openPanel(id) {
@@ -499,7 +508,7 @@ export default class UIScene extends Phaser.Scene {
         `Power (Beacon Relay):  +${now}   →  +${next}`,
         `Charge:  ${pct}%   ·   Energy income ${ECONOMY.energyPerSec(lv).toFixed(2)}/s → ${ECONOMY.energyPerSec(lv + 1).toFixed(2)}/s`,
         `Building level cap:  Lv ${store.buildingLevelCap()}   ·   Anchored (can't move)`,
-        `Upgrade cost:  ${fmt(info.cost)} Energy + full charge`,
+        info.job ? `Upgrading to Lv ${info.job.toLevel}:  ${fmtClock(info.job.total - info.job.progress)} left` : `Upgrade:  ${fmt(info.cost)} Energy + full charge  ·  ${fmtClock(info.seconds)}`,
       ].join('\n'));
       this.pMove.setVisible(false);
       this.pOpen.setVisible(false);
@@ -518,22 +527,40 @@ export default class UIScene extends Phaser.Scene {
         `Power contribution:  +${now}   →  +${next} at Lv ${lv + 1}`,
         extra,
         `Level cap:  Lv ${store.buildingLevelCap()}  (Beacon Lv ${s.beacon.level} + 2)`,
-        `Upgrade cost:  ${fmt(info.cost)} Energy`,
+        info.job ? `Upgrading to Lv ${info.job.toLevel}:  ${fmtClock(info.job.total - info.job.progress)} left` : `Upgrade:  ${fmt(info.cost)} Energy  ·  takes ${fmtClock(info.seconds)}`,
       ].join('\n'));
       this.pMove.setVisible(true);
       this.pOpen.setVisible(true).setLabel({ barracks: 'Train', armory: 'Recruit', commandCenter: 'Squads' }[id]);
       this.pUpgrade.setPosition(this.panelRect.x + 28 + 210, this.pUpgrade.y);
     }
     this.pLevel.setText(`Lv ${lv}`);
-    this.pUpgrade.setLabel(`Upgrade  ·  ${fmt(info.cost)}`).setEnabled(info.can);
-    this.pReason.setText(info.reason ? `⚠ ${info.reason}` : '');
+    const r = this.panelRect, bar = this.pBar;
+    bar.clear();
+    if (info.job) {
+      // countdown bar in the panel; the button becomes Cancel (full refund)
+      const pct = Math.min(1, info.job.progress / info.job.total), bx = r.x + 28, by = r.y + 334, bw = r.width - 56 - 236;
+      bar.fillStyle(0x05070a, 1).fillRect(bx, by, bw, 16);
+      bar.fillStyle(PALETTE.gold, 1).fillRect(bx, by, bw * pct, 16);
+      bar.lineStyle(2, PALETTE.gold, 0.9).strokeRect(bx, by, bw, 16);
+      this.pUpgrade.setLabel(`Cancel  ·  refund ${fmt(info.job.cost)}`).setStyle('danger').setEnabled(true);
+      this.pReason.setText('');
+    } else {
+      this.pUpgrade.setLabel(`Upgrade  ·  ${fmt(info.cost)}  ·  ${fmtClock(info.seconds)}`).setStyle('gold').setEnabled(info.can);
+      this.pReason.setText(info.reason ? `⚠ ${info.reason}` : '');
+    }
   }
 
   doUpgrade() {
     const id = this.panelOpenFor;
     if (!id) return;
-    const r = store.upgrade(id);
-    if (!r.ok) this.toast(r.reason);
+    if (store.constructionJob(id)) {
+      const c = store.cancelUpgrade(id);
+      if (c.ok) this.toast(`Upgrade cancelled. Refunded ${fmt(c.refund)} Energy`);
+    } else {
+      const r = store.upgrade(id);
+      if (!r.ok) this.toast(r.reason);
+      else this.toast(`${store.nameOf(id)} upgrading to Lv ${r.toLevel} (${fmtClock(r.seconds)})`, 1800);
+    }
     this.refreshPanel();
   }
 

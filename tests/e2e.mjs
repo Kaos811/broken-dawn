@@ -139,17 +139,26 @@ async function run(url, label, takeShots) {
   check('panel shows name, level, power contribution', /Command Center/.test(panelTxt) && /Lv 1/.test(panelTxt) && /\+10/.test(panelTxt));
   await shot('02-building-info-panel.png');
   const up = await uiPoint(() => { const b = __BD.ui().pUpgrade; return __BD.gameToPage(b.x, b.y); });
+  const eUp0 = (await state()).resources.energy;
   await page.mouse.click(up.x, up.y);
+  await sleep(300);
+  let st1 = await state();
+  check('Upgrade starts a 10 s timer (Lv 2), pays 50 Energy up front', st1.construction.length === 1 && st1.construction[0].id === 'commandCenter' && st1.construction[0].total === 10 && Math.abs(eUp0 - st1.resources.energy - 50) < 1, JSON.stringify(st1.construction));
+  check('level and power unchanged while upgrading', st1.buildings.commandCenter.level === 1 && (await power()) === p0);
+  check('one builder: a second upgrade is refused while busy', (await ev(() => __BD.store.upgradeInfo('barracks').reason || '')).startsWith('Builder busy'));
+  await ev(() => __BD.store.tick(9));
+  check('still Lv 1 after 9 s', (await state()).buildings.commandCenter.level === 1 && (await power()) === p0);
+  await ev(() => __BD.store.tick(1.01));
   await sleep(300);
   const p1 = await power();
   const hudPower = await ev(() => __BD.ui().powerText.text);
-  check('Upgrade raises Base Power by +10 (Command Center)', p1 === p0 + 10, `${p0} -> ${p1}, HUD "${hudPower}"`);
+  check('Upgrade completes after 10 s and raises Base Power by +10 (Command Center)', p1 === p0 + 10, `${p0} -> ${p1}, HUD "${hudPower}"`);
   check('HUD Base Power shows new value', hudPower === String(p1));
-  check('Upgrade spent Energy and raised level', (await state()).buildings.commandCenter.level === 2);
+  check('Upgrade raised level and freed the builder', (await state()).buildings.commandCenter.level === 2 && (await state()).construction.length === 0);
   // not enough energy -> stays put
   await ev(() => { __BD.store.state.resources.energy = 0; });
   await page.mouse.click(up.x, up.y); await sleep(200);
-  check('Upgrade blocked without Energy', (await power()) === p1 && (await state()).buildings.commandCenter.level === 2);
+  check('Upgrade blocked without Energy', (await power()) === p1 && (await state()).buildings.commandCenter.level === 2 && (await state()).construction.length === 0);
   // close panel via X
   const x = await uiPoint(() => { const ui = __BD.ui(); const r = ui.panelRect; return __BD.gameToPage(r.x + r.width - 40, r.y + 44); });
   await page.mouse.click(x.x, x.y); await sleep(150);
@@ -239,7 +248,9 @@ async function run(url, label, takeShots) {
   // --- Beacon upgrade (needs full charge) raises power by +15 and resets charge
   const bp0 = await power();
   await ev(() => __BD.store.upgrade('beacon'));
-  check('Beacon upgrade adds +15 power and resets charge', (await power()) === bp0 + 15 && (await state()).beacon.charge < 1 && (await state()).beacon.level === 2);
+  check('Beacon upgrade spends the full charge and starts a timer', (await state()).beacon.charge < 1 && (await state()).beacon.level === 1 && (await power()) === bp0);
+  await ev(() => __BD.store.tick(10.01));
+  check('Beacon upgrade adds +15 power when the timer finishes', (await power()) === bp0 + 15 && (await state()).beacon.level === 2);
 
   // --- Nav: Troops / Armory / Squads open real screens now; Settings > Reset
   const tabPt = (i) => ev((i) => __BD.gameToPage((720 / 5) * (i + 0.5), __BD.ui().scale.height - 65), i);
@@ -351,7 +362,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let m = await state();
-    check('v2 save migrates to version 4 (via v3)', m.version === 4);
+    check('v2 save migrates to version 5 (via v3, v4)', m.version === 5);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
@@ -372,9 +383,24 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v3 save migrates to v4: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 4 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 save migrates to v5: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 5 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
     check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload(); await ready(); return (await state()).resources.cores === 10; })());
+
+    // --- 0c. v4 save (before upgrade timers) -> v5: levels kept, nothing under construction, backup kept
+    await ev(() => {
+      localStorage.clear();
+      localStorage.setItem('brokenDawn.save.v1', JSON.stringify({
+        version: 4, resources: { energy: 300, shards: 40, alloy: 0, cores: 7 }, beacon: { level: 4, charge: 100 },
+        buildings: { commandCenter: { level: 5, gx: 12, gy: 8 }, barracks: { level: 3, gx: 8, gy: 12 }, armory: { level: 2, gx: 16, gy: 16 } },
+        troops: { sentinel: 0, bearer: 0, voyager: 0 }, claims: { beacon: [2, 3], milestones: ['cc3'] }, lastSaved: Date.now(),
+      }));
+      __BD.store.save = () => {};
+    });
+    await page.reload(); await ready();
+    m = await state();
+    check('v4 save migrates to v5: levels, Cores, claims kept; no construction', m.version === 5 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
+    check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
 
     // --- 1. Save migration from a stage-1 (v1) save
     await ev(() => {
@@ -389,7 +415,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v1 save migrates to version 4', s.version === 4);
+    check('v1 save migrates to version 5', s.version === 5);
     check('migration keeps buildings, levels, Energy and Beacon', s.buildings.barracks.gy === 15 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
     check('migration adds Shards (500), 10 Cores, Alloy, troops, squad lines', Math.floor(s.resources.shards) === 500 && s.resources.cores === 10 && s.resources.alloy < 5 && s.troops.sentinel === 0 && s.squads.alpha.lines.length === 3 && s.squads.alpha.leader === null);
     check('migration keeps a backup of the v1 save', await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v1')));
@@ -721,6 +747,56 @@ async function runStage2(url, label, takeShots) {
     await page.mouse.click(pp.x, pp.y); await sleep(300);
     check('Base Power breakdown opens from the HUD', await ev(() => __BD.ui().modal?.list.some((o) => o.text && /TROOP POWER/.test(o.text))));
     await ev(() => __BD.ui().closeModal());
+
+    // --- 10. Building upgrade timers (one builder)
+    const durs = await ev(() => { const st = __BD.store; const lv0 = st.state.buildings.armory.level; const out = []; for (let L = 1; L <= 8; L++) { st.state.buildings.armory.level = L; out.push(st.upgradeSeconds('armory')); } st.state.buildings.armory.level = lv0; return out; });
+    check('upgrade durations: Lv2 10s, Lv3 30s, Lv4 2m, Lv5 6m, Lv6 20m, then x3', JSON.stringify(durs) === JSON.stringify([10, 30, 120, 360, 1200, 3600, 10800, 32400]), JSON.stringify(durs));
+    check('Beacon uses the same timer table', await ev(() => __BD.store.upgradeSeconds('beacon') === 120)); // Beacon Lv 3 -> 4
+    await ev(() => { const st = __BD.store; st.state.resources.energy = 5000; st.state.construction = []; st.save(); __BD.base().select('barracks'); });
+    await sleep(400);
+    const bPow0 = (await power()).total, bCap0 = await ev(() => __BD.store.laneCapacity()), bE0 = (await state()).resources.energy;
+    const upB = await ev(() => { const b = __BD.ui().pUpgrade; return __BD.gameToPage(b.x, b.y); });
+    await page.mouse.click(upB.x, upB.y); await sleep(400);
+    s = await state();
+    check('Barracks Lv 2→3 upgrade starts via the panel: 30 s, 47 Energy paid up front', s.construction.length === 1 && s.construction[0].id === 'barracks' && s.construction[0].toLevel === 3 && s.construction[0].total === 30 && Math.abs(bE0 - s.resources.energy - 47) < 1, JSON.stringify(s.construction));
+    check('panel shows countdown + Cancel while upgrading', await waitTrue(() => /Upgrading to Lv 3/.test(__BD.ui().pStats.text) && /^Cancel/.test(__BD.ui().pUpgrade.labelText.text)));
+    check('map shows a countdown over the Barracks', await waitTrue(() => { const t = __BD.base().buildTexts?.barracks; return !!t && t.visible && /Lv 3/.test(t.text); }));
+    const lock = await ev(() => [__BD.store.upgrade('commandCenter').reason, __BD.store.upgrade('armory').ok, __BD.store.state.construction.length]);
+    check('single builder: other upgrades refused while one runs', /^Builder busy: Barracks/.test(lock[0]) && lock[1] === false && lock[2] === 1, JSON.stringify(lock));
+    await ev(() => __BD.store.tick(12)); await sleep(400);
+    await shot('stage2-building-upgrade.png');
+    await ev(() => __BD.store.tick(17));
+    check('level, power and lane capacity unchanged before the timer ends', (await state()).buildings.barracks.level === 2 && (await power()).total === bPow0 && (await ev(() => __BD.store.laneCapacity())) === bCap0);
+    await ev(() => __BD.store.tick(1.01)); await sleep(300);
+    check('on completion: Barracks Lv 3, +5 power, lanes 20→30', (await state()).buildings.barracks.level === 3 && (await power()).total === bPow0 + 5 && (await ev(() => __BD.store.laneCapacity())) === 30 && (await state()).construction.length === 0);
+    // cancel = full refund (UI)
+    await ev(() => { __BD.base().select('commandCenter'); }); await sleep(300);
+    const cE0 = (await state()).resources.energy;
+    const upC = await ev(() => { const b = __BD.ui().pUpgrade; return __BD.gameToPage(b.x, b.y); });
+    await page.mouse.click(upC.x, upC.y); await sleep(400);
+    const cCost = (await state()).construction[0]?.cost;
+    check('Command Center Lv 3→4 takes 2 min', (await state()).construction[0]?.total === 120);
+    await ev(() => __BD.store.tick(30));
+    await waitTrue(() => /^Cancel/.test(__BD.ui().pUpgrade.labelText.text));
+    await page.mouse.click(upC.x, upC.y); await sleep(400);
+    s = await state();
+    check('Cancel refunds the full cost and frees the builder', s.construction.length === 0 && s.buildings.commandCenter.level === 3 && s.resources.energy >= cE0 - 0.01 && cCost > 0, `cost ${cCost}, energy ${cE0.toFixed(1)} -> ${s.resources.energy.toFixed(1)}`);
+    const exact = await ev(() => { const st = __BD.store; st.state.resources.energy = 1000; const r = st.upgrade('armory'); const mid = st.state.resources.energy; const c = st.cancelUpgrade('armory'); return [r.cost, mid, c.refund, st.state.resources.energy, st.cancelUpgrade('armory').ok]; });
+    check('cancel refund is exact (1000 → 1000)', exact[1] === 1000 - exact[0] && exact[2] === exact[0] && exact[3] === 1000 && exact[4] === false, JSON.stringify(exact));
+    // Beacon still needs full charge; cancelling gives the charge back
+    const bc = await ev(() => { const st = __BD.store; st.state.beacon.charge = 50; const a = st.upgrade('beacon').reason; st.state.beacon.charge = 100; const b = st.upgrade('beacon'); const ch = st.state.beacon.charge; st.cancelUpgrade('beacon'); return [a, b.ok, ch, st.state.beacon.charge, st.state.beacon.level]; });
+    check('Beacon upgrade still requires full charge; cancel restores charge', bc[0] === 'Beacon must be fully charged' && bc[1] && bc[2] === 0 && bc[3] === 100 && bc[4] === 3, JSON.stringify(bc));
+    // offline: a 2-minute upgrade finishes while away; another keeps counting
+    await ev(() => { __BD.ui().closePanel(true); __BD.store.upgrade('commandCenter'); __BD.store.save(); });
+    await editSave('s.lastSaved = Date.now() - arg;', 200e3);
+    s = await state();
+    check('offline: Command Center upgrade completed while away (Lv 4)', s.buildings.commandCenter.level === 4 && s.construction.length === 0 && (await ev(() => (__BD.store.offlineReport?.built ?? []).some((b) => b.id === 'commandCenter' && b.level === 4))));
+    await ev(() => { const st = __BD.store; st.state.beacon.charge = 100; st.state.resources.energy = 5000; st.upgrade('beacon'); st.save(); });
+    await editSave('s.lastSaved = Date.now() - arg;', 60e3);
+    s = await state();
+    check('offline: Beacon upgrade timer kept running (≈60 of 120 s), level unchanged', s.beacon.level === 3 && s.construction[0]?.id === 'beacon' && s.construction[0].progress >= 59 && s.construction[0].progress < 70, JSON.stringify(s.construction));
+    const sp = await ev(() => { const st = __BD.store; const cost = st.speedUpCoreCost('beacon'); const r = st.speedUpConstruction('beacon', 1e6); return [cost, r.ok, st.state.beacon.level, st.state.construction.length]; });
+    check('speed-up hook (no UI): speedUpConstruction finishes the timer', sp[0] >= 1 && sp[1] && sp[2] === 4 && sp[3] === 0, JSON.stringify(sp));
   } catch (e) {
     const diag = await ev(() => ({ screen: __BD.ui().screen?.id, tab: __BD.ui().screenState, modal: !!__BD.ui().modal, reveal: !!__BD.ui().reveal, controls: __BD.controls().map((c) => c.label) })).catch(() => ({}));
     check(`stage 2 suite ran without exceptions`, false, `${e.message} :: ${JSON.stringify(diag)}`);

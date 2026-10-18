@@ -55,6 +55,8 @@ export default class BaseScene extends Phaser.Scene {
     this.unsubs = [
       store.on('reset', () => { this.exitMoveMode(); this.clearSelection(); this.syncAll(); }),
       store.on('upgrade', (id, d) => this.upgradeFx(id, d)),
+      store.on('upgradeStart', () => this.syncLabels()),
+      store.on('upgradeCancel', () => this.syncLabels()),
       store.on('change', () => this.syncLabels()),
     ];
     this.game.events.on('ui:move', (id) => this.enterMoveMode(id), this);
@@ -240,11 +242,13 @@ export default class BaseScene extends Phaser.Scene {
   }
   syncLabel(id) {
     const b = store.state.buildings[id];
-    this.sprites[id].label.setText(`${BUILDINGS[id].name}  ·  Lv ${b.level}`);
+    const j = store.constructionJob(id);
+    this.sprites[id].label.setText(`${BUILDINGS[id].name}  ·  Lv ${b.level}${j ? `  ⬆ ${j.toLevel}` : ''}`);
   }
   syncBeaconLabel() {
     const a = footprintAnchor(BEACON.gx, BEACON.gy, BEACON.footprint);
-    this.beaconLabel.setText(`${BEACON.name}  ·  Lv ${store.state.beacon.level}`).setPosition(a.x, a.y + 6).setColor(PALETTE.textGold);
+    const j = store.constructionJob(BEACON.id);
+    this.beaconLabel.setText(`${BEACON.name}  ·  Lv ${store.state.beacon.level}${j ? `  ⬆ ${j.toLevel}` : ''}`).setPosition(a.x, a.y + 6).setColor(PALETTE.textGold);
   }
   syncLabels() { BUILDING_IDS.forEach((id) => this.syncLabel(id)); this.syncBeaconLabel(); }
 
@@ -500,7 +504,38 @@ export default class BaseScene extends Phaser.Scene {
     this.syncLabels();
   }
 
+  // Construction progress bar + countdown floating over each building that's upgrading.
+  drawConstruction() {
+    if (!this.buildFx) {
+      this.buildFx = this.add.graphics().setDepth(5600);
+      this.buildTexts = {};
+    }
+    const g = this.buildFx; g.clear();
+    const live = new Set();
+    for (const j of store.state.construction) {
+      const img = j.id === BEACON.id ? this.beaconSprite : this.sprites[j.id]?.img;
+      if (!img) continue;
+      live.add(j.id);
+      const w = 180, h = 18, x = img.x - w / 2, y = img.y - img.displayHeight * 0.82;
+      const pct = Math.min(1, j.progress / j.total);
+      g.fillStyle(0x05070a, 0.92).fillRect(x - 4, y - 4, w + 8, h + 8);
+      g.fillStyle(0x1a1f27, 1).fillRect(x, y, w, h);
+      g.fillStyle(PALETTE.gold, 1).fillRect(x, y, w * pct, h);
+      g.fillStyle(0xffffff, 0.25 + 0.2 * Math.sin(this.time.now / 180)).fillRect(x, y, w * pct, h / 3);
+      g.lineStyle(2, PALETTE.gold, 1).strokeRect(x - 4, y - 4, w + 8, h + 8);
+      let t = this.buildTexts[j.id];
+      if (!t) {
+        t = this.buildTexts[j.id] = this.add.text(0, 0, '', { fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif', fontSize: '24px', fontStyle: 'bold', color: PALETTE.textGold, stroke: '#05070a', strokeThickness: 6 }).setOrigin(0.5, 1).setDepth(5601);
+      }
+      const left = Math.max(0, Math.ceil(j.total - j.progress));
+      const hh = Math.floor(left / 3600), mm = Math.floor((left % 3600) / 60), ss = left % 60;
+      t.setText(`⬆ Lv ${j.toLevel}  ${hh ? `${hh}:${String(mm).padStart(2, '0')}` : mm}:${String(ss).padStart(2, '0')}`).setPosition(img.x, y - 8).setVisible(true);
+    }
+    for (const [id, t] of Object.entries(this.buildTexts)) if (!live.has(id)) t.setVisible(false);
+  }
+
   update(_t, dtMs) {
+    this.drawConstruction();
     // orbiting Beacon shards
     this.shardT += dtMs / 1000;
     const c = this.beaconCenter;

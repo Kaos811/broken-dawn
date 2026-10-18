@@ -4,7 +4,7 @@ import {
   BEACON, BUILDINGS, BUILDING_IDS, BUILDING_LEVEL_HEADROOM, ECONOMY,
   SAVE_KEY, SAVE_VERSION, TROOPS, buildingUpgradeCost,
   TROOP_CLASSES, TROOP_IDS, BARRACKS, SQUADS, RESOURCES, GACHA, RARITY, RARITIES,
-  LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES,
+  LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION,
 } from '../config.js';
 import { isValidPlacement } from '../systems/grid.js';
 import { basePower, squadPower, squadSoldiers, troopPowerBreakdown } from '../systems/power.js';
@@ -36,6 +36,7 @@ function defaultState() {
     gearLevels: {},         // { id: level } (applies to every copy; missing = Lv 1)
     daily: { lastDay: null, streak: 0 },     // daily login reward (local calendar days)
     claims: { beacon: [], milestones: [] },  // one-time Core rewards already claimed
+    construction: [],       // running upgrades: [{ id, toLevel, cost, total, progress }] (progress in seconds)
     gacha: { sinceEpic: 0, sinceLegendary: 0, total: 0, history: [] },
     lastSaved: Date.now(),
   };
@@ -91,6 +92,12 @@ export function migrate(raw) {
     raw.resources = { ...(raw.resources ?? {}) };
     raw.resources.cores = int(raw.resources.cores) + CORES.migrationGrant;
     raw.version = 4;
+  }
+  // v4 -> v5: building upgrade timers. Levels reached before timers existed are kept as-is;
+  // nothing is under construction yet.
+  if (num(raw.version, 1) < 5) {
+    raw = { ...raw, construction: [] };
+    raw.version = 5;
   }
   return raw;
 }
@@ -168,6 +175,17 @@ function sanitize(raw) {
     }
     s.squads[id] = sq;
   }
+  // Construction: valid target, one job per building, at most `builders` jobs; never drops a paid job
+  // silently (an invalid one is refunded instead).
+  s.construction = [];
+  for (const j of (Array.isArray(raw.construction) ? raw.construction : [])) {
+    const id = j?.id;
+    const cur = id === BEACON.id ? s.beacon.level : s.buildings[id]?.level;
+    const cost = Math.max(0, num(j?.cost, 0));
+    if (cur == null || s.construction.some((x) => x.id === id) || s.construction.length >= CONSTRUCTION.builders) { s.resources.energy += cost; continue; }
+    const total = CONSTRUCTION.seconds(cur + 1);
+    s.construction.push({ id, toLevel: cur + 1, cost, total, progress: Math.min(total, Math.max(0, num(j.progress, 0))) });
+  }
   return s;
 }
 
@@ -221,10 +239,11 @@ class Store extends Emitter {
     s.resources.alloy += RESOURCES.alloyPerSec(s.buildings.commandCenter.level) * secs * ECONOMY.offlineRate;
     s.beacon.charge = Math.min(BEACON.maxCharge, chargeBefore + BEACON.chargePerSec(s.beacon.level) * secs);
     const trained = this.processTraining(secs);
+    const built = this.processConstruction(secs);
     this.offlineReport = {
       seconds: secs, capped: elapsed > ECONOMY.offlineCapSeconds,
       energy: s.resources.energy - r0.energy, shards: s.resources.shards - r0.shards, alloy: s.resources.alloy - r0.alloy,
-      charge: s.beacon.charge - chargeBefore, trained,
+      charge: s.beacon.charge - chargeBefore, trained, built,
     };
   }
 
@@ -250,6 +269,7 @@ class Store extends Emitter {
     if (s.beacon.charge < BEACON.maxCharge) {
       s.beacon.charge = Math.min(BEACON.maxCharge, s.beacon.charge + BEACON.chargePerSec(s.beacon.level) * dt);
     }
+    if (s.construction.length) this.processConstruction(dt);
     if (this.queuedUnits()) {
       const before = this.power.total;
       const done = this.processTraining(dt);
@@ -269,40 +289,90 @@ class Store extends Emitter {
 
   buildingLevelCap() { return this.state.beacon.level + BUILDING_LEVEL_HEADROOM; }
 
-  // ---- Upgrades -------------------------------------------------------
+  // ---- Upgrades (timed construction) ----------------------------------
+  levelOf(id) { return id === BEACON.id ? this.state.beacon.level : this.state.buildings[id].level; }
+  nameOf(id) { return id === BEACON.id ? BEACON.name : BUILDINGS[id].name; }
+  constructionJob(id) { return this.state.construction.find((j) => j.id === id) ?? null; }
+  buildersFree() { return Math.max(0, CONSTRUCTION.builders - this.state.construction.length); }
+  upgradeSeconds(id) { return CONSTRUCTION.seconds(this.levelOf(id) + 1); }
+  constructionLeft(id) { const j = this.constructionJob(id); return j ? Math.max(0, j.total - j.progress) : 0; }
+
   upgradeInfo(id) {
     const s = this.state;
+    const level = this.levelOf(id);
+    const seconds = CONSTRUCTION.seconds(level + 1);
+    const job = this.constructionJob(id);
+    let cost, reason = null;
     if (id === BEACON.id) {
-      const level = s.beacon.level;
-      const cost = BEACON.upgradeCost(level);
-      const charged = s.beacon.charge >= BEACON.maxCharge;
-      const maxed = level >= BEACON.maxLevel;
-      let reason = null;
-      if (maxed) reason = 'Max level';
-      else if (!charged) reason = 'Beacon must be fully charged';
-      else if (s.resources.energy < cost) reason = 'Not enough Energy';
-      return { level, cost, can: !reason, reason };
+      cost = BEACON.upgradeCost(level);
+      if (job) reason = `Upgrading to Lv ${job.toLevel}`;
+      else if (level >= BEACON.maxLevel) reason = 'Max level';
+      else if (s.beacon.charge < BEACON.maxCharge) reason = 'Beacon must be fully charged';
+    } else {
+      cost = buildingUpgradeCost(id, level);
+      if (job) reason = `Upgrading to Lv ${job.toLevel}`;
+      else if (level >= this.buildingLevelCap()) reason = `Raise the Beacon to Lv ${level - BUILDING_LEVEL_HEADROOM + 1} first`;
     }
-    const level = s.buildings[id].level;
-    const cost = buildingUpgradeCost(id, level);
-    let reason = null;
-    if (level >= this.buildingLevelCap()) reason = `Raise the Beacon to Lv ${level - BUILDING_LEVEL_HEADROOM + 1} first`;
-    else if (s.resources.energy < cost) reason = 'Not enough Energy';
-    return { level, cost, can: !reason, reason };
+    if (!reason && this.buildersFree() < 1) {
+      const busy = s.construction[0];
+      reason = `Builder busy: ${this.nameOf(busy.id)} → Lv ${busy.toLevel}`;
+    }
+    if (!reason && s.resources.energy < cost) reason = 'Not enough Energy';
+    return { level, cost, seconds, can: !reason, reason, job };
   }
 
+  // Starts an upgrade: pays now, finishes after CONSTRUCTION.seconds(level + 1).
   upgrade(id) {
     const info = this.upgradeInfo(id);
     if (!info.can) return { ok: false, reason: info.reason };
-    const before = this.power.total;
     this.state.resources.energy -= info.cost;
-    if (id === BEACON.id) { this.state.beacon.level += 1; this.state.beacon.charge = 0; }
-    else this.state.buildings[id].level += 1;
+    if (id === BEACON.id) this.state.beacon.charge = 0; // the full charge is spent to start the upgrade
+    this.state.construction.push({ id, toLevel: info.level + 1, cost: info.cost, total: info.seconds, progress: 0 });
     this.save();
-    const after = this.power.total;
-    this.emit('upgrade', id, { before, after });
+    this.emit('upgradeStart', id);
     this.emit('change');
-    return { ok: true, gained: after - before };
+    return { ok: true, started: true, seconds: info.seconds, cost: info.cost, toLevel: info.level + 1 };
+  }
+
+  // Cancels a running upgrade: full Energy refund (and the Beacon gets its charge back).
+  cancelUpgrade(id) {
+    const i = this.state.construction.findIndex((j) => j.id === id);
+    if (i < 0) return { ok: false, reason: 'Nothing to cancel' };
+    const j = this.state.construction[i];
+    this.state.construction.splice(i, 1);
+    this.state.resources.energy += j.cost;
+    if (id === BEACON.id) this.state.beacon.charge = BEACON.maxCharge;
+    this.save();
+    this.emit('upgradeCancel', id);
+    this.emit('change');
+    return { ok: true, refund: j.cost };
+  }
+
+  // Hook for future Beacon Core speed-ups (no UI yet): skips `seconds` of a running upgrade.
+  speedUpConstruction(id, seconds) {
+    const j = this.constructionJob(id);
+    if (!j || !(seconds > 0)) return { ok: false };
+    this.processConstruction(0, { id, seconds });
+    return { ok: true };
+  }
+  speedUpCoreCost(id) { return Math.ceil(this.constructionLeft(id) / CONSTRUCTION.speedUp.secondsPerCore); }
+
+  // Advances running upgrades; level, power and unlocks apply only here, on completion.
+  processConstruction(dt, only = null) {
+    const done = [];
+    for (const j of [...this.state.construction]) {
+      const add = only ? (only.id === j.id ? only.seconds : 0) : dt;
+      j.progress += add;
+      if (j.progress + 1e-9 < j.total) continue;
+      const before = this.power.total;
+      if (j.id === BEACON.id) this.state.beacon.level = j.toLevel;
+      else this.state.buildings[j.id].level = j.toLevel;
+      this.state.construction.splice(this.state.construction.indexOf(j), 1);
+      done.push({ id: j.id, level: j.toLevel });
+      this.emit('upgrade', j.id, { before, after: this.power.total });
+    }
+    if (done.length) { this.save(); this.emit('change'); }
+    return done;
   }
 
   // ---- Placement ------------------------------------------------------

@@ -65,6 +65,23 @@ The Beacon is anchored: long-pressing it just shows "can't be moved".
 - **Layout:** designed for portrait 9:16 (720×1280 logical). On taller phones (19.5:9 and up) the height stretches so the HUD and
   nav sit at the real screen edges.
 
+## Building upgrade timers
+
+Upgrading any building (Command Center, Barracks, Armory **and the Beacon**) now takes time (`CONSTRUCTION` in `src/config.js`):
+
+| Upgrade to | Lv 2 | Lv 3 | Lv 4 | Lv 5 | Lv 6 | Lv 7 | Lv 8 | Lv 9 | then |
+|---|---|---|---|---|---|---|---|---|---|
+| Time | 10 s | 30 s | 2 min | 6 min | 20 min | 1 h | 3 h | 9 h | ×3 per level |
+
+- **One builder** (`CONSTRUCTION.builders = 1`): only one upgrade runs at a time; the others say "Builder busy".
+- The Energy cost is **paid up front**. The Beacon still needs a full charge to start, and starting spends it.
+- **Cancel** (the panel's Upgrade button turns into *Cancel · refund N*) gives a **full refund** (the Beacon also gets its charge back).
+- The new level, its power and its unlocks (lane capacity, squad caps, building cap, Beacon Core reward) apply **only when the timer finishes**.
+- Timers keep running offline (same 8 h cap as income); the welcome-back toast lists upgrades that finished.
+- A gold progress bar and countdown float over the building on the map, and the info panel shows the time left with a bar.
+- Speed-up hook for later (no UI yet): `store.speedUpConstruction(id, seconds)` and `store.speedUpCoreCost(id)` (`CONSTRUCTION.speedUp.secondsPerCore = 300`).
+- Save version 5: older saves keep their levels with nothing under construction; the v4 save is kept as `brokenDawn.save.v1.backup-v4`.
+
 ## Stage 2: what's built
 
 All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RESOURCES`, `CORES`, `UPGRADES`, `GACHA`, `LEADERS`, `GEAR`).
@@ -146,7 +163,7 @@ src/
   scenes/UIScene.js    HUD, bottom nav, info panel, move banner, screens, overlays, gacha reveal, toasts, game tick
   ui/widgets.js        buttons, panels, number formatting
   ui/screens/          troops.js (Barracks), squads.js (details, edit formation, pickers), armory.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1 + stage 2 suites × 2 builds (292 checks)
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1 + stage 2 suites × 2 builds (336 checks)
 screens/               screenshots from the test run
 ```
 
