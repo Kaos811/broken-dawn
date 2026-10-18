@@ -152,11 +152,12 @@ export function leaderDetail(ui, api, lid) {
           if (!res.ok) { api.toast(res.reason); return; }
           close(); api.toast(`${L.name} now leads ${SQUADS[sid].name} Squad`);
         }, { style: where === sid ? 'gold' : 'cyan', size: unlocked ? 24 : 18 });
-        b.setEnabled(unlocked && where !== sid);
+        b.setEnabled(unlocked && !where); // no stealing: unassign first to move a leader
         c.add(b);
         if (unlocked) c.add(text(ui, r.x + 128 + i * 214, r.y + 550, cur ? `now: ${LEADERS[cur].name}` : 'no leader', 15, PALETTE.textDim).setOrigin(0.5, 0));
       });
       if (where) {
+        c.add(text(ui, r.x + r.w / 2, r.y + 596, `Unassign from ${SQUADS[where].name} to move ${L.name} to another squad`, 16, PALETTE.textDim).setOrigin(0.5, 0));
         c.add(button(ui, r.x + r.w / 2, r.y + 640, 300, 64, 'Unassign', () => { store.assignLeader(null, where); close(); api.toast(`${L.name} unassigned`); }, { style: 'danger', size: 22 }));
       }
     },

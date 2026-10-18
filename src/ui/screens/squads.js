@@ -206,15 +206,29 @@ export function leaderPicker(ui, api, squadId, onPick, current) {
         const col = k % 4, row = Math.floor(k / 4);
         const x = r.x + 24 + col * 156, y = r.y + 86 + row * 236, w = 146;
         const sel = lid === (current === undefined ? store.state.squads[squadId].leader : current);
-        card(ui, c, x, y, w, 226, { stroke: sel ? PALETTE.gold : lid ? RARITY[LEADERS[lid].rarity].color : PALETTE.metalEdge, cut: 8 });
+        // leaders already leading a different squad are locked (no stealing between squads)
+        const where = lid ? store.leaderSquad(lid) : null;
+        const locked = !!where && where !== squadId;
+        card(ui, c, x, y, w, 226, { stroke: sel ? PALETTE.gold : locked ? PALETTE.metalEdge : lid ? RARITY[LEADERS[lid].rarity].color : PALETTE.metalEdge, cut: 8 });
         if (lid) {
           const L = LEADERS[lid];
           const img = ui.add.image(x + 8, y + 8, `leader-${lid}`).setOrigin(0, 0).setScale(0.65); c.add(img);
-          c.add(text(ui, x + w / 2, y + 166, L.name, 20, RARITY[L.rarity].hex, { fontStyle: 'bold' }).setOrigin(0.5, 0));
-          const where = store.leaderSquad(lid);
-          c.add(text(ui, x + w / 2, y + 192, where && where !== squadId ? `Leads ${SQUADS[where].name}` : fmtBuff(L.buff, store.leaderMultiplier(lid)), 13, PALETTE.textDim, { align: 'center', wordWrap: { width: w - 8 } }).setOrigin(0.5, 0));
+          const name = text(ui, x + w / 2, y + 166, L.name, 20, locked ? '#6b7280' : RARITY[L.rarity].hex, { fontStyle: 'bold' }).setOrigin(0.5, 0); c.add(name);
+          if (locked) {
+            img.setTint(0x555b66).setAlpha(0.45);
+            const g = ui.add.graphics(); g.fillStyle(0x05070b, 0.55).fillRect(x + 2, y + 2, w - 4, 222); c.add(g);
+            const tagW = w - 24;
+            const tg = ui.add.graphics(); tg.fillStyle(0x1a1f29, 0.95).fillRect(x + 12, y + 64, tagW, 34).lineStyle(2, 0x6b7280, 1).strokeRect(x + 12, y + 64, tagW, 34); c.add(tg);
+            c.add(text(ui, x + w / 2, y + 81, `🔒 In ${SQUADS[where].name}`, 17, '#c9ced8', { fontStyle: 'bold' }).setOrigin(0.5));
+            c.add(name);
+          }
+          c.add(text(ui, x + w / 2, y + 192, locked ? `Unassign in ${SQUADS[where].name} first` : fmtBuff(L.buff, store.leaderMultiplier(lid)), 13, locked ? '#7c8492' : PALETTE.textDim, { align: 'center', wordWrap: { width: w - 8 } }).setOrigin(0.5, 0));
         } else c.add(text(ui, x + w / 2, y + 100, 'No\nleader', 22, PALETTE.textDim, { align: 'center' }).setOrigin(0.5, 0));
-        tapZone(ui, c, x, y, w, 226, () => { close(); onPick(lid); }, `pick-${lid ?? 'none'}`);
+        const z = tapZone(ui, c, x, y, w, 226, () => {
+          if (locked) { api.toast(`${LEADERS[lid].name} leads ${SQUADS[where].name}. Unassign there first`); return; }
+          close(); onPick(lid);
+        }, `pick-${lid ?? 'none'}`);
+        z.zoneDisabled = locked;
       });
     },
   });

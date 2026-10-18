@@ -58,7 +58,7 @@ window.__BD = {
     const toPage = (b) => ({ x: r.left + ((b.centerX) / GAME_WIDTH) * r.width, y: r.top + ((b.centerY) / GAME_HEIGHT) * r.height });
     const walk = (o) => {
       if (o.isButton && visible(o)) out.push({ label: o.labelText.text, kind: 'button', enabled: o.isEnabled(), ...toPage(o.hit.getBounds()), meta: o.chip ?? o.step ?? o.trainType ?? o.cancelLane });
-      else if (o.zoneName && visible(o)) out.push({ label: o.zoneName, kind: 'zone', enabled: true, ...toPage(o.getBounds()) });
+      else if (o.zoneName && visible(o)) out.push({ label: o.zoneName, kind: 'zone', enabled: !o.zoneDisabled, ...toPage(o.getBounds()) });
       else if (o.tabLabel && visible(o)) out.push({ label: o.tabLabel, kind: 'tab', enabled: true, ...toPage(o.getBounds()) });
       (o.list ?? []).forEach(walk);
     };

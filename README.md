@@ -262,6 +262,9 @@ T1 keeps the old class id (`sentinel`, `bearer`, `voyager`), so old saves and fo
   higher tier's train time. Promoted troops leave your army while they're queued, so Troop Power dips until they
   finish. Cancelling refunds the cost and gives the troops back. There's one lane per class and one job per lane
   (train or promote).
+- **Leaders are locked to one squad:** a leader leading another squad shows greyed out with "🔒 In Bravo" in the
+  picker and can't be picked, and `store.assignLeader` rejects it (no silent steal). Unassign it there first. A squad
+  can always clear or swap its own leader. Gear was already locked per copy (`gearFree`).
 - **Formations:** one unit per line. Pick the class, then the tier (T1/T2/T3 chips) for that line.
 - **Battle:** class behaviour (the Sentinel front wall, leader targeting) follows the class, not the tier, so T2/T3
   fight like their T1 class but with bigger stats. The army stays plain data (`{ type, cls, tier, tags, count, hp,
@@ -294,7 +297,7 @@ src/
   art/creatures.js     procedural creature / world-base / march textures
   ui/widgets.js        buttons, panels, number formatting
   ui/screens/          archive.js (research tree), troops.js (Barracks, tiers, promote), squads.js (details, edit formation, pickers), armory.js, infirmary.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–4 suites × 2 builds (596 checks)
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–4 suites × 2 builds (610 checks)
 screens/               screenshots from the test run
 ```
 

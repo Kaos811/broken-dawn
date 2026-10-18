@@ -695,10 +695,12 @@ async function runStage2(url, label, takeShots) {
     const atk1 = await ev(() => __BD.store.squadStats('alpha').atk);
     check('Kael assigned to Alpha from the Leaders screen', s.squads.alpha.leader === 'kael');
     check('leader buff raises Alpha ATK (Bearer ATK +)', atk1 > atk0, `${atk0} -> ${atk1}`);
-    await ev(() => __BD.store.assignLeader('kael', 'bravo'));
+    const steal = await ev(() => __BD.store.assignLeader('kael', 'bravo'));
     s = await state();
-    check('a leader leads only one squad at a time', s.squads.bravo.leader === 'kael' && s.squads.alpha.leader === null);
-    await ev(() => __BD.store.assignLeader('kael', 'alpha'));
+    check('a leader leads only one squad: assigning Kael (in Alpha) to Bravo is rejected, no silent steal', steal.ok === false && steal.lockedIn === 'alpha' && /already leads Alpha/.test(steal.reason) && s.squads.bravo.leader === null && s.squads.alpha.leader === 'kael', JSON.stringify(steal));
+    await click('leader-kael', { kind: 'zone' });
+    check('Leaders screen: other squad buttons disabled while Kael leads Alpha', await ev(() => { const c = __BD.controls(); return c.some((b) => b.label === 'Bravo' && b.kind === 'button' && !b.enabled) && c.some((b) => b.label === 'Alpha' && b.kind === 'button' && !b.enabled); }));
+    await ev(() => __BD.ui().closeModal(true));
 
     // --- 7. Gear equip (UI)
     await ev(() => { __BD.store.state.gear.arcRifle = 1; __BD.store.state.squads.alpha.weapon = null; __BD.store.save(); __BD.ui().renderScreen(); });
@@ -722,6 +724,27 @@ async function runStage2(url, label, takeShots) {
     await ev(() => __BD.ui().closeModal(true));
     const gmax = await ev(() => { const st = __BD.store; st.state.gearLevels.arcRifle = 5; const r = st.upgradeGear('arcRifle'); st.state.gearLevels.arcRifle = 2; return r.reason; });
     check('gear level capped at 5', gmax === 'Max level');
+
+    // --- 7b. Leader picker: leaders in another squad are locked ('In Alpha'), own leader can be cleared/swapped
+    await tab(3);
+    await click('Bravo', { kind: 'tab' });
+    await click('slot-leader', { kind: 'zone' });
+    const pk = await ev(() => { const c = __BD.controls(); const z = (n) => c.find((b) => b.kind === 'zone' && b.label === n); return { kael: z('pick-kael')?.enabled, none: z('pick-none')?.enabled, tag: !!__BD.ui().modal?.list.some((o) => o.text === '🔒 In Alpha') }; });
+    check('Bravo picker: Kael shown locked "In Alpha", No-leader selectable', pk.kael === false && pk.none === true && pk.tag, JSON.stringify(pk));
+    await shot('leader-picker-locked.png');
+    { const z = await ev(() => __BD.controls().find((b) => b.kind === 'zone' && b.label === 'pick-kael')); await page.mouse.click(z.x, z.y); await sleep(400); }
+    s = await state();
+    check('tapping a locked leader does nothing (Bravo stays empty, Alpha keeps Kael, picker stays open)', s.squads.bravo.leader === null && s.squads.alpha.leader === 'kael' && !!(await ev(() => __BD.ui().modal)));
+    await ev(() => __BD.ui().closeModal(true));
+    await click('Alpha', { kind: 'tab' });
+    await click('slot-leader', { kind: 'zone' });
+    check("Alpha picker: Alpha's own leader Kael is not locked", await ev(() => __BD.controls().find((b) => b.kind === 'zone' && b.label === 'pick-kael')?.enabled === true));
+    await click('pick-none', { kind: 'zone' });
+    check('own leader can be unassigned from the picker', (await state()).squads.alpha.leader === null);
+    const re = await ev(() => [__BD.store.assignLeader('kael', 'bravo').ok, __BD.store.assignLeader('kael', 'alpha').ok, __BD.store.assignLeader('kael', 'bravo').ok, __BD.store.assignLeader(null, 'alpha').ok, __BD.store.assignLeader('kael', 'alpha').ok]);
+    check('freed leader can move; swap back works; re-steal rejected again', JSON.stringify(re) === '[true,false,true,true,false]', JSON.stringify(re));
+    await ev(() => { __BD.store.assignLeader(null, 'bravo'); __BD.store.assignLeader('kael', 'alpha'); });
+    check('gear stays locked per copy across squads (no steal)', (await ev(() => __BD.store.equipGear('bravo', 'weapon', 'arcRifle'))).ok === false && (await state()).squads.alpha.weapon === 'arcRifle');
 
     // --- 8. Everything persists across reload
     const before = await state();

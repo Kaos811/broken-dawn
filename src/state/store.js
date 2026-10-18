@@ -790,13 +790,16 @@ class Store extends Emitter {
     return TROOPS.squadIds.find((id) => this.state.squads[id].leader === leaderId) ?? null;
   }
 
-  // Assign (or with leaderId=null, clear) a squad's leader. A leader leads one squad at a time.
+  // Assign (or with leaderId=null, clear) a squad's leader. A leader leads one squad at a time; assigning one
+  // that already leads a different squad is rejected (the squad's own leader can always be cleared or swapped).
   assignLeader(leaderId, squadId, { silent = false } = {}) {
     const sq = this.state.squads[squadId];
     if (!sq) return { ok: false, reason: 'Unknown squad' };
     if (!this.squadUnlocked(squadId)) return { ok: false, reason: `Unlocks at Command Center Lv ${SQUADS[squadId].unlockCC}` };
     if (leaderId != null && !this.state.leaders[leaderId]) return { ok: false, reason: 'Leader not recruited' };
-    if (leaderId != null) for (const s of Object.values(this.state.squads)) if (s.leader === leaderId) s.leader = null;
+    // no silent steal: a leader already leading another squad must be unassigned there first
+    const where = leaderId != null ? this.leaderSquad(leaderId) : null;
+    if (where && where !== squadId) return { ok: false, reason: `${LEADERS[leaderId].name} already leads ${SQUADS[where].name}. Unassign there first`, lockedIn: where };
     sq.leader = leaderId ?? null;
     if (!silent) { this.save(); this.emit('squad', squadId); this.emit('change'); }
     return { ok: true };

@@ -51,6 +51,7 @@ export function tapZone(ui, c, x, y, w, h, onTap, name) {
   hit.on('pointerout', () => { down = false; });
   hit.on('pointerup', () => { if (down) ui.time.delayedCall(0, onTap); down = false; });
   hit.zoneName = name;
+  hit.zoneDisabled = false;
   c.add(hit);
   return hit;
 }
