@@ -10,6 +10,7 @@ import { isValidPlacement } from '../systems/grid.js';
 import { basePower, squadPower, squadSoldiers, troopPowerBreakdown } from '../systems/power.js';
 
 const emptyLines = () => Array.from({ length: SQUADS.lines }, () => ({ type: null, count: 0 }));
+const emptyLanes = () => Object.fromEntries(TROOP_IDS.map((t) => [t, { count: 0, progress: 0 }]));
 const emptySquad = () => ({ level: 1, lines: emptyLines(), leader: null, armor: null, weapon: null });
 
 function defaultState() {
@@ -28,7 +29,7 @@ function defaultState() {
     beacon: { level: 1, charge: 0 },
     buildings,
     troops,                 // owned soldiers per class (ready + assigned)
-    training: [],           // queue: [{ type, count, progress }] (progress = seconds into current unit)
+    training: emptyLanes(), // parallel lanes: { [type]: { count, progress } } (progress = seconds into current unit)
     squads,
     leaders: {},            // { id: { stars } }
     gear: {},               // { id: count }
@@ -64,6 +65,23 @@ export function migrate(raw) {
     raw.squads = squads;
     raw.version = 2;
   }
+  // v2 -> v3: the single sequential queue [{ type, count, progress }] becomes one lane per class.
+  // Every queued unit moves into its class lane (counts are summed, nothing is dropped), and the
+  // head batch's partial progress carries over to its lane. Energy was paid up front, so it's untouched.
+  if (num(raw.version, 1) < 3) {
+    raw = { ...raw };
+    const lanes = emptyLanes();
+    const q = Array.isArray(raw.training) ? raw.training : [];
+    q.forEach((b, i) => {
+      if (!TROOP_CLASSES[b?.type]) return;
+      const n = int(b.count);
+      if (n < 1) return;
+      lanes[b.type].count += n;
+      if (i === 0) lanes[b.type].progress = Math.max(0, num(b.progress, 0));
+    });
+    raw.training = lanes;
+    raw.version = 3;
+  }
   return raw;
 }
 
@@ -98,10 +116,13 @@ function sanitize(raw) {
     s.buildings[id] = b;
   }
   for (const t of TROOP_IDS) s.troops[t] = int(raw.troops?.[t]);
-  s.training = (Array.isArray(raw.training) ? raw.training : [])
-    .filter((q) => TROOP_CLASSES[q?.type] && int(q.count) > 0)
-    .slice(0, BARRACKS.maxBatches)
-    .map((q) => ({ type: q.type, count: int(q.count), progress: Math.max(0, num(q.progress, 0)) }));
+  // Lanes are never trimmed to capacity on load (that would silently delete paid-for units).
+  s.training = emptyLanes();
+  for (const t of TROOP_IDS) {
+    const l = raw.training?.[t];
+    const count = int(l?.count);
+    s.training[t] = { count, progress: count > 0 ? Math.max(0, num(l?.progress, 0)) : 0 };
+  }
   for (const id of LEADER_IDS) if (raw.leaders?.[id]) s.leaders[id] = { stars: Math.min(GACHA.maxStars, Math.max(1, int(raw.leaders[id].stars, 1))) };
   for (const id of GEAR_IDS) { const n = int(raw.gear?.[id]); if (n) s.gear[id] = n; }
   const g = raw.gacha ?? {};
@@ -210,7 +231,7 @@ class Store extends Emitter {
     if (s.beacon.charge < BEACON.maxCharge) {
       s.beacon.charge = Math.min(BEACON.maxCharge, s.beacon.charge + BEACON.chargePerSec(s.beacon.level) * dt);
     }
-    if (s.training.length) {
+    if (this.queuedUnits()) {
       const before = this.power.total;
       const done = this.processTraining(dt);
       if (Object.keys(done).length) {
@@ -289,30 +310,35 @@ class Store extends Emitter {
   }
 
   // ---- Barracks / training -------------------------------------------
+  // One lane per troop class. Lanes have their own capacity and timer and all run at once.
   get barracksLevel() { return this.state.buildings.barracks.level; }
-  queueCapacity() { return BARRACKS.queueCapacity(this.barracksLevel); }
-  queuedUnits() { return this.state.training.reduce((n, q) => n + q.count, 0); }
-  queueRoom() { return Math.max(0, this.queueCapacity() - this.queuedUnits()); }
+  laneCapacity() { return BARRACKS.laneCapacity(this.barracksLevel); }
+  lane(type) { return this.state.training[type]; }
+  laneRoom(type) { return Math.max(0, this.laneCapacity() - (this.lane(type)?.count ?? 0)); }
+  queuedUnits() { return TROOP_IDS.reduce((n, t) => n + this.state.training[t].count, 0); }
+  activeLanes() { return TROOP_IDS.filter((t) => this.state.training[t].count > 0); }
   unitTime(type) { return TROOP_CLASSES[type].trainSeconds / BARRACKS.trainSpeed(this.barracksLevel); }
   maxTrainable(type) {
-    return Math.min(this.queueRoom(), Math.floor(this.state.resources.energy / TROOP_CLASSES[type].energy));
+    return Math.min(this.laneRoom(type), Math.floor(this.state.resources.energy / TROOP_CLASSES[type].energy));
   }
-  queueSecondsLeft() {
-    return this.state.training.reduce((t, q, i) => t + q.count * this.unitTime(q.type) - (i === 0 ? q.progress : 0), 0);
-  }
+  // Seconds until the unit currently in training in this lane finishes (0 if idle).
+  laneNextSeconds(type) { const l = this.lane(type); return l.count ? Math.max(0, this.unitTime(type) - l.progress) : 0; }
+  // Seconds until this whole lane is done.
+  laneSecondsLeft(type) { const l = this.lane(type); return l.count ? Math.max(0, l.count * this.unitTime(type) - l.progress) : 0; }
+  // Lanes run in parallel, so everything is done when the slowest lane is.
+  trainingSecondsLeft() { return Math.max(0, ...TROOP_IDS.map((t) => this.laneSecondsLeft(t))); }
 
   trainInfo(type, n) {
     const def = TROOP_CLASSES[type];
     if (!def) return { can: false, reason: 'Unknown troop' };
     n = Math.floor(n);
     const cost = n * def.energy;
+    const room = this.laneRoom(type);
     let reason = null;
-    const tail = this.state.training[this.state.training.length - 1];
-    if (this.queueRoom() < 1) reason = 'Training queue is full';
+    if (room < 1) reason = `${def.name} lane is full`;
     else if (n < 1) reason = 'Not enough Energy';
-    else if (n > this.queueRoom()) reason = `Queue has room for ${this.queueRoom()}`;
+    else if (n > room) reason = `${def.name} lane has room for ${room}`;
     else if (this.state.resources.energy < cost) reason = 'Not enough Energy';
-    else if (!(tail && tail.type === type) && this.state.training.length >= BARRACKS.maxBatches) reason = 'Too many batches queued';
     return { can: !reason, reason, cost, n };
   }
 
@@ -320,44 +346,40 @@ class Store extends Emitter {
     const info = this.trainInfo(type, n);
     if (!info.can) return { ok: false, reason: info.reason };
     this.state.resources.energy -= info.cost;
-    const q = this.state.training;
-    const tail = q[q.length - 1];
-    if (tail && tail.type === type) tail.count += info.n;
-    else q.push({ type, count: info.n, progress: 0 });
+    const l = this.lane(type);
+    if (l.count === 0) l.progress = 0;
+    l.count += info.n;
     this.save();
     this.emit('change');
     return { ok: true, n: info.n, cost: info.cost };
   }
 
-  cancelBatch(index) {
-    const q = this.state.training[index];
-    if (!q) return { ok: false };
-    const refund = q.count * TROOP_CLASSES[q.type].energy;
+  // Cancels everything in one lane (including the unit in progress) for a full Energy refund.
+  cancelLane(type) {
+    const l = this.lane(type);
+    if (!l || l.count < 1) return { ok: false };
+    const n = l.count;
+    const refund = n * TROOP_CLASSES[type].energy;
     this.state.resources.energy += refund;
-    this.state.training.splice(index, 1);
+    l.count = 0; l.progress = 0;
     this.save();
     this.emit('change');
-    return { ok: true, refund };
+    return { ok: true, refund, n };
   }
 
-  // Advances the queue by dt seconds; returns { type: unitsCompleted }.
+  // Advances every lane by dt seconds, independently; returns { type: unitsCompleted }.
   processTraining(dt) {
     const done = {};
-    const q = this.state.training;
-    while (dt > 0 && q.length) {
-      const head = q[0];
-      const ut = this.unitTime(head.type);
-      const avail = head.progress + dt;
-      const n = Math.min(head.count, Math.floor(avail / ut + 1e-9));
-      if (n > 0) {
-        head.count -= n;
-        this.state.troops[head.type] += n;
-        done[head.type] = (done[head.type] ?? 0) + n;
-        const used = n * ut - head.progress;
-        dt -= used;
-        head.progress = 0;
-        if (head.count <= 0) q.shift();
-      } else { head.progress = avail; dt = 0; }
+    if (!(dt > 0)) return done;
+    for (const t of TROOP_IDS) {
+      const l = this.state.training[t];
+      if (l.count < 1) continue;
+      const ut = this.unitTime(t);
+      const avail = l.progress + dt;
+      const n = Math.min(l.count, Math.floor(avail / ut + 1e-9));
+      l.count -= n;
+      l.progress = l.count > 0 ? Math.max(0, avail - n * ut) : 0;
+      if (n > 0) { this.state.troops[t] += n; done[t] = n; }
     }
     return done;
   }

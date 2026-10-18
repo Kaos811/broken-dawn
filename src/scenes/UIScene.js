@@ -447,7 +447,7 @@ export default class UIScene extends Phaser.Scene {
       this.pDesc.setText(def.description);
       const now = buildingPower(id, lv), next = buildingPower(id, lv + 1);
       const extra = {
-        barracks: `Queue ${BARRACKS.queueCapacity(lv)} → ${BARRACKS.queueCapacity(lv + 1)}  ·  Speed x${BARRACKS.trainSpeed(lv).toFixed(1)} → x${BARRACKS.trainSpeed(lv + 1).toFixed(1)}`,
+        barracks: `3 lanes · ${BARRACKS.laneCapacity(lv)} → ${BARRACKS.laneCapacity(lv + 1)} each  ·  Speed x${BARRACKS.trainSpeed(lv).toFixed(1)} → x${BARRACKS.trainSpeed(lv + 1).toFixed(1)}`,
         commandCenter: `Squad level cap Lv ${lv}  ·  Alloy ${(store.alloyRate * 3600).toFixed(0)}/h`,
         armory: `Shards ${fmt(s.resources.shards)}  ·  +${(store.shardRate * 3600).toFixed(0)}/h from the Beacon`,
       }[id];

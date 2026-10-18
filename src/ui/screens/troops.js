@@ -6,7 +6,7 @@ import { header, card, portrait, tapZone } from './common.js';
 export function renderTroops(ui, c, a, api) {
   const lv = store.barracksLevel;
   const sub = header(ui, c, a, 'BARRACKS', '');
-  api.dyn(() => sub.setText(`Lv ${lv}  ·  Speed x${BARRACKS.trainSpeed(lv).toFixed(1)}  ·  Queue ${store.queuedUnits()}/${store.queueCapacity()}`));
+  api.dyn(() => sub.setText(`Lv ${lv}  ·  Speed x${BARRACKS.trainSpeed(lv).toFixed(1)}  ·  3 lanes × ${store.laneCapacity()}`));
 
   const CH = 176, GAP = 10;
   TROOP_IDS.forEach((t, i) => {
@@ -47,53 +47,53 @@ export function renderTroops(ui, c, a, api) {
     });
   });
 
-  // ---- Training queue
+  // ---- Training lanes: one per class, all running at the same time
   const qy = a.y + 86 + 3 * (CH + GAP), qh = a.y + a.h - qy - 12;
   card(ui, c, 16, qy, 688, qh, { accent: PALETTE.gold });
-  c.add(text(ui, 36, qy + 16, 'TRAINING QUEUE', 22, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
+  c.add(text(ui, 36, qy + 16, 'TRAINING LANES', 22, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
   const qInfo = text(ui, 684, qy + 18, '', 19, PALETTE.textDim).setOrigin(1, 0);
   c.add(qInfo);
   const bar = ui.add.graphics();
   c.add(bar);
-  const q = store.state.training;
-  const rows = q.map((b, i) => {
-    const ry = qy + 64 + i * 38;
-    const def = TROOP_CLASSES[b.type];
-    const dot = ui.add.graphics(); dot.fillStyle(def.color, 1).fillCircle(44, ry + 15, 7); c.add(dot);
-    const label = text(ui, 62, ry + 2, `${def.plural} x${b.count}`, 21, PALETTE.text, { fontStyle: 'bold' });
-    const time = text(ui, 600, ry + 2, '', 20, PALETTE.textCyan).setOrigin(1, 0);
-    c.add([label, time]);
-    const x = button(ui, 650, ry + 14, 50, 36, '✕', () => {
-      const r = store.cancelBatch(i);
-      if (r.ok) api.toast(`Cancelled. Refunded ${fmt(r.refund)} Energy`);
+  const footH = 40;
+  const rowH = Math.max(64, Math.min(104, Math.floor((qh - 58 - footH) / 3)));
+  const rows = TROOP_IDS.map((t, i) => {
+    const def = TROOP_CLASSES[t];
+    const ry = qy + 56 + i * rowH;
+    const dot = ui.add.graphics(); dot.fillStyle(def.color, 1).fillCircle(44, ry + 14, 7); c.add(dot);
+    const label = text(ui, 62, ry + 2, def.plural, 21, def.colorHex, { fontStyle: 'bold' });
+    const amount = text(ui, 200, ry + 3, '', 20, PALETTE.text);
+    const time = text(ui, 600, ry + 3, '', 19, PALETTE.textCyan).setOrigin(1, 0);
+    c.add([label, amount, time]);
+    const x = button(ui, 652, ry + 22, 56, 42, '✕', () => {
+      const r = store.cancelLane(t);
+      if (r.ok) api.toast(`Cancelled ${r.n} ${r.n === 1 ? def.name : def.plural}. Refunded ${fmt(r.refund)} Energy`);
     }, { style: 'ghost', size: 18 });
-    x.cancelIndex = i;
+    x.cancelLane = t;
     c.add(x);
-    return { b, i, time, ry };
+    return { t, def, ry, amount, time, x };
   });
-  if (!q.length) {
-    c.add(text(ui, 36, qy + 74, 'Queue empty. Train troops above.\nTraining keeps running while you\'re away (up to 8h).', 20, PALETTE.textDim, { lineSpacing: 6 }));
-  }
-  const foot = text(ui, 36, qy + qh - 38, '', 19, PALETTE.textDim);
+  const foot = text(ui, 36, qy + qh - 34, '', 18, PALETTE.textDim);
   c.add(foot);
   api.dyn(() => {
-    const used = store.queuedUnits(), cap = store.queueCapacity();
-    qInfo.setText(`${used} / ${cap} units`);
+    const cap = store.laneCapacity();
+    const active = store.activeLanes().length;
+    qInfo.setText(active ? `${active}/3 lanes active  ·  all done ${fmtClock(store.trainingSecondsLeft())}` : 'All lanes idle');
     bar.clear();
-    bar.fillStyle(0x05070a, 1).fillRect(36, qy + 48, 648, 8);
-    bar.fillStyle(PALETTE.gold, 0.9).fillRect(36, qy + 48, 648 * Math.min(1, used / cap), 8);
-    let acc = 0;
     for (const r of rows) {
-      const ut = store.unitTime(r.b.type);
-      const left = r.b.count * ut - (r.i === 0 ? r.b.progress : 0);
-      acc += left;
-      r.time.setText(r.i === 0 ? `next ${fmtClock(ut - r.b.progress)} · all ${fmtClock(left)}` : fmtClock(left));
-      if (r.i === 0) {
-        bar.fillStyle(0x05070a, 1).fillRect(62, r.ry + 32, 540, 5);
-        bar.fillStyle(PALETTE.cyan, 1).fillRect(62, r.ry + 32, 540 * Math.min(1, r.b.progress / ut), 5);
-      }
+      const l = store.lane(r.t);
+      const ut = store.unitTime(r.t);
+      r.amount.setText(`${l.count} / ${cap}`).setColor(l.count ? PALETTE.text : PALETTE.textDim);
+      r.time.setText(l.count ? `next ${fmtClock(store.laneNextSeconds(r.t))}  ·  all ${fmtClock(store.laneSecondsLeft(r.t))}` : 'idle').setColor(l.count ? PALETTE.textCyan : PALETTE.textDim);
+      r.x.setEnabled(l.count > 0);
+      const by = r.ry + 34;
+      // current-unit progress (class color) over a thin lane-fill strip
+      bar.fillStyle(0x05070a, 1).fillRect(62, by, 540, 8);
+      if (l.count) bar.fillStyle(r.def.color, 1).fillRect(62, by, 540 * Math.min(1, l.progress / ut), 8);
+      bar.fillStyle(0x05070a, 1).fillRect(62, by + 11, 540, 3);
+      bar.fillStyle(PALETTE.gold, 0.7).fillRect(62, by + 11, 540 * Math.min(1, l.count / cap), 3);
     }
-    foot.setText(q.length ? `Queue finishes in ${fmtClock(acc)}  ·  Barracks Lv ${lv + 1}: ${BARRACKS.queueCapacity(lv + 1)} slots, x${BARRACKS.trainSpeed(lv + 1).toFixed(1)} speed` : `Upgrade the Barracks for more slots (${BARRACKS.queueCapacity(lv + 1)}) and faster training.`);
+    foot.setText(`Lanes run in parallel, offline too (8h cap)  ·  Lv ${lv + 1}: ${BARRACKS.laneCapacity(lv + 1)}/lane, x${BARRACKS.trainSpeed(lv + 1).toFixed(1)}`);
   });
 }
 

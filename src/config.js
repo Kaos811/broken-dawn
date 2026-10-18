@@ -81,7 +81,7 @@ export const BUILDINGS = {
     costGrowth: 1.55,
     start: { gx: 8, gy: 12, level: 1 },
     accent: 'blue',
-    description: 'Trains Sentinels, Bearers and Voyagers. Higher levels hold a bigger training queue and train faster.',
+    description: 'Trains Sentinels, Bearers and Voyagers side by side, one lane per class. Higher levels give every lane more room and train faster.',
   },
   armory: {
     id: 'armory',
@@ -140,12 +140,13 @@ export const TROOPS = {
   squadIds: ['alpha', 'bravo', 'charlie'],
 };
 
+// Training runs in three parallel lanes, one per troop class. Every lane has its own
+// timer and its own capacity, and all lanes progress at the same time (online and offline).
 export const BARRACKS = {
-  // Max units waiting in the training queue at a given Barracks level.
-  queueCapacity: (level) => 10 + 10 * (level - 1),
-  // Training speed multiplier (unit time = trainSeconds / speed).
+  // Max units waiting in EACH class lane at a given Barracks level.
+  laneCapacity: (level) => 10 + 10 * (level - 1),
+  // Training speed multiplier, applied to every lane (unit time = trainSeconds / speed).
   trainSpeed: (level) => 1 + 0.2 * (level - 1),
-  maxBatches: 5, // separate queue entries
 };
 
 export const SQUADS = {
@@ -229,4 +230,4 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3; // v3: parallel training lanes (v2 had one sequential queue)

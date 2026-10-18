@@ -76,10 +76,14 @@ All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RES
   | Sentinel | Frontline wall: T-visor, energy shield, short rifle | 120 | 8 | 14 | 6 | 8 s |
   | Bearer | Main damage: long coat, two-handed weapon, Beacon light | 80 | 18 | 7 | 8 | 10 s |
   | Voyager | Scout/support: hood, cyan eyes, sniper, floating shard | 65 | 13 | 5 | 7 | 9 s |
-- **Barracks** (Troops tab, or tap the Barracks → **Train**): x1 / x10 / Max (Max = what fits in the queue and what you
-  can afford). Queue capacity `10 + 10 × (level − 1)`, speed `1 + 0.2 × (level − 1)`, up to 5 batches. Energy is
-  paid up front; ✕ cancels a batch for a full refund. Training keeps running offline (same 8 h cap as income).
-  Cards show Ready / Assigned / Owned.
+- **Barracks** (Troops tab, or tap the Barracks → **Train**): **three parallel training lanes**, one per class.
+  Sentinels, Bearers and Voyagers all train at the same time, each lane with its own timer, so 10 of each finish in
+  the time of the slowest lane (83 s at Lv 2), not the sum (225 s). Each lane holds `10 + 10 × (level − 1)` units
+  (its own capacity, not shared), and the speed multiplier `1 + 0.2 × (level − 1)` applies to every lane.
+  x1 / x10 / Max (Max = what fits in that class's lane and what you can afford). Energy is paid up front. The
+  **Training Lanes** card shows each lane's count, a progress bar, a next-unit timer and an all-done timer, plus
+  ✕ to cancel that lane for a full refund (including the unit in progress). Lanes keep running offline
+  (same 8 h cap as income). Cards show Ready / Assigned / Owned.
 - **Power:** each trained soldier adds 1 Troop Power (assigned or not), plus 10 per squad level above 1.
   `Base Power = Building Power + Troop Power`. The HUD shows both parts; tap the Base Power pill for the full breakdown.
 - **Squads** (Squads tab, or tap the Command Center → **Squads**): Alpha is open from the start, Bravo unlocks at Command Center Lv 3,
@@ -99,7 +103,11 @@ All numbers live in `src/config.js` (`TROOP_CLASSES`, `BARRACKS`, `SQUADS`, `RES
     The 11 leaders are Kael and Seren (Legendary), Lyra and Jax (Epic), Vex, Orin and Nova (Rare), and Rook, Dax, Mira and Thane (Common).
   - **Gear:** your inventory, 9 items (armor and weapons, +5% to +25% HP, ATK or DEF). Each squad holds one armor and one weapon.
     Each copy can be equipped once.
-- **Saves:** the save version went from 1 to 2 and migrates automatically. Buildings, levels, Energy and the Beacon carry over,
+- **Saves (v3):** parallel lanes bumped the save to version 3. A v2 save's sequential queue is migrated into the
+  lanes: every queued unit moves to its class lane (batches of the same class are summed), the batch that was in
+  progress keeps its progress, and Energy, troops and everything else carry over. The v2 save is kept as
+  `brokenDawn.save.v1.backup-v2`.
+- **Saves (v2):** the save version went from 1 to 2 and migrates automatically. Buildings, levels, Energy and the Beacon carry over,
   and the old save is kept as `brokenDawn.save.v1.backup-v1`. Loaded saves are sanitized: formations are clamped to the troops you own,
   and unknown leaders or gear are dropped.
 
@@ -119,7 +127,7 @@ src/
   scenes/UIScene.js    HUD, bottom nav, info panel, move banner, screens, overlays, gacha reveal, toasts, game tick
   ui/widgets.js        buttons, panels, number formatting
   ui/screens/          troops.js (Barracks), squads.js (details, edit formation, pickers), armory.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1 + stage 2 suites × 2 builds (210 checks)
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1 + stage 2 suites × 2 builds (238 checks)
 screens/               screenshots from the test run
 ```
 
@@ -135,6 +143,6 @@ screens/               screenshots from the test run
   game but doesn't re-layout it, so reload after rotating. It's built for portrait.
 - Only tested in headless Chromium with phone emulation (390×844, touch and mouse). It hasn't been tried on a real iPhone or Android device yet.
 - Balance numbers are first-pass placeholders. Tune them in `src/config.js`.
-- Troops are never lost yet (that comes with battles), so the only Troop Power sink is the queue cap.
+- Troops are never lost yet (that comes with battles), so the only Troop Power limit is the per-lane training cap.
 - Gear and leader buffs only change squad HP/ATK/DEF (used in stage 3), not Base Power.
 - The bundle is about 1.2 MB (330 KB gzipped), almost all of it Phaser.

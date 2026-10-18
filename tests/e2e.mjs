@@ -304,9 +304,15 @@ async function runStage2(url, label, takeShots) {
     await ev(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     const c = await ctl(label, opts);
     if (!c) throw new Error(`control not found: ${label} ${JSON.stringify(opts)}`);
-    await page.mouse.click(c.x, c.y); await sleep(opts.wait ?? 300);
+    await page.mouse.click(c.x, c.y);
+    // Phaser handles input on its next frame and buttons fire via delayedCall(0), so wait a few frames
+    // (on a busy machine 300 ms alone can be less than one frame).
+    await ev(() => new Promise((r) => { let n = 0; const f = () => (++n >= 4 ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }));
+    await sleep(opts.wait ?? 300);
     return c;
   };
+  // Polls a page predicate (up to ~2.5 s) so UI-timing checks don't flake under load.
+  const waitTrue = async (fn, arg) => { for (let i = 0; i < 25; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
   const refresh = async () => { await ev(() => __BD.ui().renderScreen()); await sleep(150); };
   const tab = async (i) => { const p = await ev((i) => __BD.gameToPage((720 / 5) * (i + 0.5), __BD.ui().scale.height - 65), i); await page.mouse.click(p.x, p.y); await sleep(350); };
   // Overwrite the save while the page can't overwrite it back, then reload.
@@ -314,6 +320,29 @@ async function runStage2(url, label, takeShots) {
 
   try {
     await page.goto(url); await ready();
+
+    // --- 0. Save migration from a v2 save with the old SEQUENTIAL queue -> v3 parallel lanes
+    await ev(() => {
+      localStorage.clear();
+      localStorage.setItem('brokenDawn.save.v1', JSON.stringify({
+        version: 2, resources: { energy: 500, shards: 321, alloy: 12 }, beacon: { level: 1, charge: 10 },
+        buildings: { commandCenter: { level: 1, gx: 12, gy: 8 }, barracks: { level: 1, gx: 8, gy: 12 }, armory: { level: 1, gx: 16, gy: 16 } },
+        troops: { sentinel: 5, bearer: 2, voyager: 1 },
+        training: [{ type: 'sentinel', count: 3, progress: 2 }, { type: 'bearer', count: 5, progress: 0 }, { type: 'sentinel', count: 2, progress: 0 }, { type: 'voyager', count: 4, progress: 0 }],
+        squads: { alpha: { level: 1, lines: [{ type: 'sentinel', count: 2 }, { type: null, count: 0 }, { type: null, count: 0 }] }, bravo: { level: 1, lines: [] }, charlie: { level: 1, lines: [] } },
+        leaders: {}, gear: {}, gacha: { sinceEpic: 0, sinceLegendary: 0, total: 0, history: [] },
+        lastSaved: Date.now(),
+      }));
+      __BD.store.save = () => {};
+    });
+    await page.reload(); await ready();
+    let m = await state();
+    check('v2 save migrates to version 3', m.version === 3);
+    check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
+    check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
+    check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
+    check('v2 migration keeps troops, Energy, Shards, Alloy and squads', m.troops.sentinel === 5 && m.troops.bearer === 2 && m.troops.voyager === 1 && m.resources.energy >= 500 && m.resources.energy < 510 && Math.floor(m.resources.shards) === 321 && m.resources.alloy >= 12 && m.squads.alpha.lines[0].count === 2, JSON.stringify(m.resources));
+    check('v2 migration keeps a backup of the v2 save', await ev(() => { const b = JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v2') || 'null'); return !!b && b.version === 2 && b.training.length === 4; }));
 
     // --- 1. Save migration from a stage-1 (v1) save
     await ev(() => {
@@ -328,29 +357,30 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v1 save migrates to version 2', s.version === 2);
+    check('v1 save migrates to version 3', s.version === 3);
     check('migration keeps buildings, levels, Energy and Beacon', s.buildings.barracks.gy === 15 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
     check('migration adds Shards (500), Alloy, troops, squad lines', Math.floor(s.resources.shards) === 500 && s.resources.alloy < 5 && s.troops.sentinel === 0 && s.squads.alpha.lines.length === 3 && s.squads.alpha.leader === null);
     check('migration keeps a backup of the v1 save', await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v1')));
     check('Base Power after migration = buildings only (70)', (await power()).total === 70, JSON.stringify(await power()));
     await ev(() => { __BD.store.state.resources.energy = 200; __BD.store.state.resources.shards = 500; __BD.store.save(); });
 
-    // --- 2. Training via the Troops tab
+    // --- 2. Training via the Troops tab (three parallel lanes)
     await tab(1);
     check('Troops tab opens the Barracks', await ev(() => __BD.ui().screen?.id === 'troops'));
+    check('per-lane capacity = 20 at Barracks Lv2', (await ev(() => __BD.store.laneCapacity())) === 20);
     const e0 = (await state()).resources.energy;
     await click('x1', { meta: 'sentinel' });
     s = await state();
-    check('Train x1 Sentinel queues 1 unit and costs 6 Energy', s.training.length === 1 && s.training[0].count === 1 && Math.abs((e0 - s.resources.energy) - 6) < 0.6, `spent ${(e0 - s.resources.energy).toFixed(2)}`);
+    check('Train x1 Sentinel puts 1 unit in the Sentinel lane and costs 6 Energy', s.training.sentinel.count === 1 && s.training.bearer.count === 0 && Math.abs((e0 - s.resources.energy) - 6) < 0.6, `spent ${(e0 - s.resources.energy).toFixed(2)}`);
     check('queued unit does not add power yet', (await power()).troop === 0);
-    const pr0 = await ev(() => __BD.store.state.training[0].progress);
+    const pr0 = await ev(() => __BD.store.state.training.sentinel.progress);
     await sleep(1500);
-    const pr1 = await ev(() => __BD.store.state.training[0]?.progress ?? 99);
+    const pr1 = await ev(() => __BD.store.state.training.sentinel.progress);
     check('training timer runs live', pr1 > pr0, `${pr0.toFixed(2)} -> ${pr1.toFixed(2)}s`);
     check('unit time = 8s / Barracks Lv2 speed 1.2', Math.abs((await ev(() => __BD.store.unitTime('sentinel'))) - 8 / 1.2) < 1e-9);
     await ev(() => __BD.store.tick(7));
     s = await state();
-    check('timer completes: Sentinel trained, queue empty', s.troops.sentinel === 1 && s.training.length === 0);
+    check('timer completes: Sentinel trained, lane empty', s.troops.sentinel === 1 && s.training.sentinel.count === 0 && s.training.sentinel.progress === 0);
     await sleep(300);
     const p1 = await power();
     check('Troop Power: trained soldier adds 1 to Base Power', p1.troop === 1 && p1.total === 71, JSON.stringify(p1));
@@ -359,24 +389,77 @@ async function runStage2(url, label, takeShots) {
     await ev(() => { __BD.store.state.resources.energy = 150; }); await refresh();
     await click('x10', { meta: 'bearer' });
     s = await state();
-    check('Train x10 Bearers queues a batch of 10 for 80 Energy', s.training[0]?.type === 'bearer' && s.training[0].count === 10 && s.resources.energy < 71 && s.resources.energy > 69, `energy ${s.resources.energy.toFixed(1)}`);
+    check('Train x10 Bearers fills the Bearer lane with 10 for 80 Energy', s.training.bearer.count === 10 && s.resources.energy < 71 && s.resources.energy > 69, `energy ${s.resources.energy.toFixed(1)}`);
     await sleep(300);
     const maxBtn = await ctl('Max (10)', { meta: 'voyager' });
-    check('Max button shows the affordable/queue-limited amount', !!maxBtn, (await ev(() => __BD.controls().filter((c) => c.meta === 'voyager').map((c) => c.label))).join(','));
+    check('Max button shows the affordable/lane-limited amount', !!maxBtn, (await ev(() => __BD.controls().filter((c) => c.meta === 'voyager').map((c) => c.label))).join(','));
     await click('Max (10)', { meta: 'voyager' });
+    await ev(() => { __BD.store.state.resources.energy = 60; }); await refresh();
+    await click('x10', { meta: 'sentinel' });
     s = await state();
-    check('Max fills the queue to Barracks capacity (20 at Lv2)', s.training.reduce((n, q) => n + q.count, 0) === 20 && s.training[1].type === 'voyager');
-    check('queue full blocks more training', (await ev(() => __BD.store.train('sentinel', 1))).ok === false && (await ev(() => __BD.store.trainInfo('sentinel', 1).reason)) === 'Training queue is full');
+    check('all three lanes hold 10 units at once (30 queued > old shared cap of 20)', s.training.sentinel.count === 10 && s.training.bearer.count === 10 && s.training.voyager.count === 10 && (await ev(() => __BD.store.queuedUnits())) === 30, JSON.stringify(s.training));
+    const lp0 = await ev(() => JSON.parse(JSON.stringify(__BD.store.state.training)));
+    await sleep(1200);
+    const lp1 = await ev(() => JSON.parse(JSON.stringify(__BD.store.state.training)));
+    check('all three lane timers run simultaneously (live)', ['sentinel', 'bearer', 'voyager'].every((t) => lp1[t].progress > lp0[t].progress + 0.1), JSON.stringify(lp1));
+    check('lane UI shows next + all timers and a ✕ per lane', await ev(() => {
+      const ui = __BD.ui(); const texts = []; const walk = (o) => { if (o.text !== undefined) texts.push(o.text); (o.list ?? []).forEach(walk); }; walk(ui.screen.container);
+      return texts.filter((t) => /^next \d+:\d\d  ·  all \d+:\d\d$/.test(t)).length === 3;
+    }) && (await ev(() => ['sentinel', 'bearer', 'voyager'].every((t) => __BD.controls().some((c) => c.label === '✕' && c.meta === t && c.enabled)))));
+    // lane-full check on a scratch copy of the state
+    const full = await ev(() => {
+      const st = __BD.store; const snap = JSON.stringify(st.state);
+      st.state.resources.energy = 10000;
+      const a = st.trainInfo('bearer', 11); const b = st.train('bearer', 10); const c = st.trainInfo('bearer', 1); const d = st.trainInfo('sentinel', 10);
+      st.state = JSON.parse(snap);
+      return { a: a.reason, b: b.ok, c: c.reason, d: d.can };
+    });
+    check('a full lane blocks only its own class', full.a === 'Bearer lane has room for 10' && full.b && full.c === 'Bearer lane is full' && full.d === true, JSON.stringify(full));
+    // parallel math on a scratch copy: 10 of each at Lv2 (6.67s / 8.33s / 7.5s per unit)
+    const par = await ev(() => {
+      const st = __BD.store; const snap = JSON.stringify(st.state);
+      for (const t of ['sentinel', 'bearer', 'voyager']) st.state.training[t] = { count: 10, progress: 0 };
+      const total = st.trainingSecondsLeft();
+      const sum = ['sentinel', 'bearer', 'voyager'].reduce((n, t) => n + 10 * st.unitTime(t), 0);
+      const t0 = { ...st.state.troops };
+      const at80 = st.processTraining(80);
+      const left80 = JSON.parse(JSON.stringify(st.state.training));
+      const at84 = st.processTraining(4);
+      const out = { total, sum, at80, left80, at84, gained: ['sentinel', 'bearer', 'voyager'].map((t) => st.state.troops[t] - t0[t]), idle: st.queuedUnits() };
+      st.state = JSON.parse(snap);
+      return out;
+    });
+    check('parallel: 10 of each finish in the slowest lane time (83.3s), not the sum (225s)', Math.abs(par.total - 250 / 3) < 1e-6 && Math.abs(par.sum - 225) < 1e-6 && par.idle === 0 && JSON.stringify(par.gained) === '[10,10,10]', `total ${par.total.toFixed(2)}s vs sum ${par.sum.toFixed(1)}s`);
+    check('parallel: after 80s Sentinels + Voyagers done, Bearers 9/10 with 5s into the last', par.at80.sentinel === 10 && par.at80.voyager === 10 && par.at80.bearer === 9 && par.left80.bearer.count === 1 && Math.abs(par.left80.bearer.progress - 5) < 1e-6 && par.at84.bearer === 1, JSON.stringify(par));
+    await ev(() => __BD.store.tick(2.5));
     await shot('stage2-barracks-training.png');
 
-    // --- 3. Offline training progress (100 s away: 10 Bearers @8.33s, then 2 Voyagers @7.5s)
-    await editSave('s.lastSaved = Date.now() - arg; s.training[0].progress = 0;', 100e3);
+    // --- 3. Offline training progress (80 s away, all lanes in parallel from 0)
+    await editSave('s.lastSaved = Date.now() - arg; s.troops = { sentinel: 1, bearer: 0, voyager: 0 }; for (const t of ["sentinel","bearer","voyager"]) s.training[t] = { count: 10, progress: 0 };', 80e3);
     s = await state();
-    check('offline: queued Bearers finished while away', s.troops.bearer === 10, `bearers ${s.troops.bearer}`);
-    check('offline: Voyagers partly trained, rest still queued', s.troops.voyager === 2 && s.training.length === 1 && s.training[0].count === 8 && s.training[0].progress > 1, JSON.stringify(s.training));
+    check('offline: Sentinel and Voyager lanes both finished while away', s.troops.sentinel === 11 && s.troops.voyager === 10 && s.training.sentinel.count === 0 && s.training.voyager.count === 0, JSON.stringify(s.troops));
+    check('offline: Bearer lane trained 9 in parallel, 1 still training', s.troops.bearer === 9 && s.training.bearer.count === 1 && s.training.bearer.progress >= 5, JSON.stringify(s.training));
+    await sleep(500);
+    check('offline report lists every class trained in parallel (10/9/10)', await ev(() => { const t = __BD.store.offlineReport?.trained ?? {}; return t.sentinel === 10 && t.bearer === 9 && t.voyager === 10; }), await ev(() => JSON.stringify(__BD.store.offlineReport?.trained)));
+    // per-lane cancel refunds in full (UI ✕ on the Bearer lane)
+    await tab(1);
+    const ec0 = (await state()).resources.energy;
+    await click('✕', { meta: 'bearer' });
+    s = await state();
+    check('cancel ✕ on one lane refunds its full Energy (8) and leaves other lanes alone', s.training.bearer.count === 0 && s.training.bearer.progress === 0 && Math.abs((s.resources.energy - ec0) - 8) < 0.8 && s.troops.bearer === 9, `refund ${(s.resources.energy - ec0).toFixed(2)}`);
+    const cr = await ev(() => {
+      const st = __BD.store; const snap = JSON.stringify(st.state);
+      st.state.resources.energy = 0;
+      st.state.training.sentinel = { count: 4, progress: 3 }; st.state.training.voyager = { count: 2, progress: 1 };
+      const r = st.cancelLane('sentinel');
+      const out = { refund: r.refund, energy: st.state.resources.energy, voy: { ...st.state.training.voyager }, again: st.cancelLane('sentinel').ok };
+      st.state = JSON.parse(snap);
+      return out;
+    });
+    check('cancelLane refunds every unit incl. the one in progress (4 × 6 = 24), other lanes untouched', cr.refund === 24 && cr.energy === 24 && cr.voy.count === 2 && cr.voy.progress === 1 && cr.again === false, JSON.stringify(cr));
     const p2 = await power();
-    check('Base Power = Building + Troop Power after offline training', p2.troop === 13 && p2.total === 70 + 13, JSON.stringify(p2));
-    check('offline earned Shards and Alloy', s.resources.shards > 500.9 && s.resources.alloy > 5.9, `shards ${s.resources.shards.toFixed(2)} alloy ${s.resources.alloy.toFixed(2)}`);
+    check('Base Power = Building + Troop Power after offline training', p2.troop === 30 && p2.total === 70 + 30, JSON.stringify(p2));
+    check('offline earned Shards and Alloy', s.resources.shards > 500.7 && s.resources.alloy > 4.7, `shards ${s.resources.shards.toFixed(2)} alloy ${s.resources.alloy.toFixed(2)}`);
 
     // --- 4. Squads: formation save limited by available troops
     await tab(3);
@@ -386,19 +469,19 @@ async function runStage2(url, label, takeShots) {
     await click('Bearers', { meta: 'line1-bearer' });
     await click('+10', { meta: 'line1+10' });
     let draft = await ev(() => JSON.parse(JSON.stringify(__BD.ui().screenState.edit.lines)));
-    check('edit formation clamps counts to available troops', draft[0].type === 'sentinel' && draft[0].count === 1 && draft[1].type === 'bearer' && draft[1].count === 10, JSON.stringify(draft));
+    check('edit formation clamps counts to available troops', draft[0].type === 'sentinel' && draft[0].count === 10 && draft[1].type === 'bearer' && draft[1].count === 9, JSON.stringify(draft));
     await click('Voyagers', { meta: 'line2-voyager' });
     await click('−1', { meta: 'line2-1' });
     await shot('stage2-squad-formation-edit.png');
     await click('Save Formation');
     s = await state();
-    check('formation saved (1 Sentinel, 10 Bearers, 1 Voyager)', s.squads.alpha.lines[0].count === 1 && s.squads.alpha.lines[1].count === 10 && s.squads.alpha.lines[2].type === 'voyager' && s.squads.alpha.lines[2].count === 1 && !(await ev(() => __BD.ui().screenState.edit)), JSON.stringify(s.squads.alpha.lines));
-    check('ready vs assigned counts', await ev(() => __BD.store.readyCount('bearer') === 0 && __BD.store.assignedCount('bearer') === 10 && __BD.store.readyCount('voyager') === 1));
-    check('Squad Power = troops + 10 x level (12 + 10)', (await ev(() => __BD.store.squadPower('alpha'))) === 22);
-    check('assigning troops does not change Base Power', (await power()).total === 83);
+    check('formation saved (10 Sentinels, 9 Bearers, 9 Voyagers)', s.squads.alpha.lines[0].count === 10 && s.squads.alpha.lines[1].count === 9 && s.squads.alpha.lines[2].type === 'voyager' && s.squads.alpha.lines[2].count === 9 && !(await ev(() => __BD.ui().screenState.edit)), JSON.stringify(s.squads.alpha.lines));
+    check('ready vs assigned counts', await ev(() => __BD.store.readyCount('bearer') === 0 && __BD.store.assignedCount('bearer') === 9 && __BD.store.readyCount('voyager') === 1));
+    check('Squad Power = troops + 10 x level (28 + 10)', (await ev(() => __BD.store.squadPower('alpha'))) === 38);
+    check('assigning troops does not change Base Power', (await power()).total === 100);
     const over = await ev(() => __BD.store.saveFormation('bravo', [{ type: 'bearer', count: 1 }, { type: null, count: 0 }, { type: null, count: 0 }]));
     check('Bravo cannot take Bearers already in Alpha', over.ok === false && /Only 0 Bearers/.test(over.reason), over.reason);
-    const over2 = await ev(() => __BD.store.saveFormation('alpha', [{ type: 'sentinel', count: 2 }, { type: null, count: 0 }, { type: null, count: 0 }]));
+    const over2 = await ev(() => __BD.store.saveFormation('alpha', [{ type: 'sentinel', count: 12 }, { type: null, count: 0 }, { type: null, count: 0 }]));
     check('formation rejects more troops than owned', over2.ok === false);
     check('Charlie locked below Command Center Lv 5', (await ev(() => __BD.store.saveFormation('charlie', [{ type: 'voyager', count: 1 }, { type: null, count: 0 }, { type: null, count: 0 }]))).ok === false);
     await click('Bravo', { kind: 'tab' });
@@ -426,7 +509,7 @@ async function runStage2(url, label, takeShots) {
     await click('Reveal All', { wait: 1500 });
     await shot('stage2-gacha-x10-reveal.png');
     await click('Continue', { wait: 400 });
-    check('reveal closes on Continue', await ev(() => __BD.ui().reveal === null));
+    check('reveal closes on Continue', await waitTrue(() => __BD.ui().reveal === null));
     await ev(() => { __BD.store.state.resources.shards = 50; __BD.store.setSeed(2026); __BD.store.pull(1); });
     check('x1 pull costs 10 Shards', Math.abs((await state()).resources.shards - 40) < 0.5);
     await ev(() => { __BD.store.state.resources.shards = 5; });
@@ -483,7 +566,7 @@ async function runStage2(url, label, takeShots) {
     await shot('stage2-leaders-collection.png');
     const atk0 = await ev(() => __BD.store.squadStats('alpha').atk);
     await click('leader-kael', { kind: 'zone' });
-    check('leader detail opens', await ev(() => !!__BD.ui().modal));
+    check('leader detail opens', await waitTrue(() => !!__BD.ui().modal));
     await click('Alpha', { kind: 'button' });
     s = await state();
     const atk1 = await ev(() => __BD.store.squadStats('alpha').atk);
@@ -512,7 +595,7 @@ async function runStage2(url, label, takeShots) {
     await ev(() => __BD.store.save());
     await page.reload(); await ready();
     s = await state();
-    check('squads, leaders, gear, troops and gacha persist after reload', JSON.stringify(s.squads) === JSON.stringify(before.squads) && JSON.stringify(Object.entries(s.leaders).sort()) === JSON.stringify(Object.entries(before.leaders).sort()) && s.gear.arcRifle === 1 && s.troops.bearer === 10 && s.gacha.total === before.gacha.total);
+    check('squads, leaders, gear, troops and gacha persist after reload', JSON.stringify(s.squads) === JSON.stringify(before.squads) && JSON.stringify(Object.entries(s.leaders).sort()) === JSON.stringify(Object.entries(before.leaders).sort()) && s.gear.arcRifle === 1 && s.troops.bearer === 9 && s.gacha.total === before.gacha.total);
 
     // --- 9. Tapping buildings opens their screens; Battle is stage 3
     await ev(() => __BD.base().select('barracks')); await sleep(300);
