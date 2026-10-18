@@ -1,7 +1,7 @@
 {
   "name": "broken-dawn",
-  "version": "0.4.0",
-  "description": "Broken Dawn - sci-fi idle base-builder (stage 4: research tree, troop tiers T1-T3)",
+  "version": "0.5.0",
+  "description": "Broken Dawn - sci-fi idle base-builder (stage 5: sound, polish, tutorial)",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build && vite build --mode single && node scripts/copy-single.mjs",

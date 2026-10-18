@@ -8,6 +8,7 @@ import WorldScene from './scenes/WorldScene.js';
 import { resolveBattle, combatPower } from './world/battle.js';
 import { creatureArmy, squadArmy } from './world/armies.js';
 import { createWorld, ringLevel, dist } from './world/worldState.js';
+import { audio } from './audio/audio.js';
 
 store.load();
 
@@ -21,8 +22,32 @@ const game = new Phaser.Game({
   input: { activePointers: 3, mouse: { preventDefaultWheel: true } },
   render: { antialias: true, roundPixels: false },
   disableContextMenu: true,
+  // An fps limiter far above the display rate costs nothing; it lets the UI drop to ~30 fps when idle.
+  fps: { limit: 240 },
   scene: [BootScene, BaseScene, WorldScene, UIScene],
 });
+
+// Loading screen: fade it out once the UI scene is up.
+export function hideLoader() {
+  const el = document.getElementById('boot');
+  if (!el || el.classList.contains('done')) return;
+  el.classList.add('done');
+  setTimeout(() => el.remove(), 400);
+}
+const waitUi = setInterval(() => { if (game.scene.getScene('UI')?.panel) { clearInterval(waitUi); hideLoader(); } }, 50);
+
+// Rotation / resize: the layout height is picked from the aspect ratio at load. If it changes a lot
+// (phone rotated, window resized), save and reload so everything is laid out for the new shape.
+const layoutH = () => Math.round(GAME_WIDTH * Math.min(21 / 9, Math.max(16 / 9, window.innerHeight / Math.max(1, window.innerWidth))));
+let relayoutTimer = null;
+const onResize = () => {
+  clearTimeout(relayoutTimer);
+  relayoutTimer = setTimeout(() => {
+    if (Math.abs(layoutH() - GAME_HEIGHT) > 60) { store.save(); window.__BD_RELAYOUT = true; location.reload(); }
+  }, 600);
+};
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', onResize);
 
 // Small debug/testing hook (used by the Playwright smoke test).
 window.__BD = {
@@ -65,6 +90,11 @@ window.__BD = {
     ui.children.list.forEach(walk);
     return out;
   },
+  // stage 5 test hooks
+  audio,
+  audioState: () => audio.state(),
+  tutorial: () => game.scene.getScene('UI')?.tutorial?.stateForTest(),
+  perf: () => ({ capped: !!game.scene.getScene('UI')?.idleCapped, limitRate: game.loop._limitRate, fps: Math.round(game.loop.actualFps), layoutH: GAME_HEIGHT }),
   gameToPage(gx, gy) {
     const r = game.canvas.getBoundingClientRect();
     return { x: r.left + (gx / GAME_WIDTH) * r.width, y: r.top + (gy / GAME_HEIGHT) * r.height };

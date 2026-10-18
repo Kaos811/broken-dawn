@@ -6,6 +6,7 @@ import { store } from '../state/store.js';
 import { text, button, fmt, fmtClock, panelBg } from './widgets.js';
 import { tapZone } from './screens/common.js';
 import { ringOfLevel } from '../world/worldState.js';
+import { audio } from '../audio/audio.js';
 
 const NAV_H = 130;
 const sqName = (id) => SQUADS[id].name;
@@ -212,7 +213,18 @@ export function openReport(ui, report) {
       let y = r.y + 290;
       c.add(text(ui, x0, y, 'REWARDS', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
       const L = report.loot;
-      c.add(text(ui, x0, y + 32, report.win ? `+${fmt(L.energy)} Energy    +${fmt(L.alloy)} Alloy    +${fmt(L.shards)} Shards` : 'None. The creature held its ground.', 21, report.win ? PALETTE.text : PALETTE.textDim));
+      const lootT = text(ui, x0, y + 32, '', 21, report.win ? PALETTE.text : PALETTE.textDim); c.add(lootT);
+      if (report.win) {
+        // count-up reward line + pops (fresh reports only; old ones show the totals right away)
+        const fresh = Date.now() - (report.at ?? 0) < 15000;
+        const show = (k) => lootT.setText(`+${fmt(L.energy * k)} Energy    +${fmt(L.alloy * k)} Alloy    +${fmt(L.shards * k)} Shards`);
+        if (fresh) {
+          const o = { k: 0 }; show(0);
+          ui.tweens.add({ targets: o, k: 1, duration: 700, ease: 'Cubic.easeOut', onUpdate: () => lootT.active && show(o.k), onComplete: () => lootT.active && show(1) });
+          ui.time.delayedCall(150, () => { if (c.active) { c.add(ui.floatText(x0 + 120, y + 30, `+${fmt(L.energy)}`, PALETTE.textCyan)); audio.play('reward'); } });
+          if (L.cores) ui.time.delayedCall(420, () => { if (c.active) c.add(ui.floatText(x0 + 260, y + 62, `+${L.cores} Core`, CORES.hex, 34)); });
+        } else show(1);
+      } else lootT.setText('None. The creature held its ground.');
       if (L.cores) c.add(text(ui, x0, y + 64, `+${L.cores} Beacon ${L.cores === 1 ? 'Core' : 'Cores'}  ·  first Lv ${report.target.level} kill`, 21, CORES.hex, { fontStyle: 'bold' }));
       // casualties
       y += 118;
@@ -279,6 +291,9 @@ export function playReplay(ui, report) {
   const roundT = text(ui, W / 2, H / 2 - 18, 'Round 1', 26, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0.5);
   c.add(roundT);
   const fx = ui.add.graphics(); c.add(fx);
+  const flash = ui.add.graphics(); c.add(flash);
+  const impact = ui.add.particles(0, 0, 'spark', { speed: { min: 60, max: 240 }, lifespan: 380, scale: { start: 0.9, end: 0 }, tint: [0xffffff, PALETTE.gold, 0xff8a5c], blendMode: 'ADD', emitting: false });
+  c.add(impact);
   const sides = { A: report.attacker.lines, D: report.defender.lines };
   // row layout: enemy front row sits just above centre, squad front row just below
   const rows = { A: [], D: [] };
@@ -338,27 +353,43 @@ export function playReplay(ui, report) {
     if (!animate || !src) return;
     const sx = W / 2 + (Math.random() - 0.5) * 300, tx = W / 2 + (Math.random() - 0.5) * 300;
     fx.lineStyle(ev.crit ? 5 : 3, ev.side === 'A' ? PALETTE.cyan : 0xff4d5e, 0.9).lineBetween(sx, src.y, tx, dst.y);
-    const t = text(ui, tx, dst.y - 20, `${ev.crit ? 'CRIT ' : ''}-${fmt(ev.dmg)}${ev.kills ? `  ✖${ev.kills}` : ''}`, ev.crit ? 28 : 22, ev.crit ? PALETTE.textGold : (ev.side === 'A' ? '#ffffff' : '#ff8a95'), { fontStyle: 'bold', stroke: '#000', strokeThickness: 5 }).setOrigin(0.5);
+    const t = text(ui, tx, dst.y - 20, `${ev.crit ? 'CRIT ' : ''}-${fmt(ev.dmg)}${ev.kills ? `  ✖${ev.kills}` : ''}`, ev.crit ? 34 : 24, ev.crit ? PALETTE.textGold : (ev.side === 'A' ? '#ffffff' : '#ff8a95'), { fontStyle: 'bold', stroke: '#000', strokeThickness: 6 }).setOrigin(0.5).setScale(0.3);
     c.add(t);
-    ui.tweens.add({ targets: t, y: t.y - 50, alpha: 0, duration: 900 / speed, onComplete: () => t.destroy() });
-    dst.icons.forEach((img) => { if (img.alpha > 0.5) { ui.tweens.add({ targets: img, x: img.x + 6, duration: 50, yoyo: true }); } });
+    // hit number pops in, then floats away
+    ui.tweens.add({ targets: t, scale: ev.crit ? 1.25 : 1, duration: 140 / speed, ease: 'Back.easeOut' });
+    ui.tweens.add({ targets: t, y: t.y - 60, alpha: 0, delay: 260 / speed, duration: 800 / speed, onComplete: () => t.destroy() });
+    // impact sparks + a white flash on the row that got hit
+    impact.explode(ev.crit ? 18 : 8, tx, dst.y);
+    flash.fillStyle(ev.side === 'A' ? 0xffffff : 0xff4d5e, ev.crit ? 0.22 : 0.1).fillRect(40, dst.y - 40, W - 80, 80);
+    dst.icons.forEach((img) => { if (img.alpha > 0.5) { ui.tweens.add({ targets: img, x: img.x + (ev.crit ? 12 : 6), duration: 50, yoyo: true }); } });
+    if (ev.kills) { const n = dst.icons.filter((im) => im.alpha > 0.5); const last = n[n.length - 1]; if (last) { last.setTintFill(0xff4d5e); ui.time.delayedCall(120, () => last.active && last.clearTint()); } }
+    ui.fx.hits++;
+    audio.play(ev.crit ? 'crit' : 'hit', { gap: 70 });
+    if (ev.crit || ev.kills >= 3) { ui.cameras.main.shake(110, ev.crit ? 0.006 : 0.003); ui.fx.shakes++; audio.haptic(ev.crit ? 18 : 8); }
   };
   const finish = () => {
     if (done) return;
     done = true;
     while (i < groups.length) { groups[i].evs.forEach((ev) => apply(ev, false)); i++; }
-    fx.clear();
+    fx.clear(); flash.clear();
     roundT.setText(`${res.rounds} rounds`);
-    banner.setText(res.winner === 'attacker' ? 'VICTORY' : 'DEFEAT').setColor(res.winner === 'attacker' ? PALETTE.textGold : '#ff6f7b').setVisible(true).setScale(0.6);
+    const won = res.winner === 'attacker';
+    banner.setText(won ? 'VICTORY' : 'DEFEAT').setColor(won ? PALETTE.textGold : '#ff6f7b').setVisible(true).setScale(0.6);
     ui.tweens.add({ targets: banner, scale: 1, duration: 300, ease: 'Back.easeOut' });
+    audio.play(won ? 'win' : 'lose');
+    if (won) {
+      impact.explode(50, W / 2, H / 2 - 18);
+      if (report.loot?.energy) ui.time.delayedCall(250, () => { if (!closed) { const p = ui.floatText(W / 2, H / 2 + 50, `+${fmt(report.loot.energy)} Energy`, PALETTE.textCyan, 32); c.add(p); } });
+    }
     skip.setLabel('Report'); 
   };
   const step = () => {
     if (closed || done) return;
     if (i >= groups.length) { finish(); return; }
     const gp = groups[i++];
-    fx.clear();
+    fx.clear(); flash.clear();
     roundT.setText(`Round ${gp.r}${gp.phase === 1 ? '  ·  first strike' : ''}`);
+    if (gp.evs[0] && (i === 1 || groups[i - 2]?.r !== gp.r)) { roundT.setScale(1.3); ui.tweens.add({ targets: roundT, scale: 1, duration: 200, ease: 'Quad.easeOut' }); }
     gp.evs.forEach((ev) => apply(ev, true));
     ui.time.delayedCall(base / speed, step);
   };

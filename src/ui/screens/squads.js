@@ -36,11 +36,16 @@ function renderDetails(ui, c, a, api, st, y0) {
   const sq = store.state.squads[id];
   // --- summary
   card(ui, c, 16, y0, 688, 196, { accent: PALETTE.gold });
-  c.add(text(ui, 36, y0 + 14, 'SQUAD POWER', 18, PALETTE.textDim, { letterSpacing: 2 }));
-  c.add(text(ui, 36, y0 + 38, fmt(store.squadPower(id)), 54, PALETTE.textGold, { fontStyle: 'bold' }));
-  c.add(text(ui, 36, y0 + 100, `${store.squadSoldiers(id)} soldiers + ${sq.level} × ${TROOPS.powerPerSquadLevel}`, 18, PALETTE.textDim));
+  // Two different numbers, labelled so they can't be confused: Squad Power feeds Base Power;
+  // Combat Power (HP/ATK/DEF with leader, gear, research) is what decides World hunts.
+  c.add(text(ui, 36, y0 + 14, 'SQUAD POWER · BASE', 16, PALETTE.textDim, { letterSpacing: 2 }));
+  c.add(text(ui, 36, y0 + 36, fmt(store.squadPower(id)), 48, PALETTE.textGold, { fontStyle: 'bold' }));
+  c.add(text(ui, 36, y0 + 92, `${store.squadSoldiers(id)} soldiers + ${sq.level} × ${TROOPS.powerPerSquadLevel}`, 16, PALETTE.textDim));
+  c.add(text(ui, 250, y0 + 14, 'COMBAT POWER · HUNTS', 16, PALETTE.textDim, { letterSpacing: 2 }));
+  c.add(text(ui, 250, y0 + 36, fmt(store.squadCombatPower(id)), 48, PALETTE.textCyan, { fontStyle: 'bold' }));
+  c.add(text(ui, 250, y0 + 92, 'decides World battles', 16, PALETTE.textDim));
   const stats = store.squadStats(id);
-  c.add(text(ui, 36, y0 + 128, `HP ${fmt(stats.hp)}   ATK ${fmt(stats.atk)}   DEF ${fmt(stats.def)}`, 21, PALETTE.textCyan));
+  c.add(text(ui, 36, y0 + 132, `HP ${fmt(stats.hp)}   ATK ${fmt(stats.atk)}   DEF ${fmt(stats.def)}`, 21, PALETTE.textCyan));
   c.add(text(ui, 684, y0 + 14, `Lv ${sq.level}`, 34, PALETTE.text, { fontStyle: 'bold' }).setOrigin(1, 0));
   c.add(text(ui, 684, y0 + 56, `cap Lv ${store.state.buildings.commandCenter.level} (CC level)`, 17, PALETTE.textDim).setOrigin(1, 0));
   const info = store.levelUpInfo(id);
@@ -122,7 +127,7 @@ function renderDetails(ui, c, a, api, st, y0) {
     const n = store.refillable(id), m = store.squadMarch(id);
     refill.setEnabled(n > 0 && !m).setLabel(n > 0 ? `Refill +${n}` : 'Refill');
     const tgt = m && store.world.get(m.targetId);
-    status.setText(m ? `${m.phase === 'out' ? `Marching to Lv ${tgt?.level ?? '?'}` : 'Returning to base'} · formation locked until it's back` : `Combat Power ${fmt(store.squadCombatPower(id))} (used on World hunts)  ·  only healthy troops march; Refill tops lines up from reserve`);
+    status.setText(m ? `${m.phase === 'out' ? `Marching to Lv ${tgt?.level ?? '?'}` : 'Returning to base'} · formation locked until it's back` : 'Only healthy troops march. Refill tops lines up from reserve');
   });
   void march;
 }

@@ -13,6 +13,9 @@ import { renderInfirmary } from '../ui/screens/infirmary.js';
 import { renderArchive } from '../ui/screens/archive.js';
 import { RESEARCH } from '../config.js';
 import { createWorldHud, openReport } from '../ui/world.js';
+import { audio } from '../audio/audio.js';
+import { Tutorial } from '../tutorial/tutorial.js';
+import { PERF, AUDIO, TUTORIAL } from '../config.js';
 
 export const TOP_H = 186;
 const NAV_H = 130;
@@ -43,6 +46,16 @@ export default class UIScene extends Phaser.Scene {
     this.replay = null;
     this.worldHud = createWorldHud(this, TOP_H, H);
     this.createToast();
+    this.fx = { floats: 0, bursts: 0, hits: 0, shakes: 0 };
+    audio.init();
+    audio.setTrack('base');
+    this.tutorial = new Tutorial(this);
+    // idle frame cap (phones): drop to ~30 fps after a while without input
+    this.lastInput = performance.now();
+    const poke = () => { this.lastInput = performance.now(); };
+    this.input.on('pointerdown', poke); this.input.on('pointermove', (p) => { if (p.isDown) poke(); }); this.input.on('wheel', poke);
+    window.addEventListener('keydown', poke);
+    this.idleCapped = false;
 
     const ev = this.game.events;
     ev.on('base:select', (id) => this.openPanel(id), this);
@@ -54,25 +67,35 @@ export default class UIScene extends Phaser.Scene {
     this.unsubs = [
       store.on('upgrade', (id) => {
         this.bump(this.powerText); this.refreshPanel();
+        audio.play('levelup'); audio.haptic([20, 40, 30]);
         const lv = store.levelOf(id);
         this.toast(id === BEACON.id ? `${BEACON.name} reached Lv ${lv}. +${CORES.beaconLevel} Beacon Cores ready: tap the Cores counter to claim.` : `${BUILDINGS[id].name} reached Lv ${lv}`, 2600);
       }),
-      store.on('upgradeStart', () => this.refreshPanel()),
+      store.on('upgradeStart', () => { this.refreshPanel(); audio.play('build'); }),
       store.on('upgradeCancel', () => this.refreshPanel()),
       store.on('reset', () => { this.closePanel(false); this.screenState.edit = null; if (this.screen) this.renderScreen(); }),
       store.on('change', () => { this.screenDirty = true; }),
-      store.on('trained', (done, d) => { if (d.after > d.before) this.bump(this.powerText); }),
+      store.on('trained', (done, d) => {
+        if (d.after > d.before) { this.bump(this.powerText); this.floatText(330, 120, `+${fmt(d.after - d.before)}`, PALETTE.textGold); }
+        if (!store.simulating) audio.play('train', { gap: 400 });
+      }),
+      store.on('trainStart', () => audio.play('train', { gap: 150 })),
+      store.on('pull', () => audio.play('open')),
+      store.on('cores', (n) => { if (store.simulating) return; audio.play('reward'); audio.haptic(12); this.floatText(80, 140, `+${n}`, CORES.hex); }),
+      store.on('settings', () => this.refreshSettings?.()),
       store.on('squad', (_id, d) => { if (d && d.after !== d.before) this.bump(this.powerText); }),
       store.on('hunt', (r) => this.onHunt(r)),
       store.on('marchHome', (m) => { if (!m.meta?.auto) this.toast(`${SQ[m.squadId].name} is back at base`, 1400); }),
       store.on('research', (id, lv, d) => {
         if (d && d.after !== d.before) this.bump(this.powerText);
+        audio.play('research'); audio.haptic([15, 30, 15]);
         this.refreshPanel();
         const R = RESEARCH[id];
         this.toast(R.effect === 'tier' ? `Research done: ${R.name}. New troops in the Barracks!` : `Research done: ${R.name} Lv ${lv}`, 2600);
       }),
-      store.on('researchStart', () => this.refreshPanel()),
-      store.on('healed', (h) => { const n = Object.values(h).reduce((a, b) => a + b, 0); if (n && !this.screen) this.bumpTroops = true; }),
+      store.on('researchStart', () => { this.refreshPanel(); audio.play('build'); }),
+      store.on('healed', (h) => { const n = Object.values(h).reduce((a, b) => a + b, 0); if (n && !this.screen) this.bumpTroops = true; if (n && !store.simulating) audio.play('heal', { gap: 600 }); }),
+      store.on('march', () => audio.play('march')),
     ];
     this.events.once('shutdown', () => this.unsubs.forEach((u) => u()));
 
@@ -92,6 +115,10 @@ export default class UIScene extends Phaser.Scene {
     } else if (store.migratedFrom && store.migratedFrom < 4) {
       this.time.delayedCall(400, () => this.toast(`Recruitment now uses Beacon Cores. Here are ${CORES.migrationGrant} to start. Your Shards stay for upgrades.`, 4600));
     }
+    // stage 5: one-time hint for existing players (their tutorial was marked done in the v8 migration)
+    if (store.migratedFrom && store.migratedFrom < 8) {
+      this.time.delayedCall(off && off.energy >= 1 ? 5200 : 500, () => this.toast('New: sound, music and a tutorial. Replay the tutorial any time from Settings.', 4200));
+    }
     this.panelTimer = 0;
   }
 
@@ -100,6 +127,7 @@ export default class UIScene extends Phaser.Scene {
     if (this.modal || this.screen || this.reveal || this.replay) return true;
     if (y < TOP_H || y > H - NAV_H) return true;
     if (this.worldHud?.blocks(x, y)) return true;
+    if (this.tutorial?.blocks(x, y)) return true;
     if (this.panel.visible && Phaser.Geom.Rectangle.Contains(this.panelRect, x, y)) return true;
     if (this.banner.visible && Phaser.Geom.Rectangle.Contains(this.bannerRect, x, y)) return true;
     return false;
@@ -115,7 +143,7 @@ export default class UIScene extends Phaser.Scene {
     this.add.rectangle(W / 2, TOP_H / 2, W, TOP_H, 0, 0.001).setInteractive(); // swallow taps
 
     text(this, 20, 12, 'BROKEN DAWN', 18, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 4 });
-    text(this, W - 20, 12, 'STAGE 4 · RESEARCH', 16, PALETTE.textDim, { letterSpacing: 2 }).setOrigin(1, 0);
+    text(this, W - 20, 12, 'STAGE 5 · POLISH', 16, PALETTE.textDim, { letterSpacing: 2 }).setOrigin(1, 0);
 
     // Energy pill
     const pill = (x, w) => { panelBg(g, x, 42, w, 96, { accent: null, cut: 12, fill: 0x141922 }); };
@@ -224,6 +252,9 @@ export default class UIScene extends Phaser.Scene {
       const c = this.add.container(0, 0).setDepth(50);
       this.screen = { id, container: c, dyn: [] };
       if (id !== 'squads') this.screenState.edit = null;
+      // transition: quick fade (no movement, so taps always land where the controls are drawn)
+      c.alpha = 0; this.tweens.add({ targets: c, alpha: 1, duration: 140, ease: 'Quad.easeOut' });
+      audio.play('open');
     }
     this.activeTab = id; this.drawNav();
     this.renderScreen();
@@ -290,6 +321,8 @@ export default class UIScene extends Phaser.Scene {
     if (this.scene.isSleeping('World')) this.scene.wake('World');
     else if (!this.scene.isActive('World')) this.scene.run('World');
     this.scene.sleep('Base');
+    this.scene.get('World').cameras?.main?.fadeIn(220, 7, 9, 13);
+    audio.play('open');
     this.worldHud.show();
     this.activeTab = 'world'; this.drawNav();
   }
@@ -300,6 +333,7 @@ export default class UIScene extends Phaser.Scene {
     this.worldHud.hide();
     this.scene.sleep('World');
     this.scene.wake('Base');
+    this.scene.get('Base').cameras?.main?.fadeIn(220, 7, 9, 13);
     this.activeTab = this.screen?.id ?? 'base'; this.drawNav();
   }
 
@@ -307,14 +341,19 @@ export default class UIScene extends Phaser.Scene {
   onHunt(r) {
     const T = CREATURES[r.target.type];
     if (r.loot.cores) this.bump(this.coreText);
+    if (!store.simulating) {
+      audio.play(r.win ? 'win' : 'lose', { gap: 300 });
+      if (r.win) { this.floatText(120, 120, `+${fmt(r.loot.energy)}`, PALETTE.textCyan); if (r.loot.cores) this.floatText(70, 150, `+${r.loot.cores} Core`, CORES.hex); }
+    }
     const msg = `${SQ[r.squadId].name} ${r.win ? 'defeated' : 'lost to'} Lv ${r.target.level} ${T.short}${r.win ? `  ·  +${fmt(r.loot.energy)} Energy${r.loot.cores ? `  ·  +${r.loot.cores} Core!` : ''}` : ''}  ·  ${r.casualties.woundedTotal ?? 0} wounded, ${r.casualties.deadTotal ?? 0} fallen`;
     if (!r.auto && this.worldMode && !this.modal && !this.screen && !this.reveal && !this.replay) openReport(this, r);
     else this.toast(msg, 2600);
   }
 
   // Generic overlay sheet with custom content: build(container, rect) adds objects.
-  openOverlay({ title, h = 760, build, closeLabel = 'Close' }) {
+  openOverlay({ title, h = 760, build, closeLabel = 'Close', tab }) {
     this.closeModal(true);
+    if (tab) { this.activeTab = tab; this.drawNav(); }
     const c = this.add.container(0, 0).setDepth(100);
     const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.66).setInteractive();
     const w = W - 48, x = 24;
@@ -391,6 +430,8 @@ export default class UIScene extends Phaser.Scene {
           this.tweens.add({ targets: [cd.tag, cd.pityTag].filter(Boolean), alpha: 1, duration: 200 });
           const big = cd.r.rarity === 'legendary' || cd.r.rarity === 'epic';
           this.tweens.add({ targets: cd.glow, alpha: big ? 0.9 : 0.45, duration: 260 });
+          audio.play('reveal', { rarity: cd.r.rarity, gap: 30 });
+          if (big) audio.haptic(cd.r.rarity === 'legendary' ? [30, 50, 60] : 25);
           if (big) {
             const burst = this.add.particles(cd.holder.x, cd.holder.y, 'spark', { speed: { min: 90, max: cd.r.rarity === 'legendary' ? 380 : 220 }, lifespan: 800, scale: { start: 1.4, end: 0 }, tint: [RARITY[cd.r.rarity].color, 0xffffff], blendMode: 'ADD', emitting: false });
             c.add(burst);
@@ -673,15 +714,60 @@ export default class UIScene extends Phaser.Scene {
     if (this.activeTab !== want) { this.activeTab = want; this.drawNav(); }
   }
 
+  // Settings: audio (music / effects volume, mute), haptics, tutorial replay, version + Reset Save.
   openSettings() {
-    this.openModal({
-      title: 'Settings',
-      body: 'Broken Dawn · v0.4 (stage 4: research + troop tiers)\nProgress saves automatically on this device.\n\nPvP: coming later.\n\nReset Save erases everything: base, troops, squads, leaders, gear, research and the world.',
-      tab: 'settings',
-      buttons: [
-        { label: 'Close', style: 'ghost' },
-        { label: 'Reset Save', style: 'danger', onClick: () => this.confirmReset() },
-      ],
+    this.openOverlay({
+      title: 'Settings', h: 1060, tab: 'settings',
+      build: (c, r, close) => {
+        const x0 = r.x + 32, xr = r.x + r.w - 32;
+        const g = this.add.graphics(); c.add(g);
+        const S = () => store.state.settings;
+        c.add(text(this, x0, r.y + 92, 'AUDIO', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
+        const rows = [['music', 'Music', 'synth score: base · world · battle'], ['sfx', 'Effects', 'taps, builds, battles, rewards']];
+        const vals = {}, bars = {};
+        rows.forEach(([key, name, sub], i) => {
+          const y = r.y + 136 + i * 118;
+          c.add(text(this, x0, y, name, 26, PALETTE.text, { fontStyle: 'bold' }));
+          c.add(text(this, x0, y + 34, sub, 15, PALETTE.textDim));
+          vals[key] = text(this, xr - 150, y + 2, '', 26, PALETTE.textCyan, { fontStyle: 'bold' }).setOrigin(0.5, 0); c.add(vals[key]);
+          const dn = button(this, xr - 236, y + 16, 64, 56, '−', () => store.setSetting(key, S()[key] - AUDIO.step), { style: 'ghost', size: 30 }); dn.chip = `${key}-down`;
+          const up = button(this, xr - 32, y + 16, 64, 56, '+', () => { store.setSetting(key, S()[key] + AUDIO.step); if (key === 'sfx') audio.play('reward'); }, { style: 'ghost', size: 30 }); up.chip = `${key}-up`;
+          c.add([dn, up]);
+          bars[key] = { x: x0, y: y + 66, w: r.w - 64 };
+        });
+        const mute = button(this, x0 + 150, r.y + 400, 300, 64, '', () => store.setSetting('muted', !S().muted), { style: 'cyan', size: 22 }); mute.chip = 'mute';
+        const hap = button(this, xr - 150, r.y + 400, 300, 64, '', () => { store.setSetting('haptics', !S().haptics); audio.haptic(20); }, { style: 'cyan', size: 22 }); hap.chip = 'haptics';
+        c.add([mute, hap]);
+        c.add(text(this, x0, r.y + 444, 'Sound starts after your first tap (browser rule) and pauses when the game is hidden. Haptics need a phone that supports vibration.', 15, PALETTE.textDim, { wordWrap: { width: r.w - 64 } }));
+        // tutorial
+        c.add(text(this, x0, r.y + 520, 'TUTORIAL', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
+        const tuS = text(this, x0, r.y + 556, '', 19, PALETTE.text); c.add(tuS);
+        const rep = button(this, xr - 150, r.y + 566, 300, 64, 'Replay Tutorial', () => {
+          store.replayTutorial(); close(); this.closeScreen(); this.hideWorld();
+          this.toast('Tutorial restarted. Follow the gold pointer.', 2200);
+        }, { style: 'gold', size: 22 }); rep.chip = 'replay-tutorial'; c.add(rep);
+        // game
+        c.add(text(this, x0, r.y + 650, 'GAME', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
+        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.5 (stage 5: sound, polish + tutorial)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
+        const rs = button(this, r.x + r.w / 2, r.y + 836, 300, 64, 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
+        this.refreshSettings = () => {
+          if (!c.active) { this.refreshSettings = null; return; }
+          const s = S();
+          g.clear();
+          for (const key of ['music', 'sfx']) {
+            const b = bars[key], v = s[key];
+            vals[key].setText(`${Math.round(v * 100)}%`).setColor(s.muted ? '#5d6878' : PALETTE.textCyan);
+            g.fillStyle(0x05070a, 1).fillRect(b.x, b.y, b.w, 12);
+            g.fillStyle(s.muted ? 0x3a414c : (key === 'music' ? PALETTE.gold : PALETTE.cyan), 1).fillRect(b.x, b.y, b.w * v, 12);
+            g.lineStyle(1.5, PALETTE.metalEdge, 1).strokeRect(b.x, b.y, b.w, 12);
+          }
+          mute.setLabel(s.muted ? '🔇 Sound: Muted' : '🔊 Sound: On').setStyle(s.muted ? 'danger' : 'cyan');
+          hap.setLabel(s.haptics ? '📳 Haptics: On' : '📴 Haptics: Off').setStyle(s.haptics ? 'cyan' : 'ghost');
+          const t = store.state.tutorial;
+          tuS.setText(t.done ? (t.skipped ? `Skipped at step ${t.step + 1} of ${TUTORIAL.steps}` : 'Completed') : `In progress: step ${t.step + 1} of ${TUTORIAL.steps}`).setColor(t.done ? PALETTE.textDim : PALETTE.textGold);
+        };
+        this.refreshSettings();
+      },
     });
   }
   confirmReset() {
@@ -705,6 +791,7 @@ export default class UIScene extends Phaser.Scene {
   }
   toast(msg, ms = 2200) {
     this.toastText.setText(msg);
+    audio.play('toast', { gap: 250 });
     const w = Math.min(W - 60, this.toastText.width + 48), h = this.toastText.height + 30;
     this.toastBg.clear().fillStyle(0x0b0e13, 0.94).fillRect(-w / 2, -h / 2, w, h).lineStyle(2, PALETTE.gold, 0.8).strokeRect(-w / 2, -h / 2, w, h);
     // lift above the panel if it's open
@@ -717,8 +804,30 @@ export default class UIScene extends Phaser.Scene {
 
   bump(t) { this.tweens.add({ targets: t, scale: 1.18, duration: 120, yoyo: true }); }
 
+  // Floating reward number that pops, rises and fades (game coords).
+  floatText(x, y, str, color = PALETTE.textGold, size = 30) {
+    const t = text(this, x, y, str, size, color, { fontStyle: 'bold', stroke: '#000', strokeThickness: 6 }).setOrigin(0.5).setDepth(420).setScale(0.4);
+    this.fx.floats++;
+    this.tweens.add({ targets: t, scale: 1, duration: 180, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: t, y: y - 70, alpha: 0, delay: 350, duration: 900, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
+    return t;
+  }
+
+  // Idle frame cap: Phaser runs with an fps limiter whose rate we switch between ~unlimited and 30.
+  updateFrameCap() {
+    const loop = this.game.loop;
+    if (!loop.hasFpsLimit) return;
+    const idle = performance.now() - this.lastInput > PERF.idleMs && !this.replay && !this.reveal && !this.modal;
+    if (idle !== this.idleCapped) {
+      this.idleCapped = idle;
+      loop._limitRate = idle ? 1000 / (PERF.idleFps + 2) : 0;
+    }
+  }
+
   update(_t, dtMs) {
     store.tick(Math.min(dtMs, 1000) / 1000);
+    this.tutorial.update(dtMs);
+    this.updateFrameCap();
     const s = store.state, p = store.power;
     this.energyText.setText(fmt(s.resources.energy));
     this.rateText.setText(`+${store.energyRate.toFixed(2)}/s`);
@@ -756,6 +865,7 @@ export default class UIScene extends Phaser.Scene {
         else this.screen.dyn.forEach((fn) => fn());
       }
       if (this.worldMode) this.worldHud.refresh();
+      audio.setTrack(this.replay ? 'battle' : this.worldMode ? 'world' : 'base');
     }
   }
 }

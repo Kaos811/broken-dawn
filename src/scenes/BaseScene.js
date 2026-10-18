@@ -507,24 +507,57 @@ export default class BaseScene extends Phaser.Scene {
       fontFamily: 'system-ui, sans-serif', fontSize: '30px', fontStyle: 'bold', color: PALETTE.textGold, stroke: '#000', strokeThickness: 6,
     }).setOrigin(0.5).setDepth(7000);
     this.tweens.add({ targets: txt, y: txt.y - 80, alpha: 0, duration: 1300, ease: 'Cubic.easeOut', onComplete: () => txt.destroy() });
-    const sp = this.add.particles(img.x, img.y - 80, 'spark', { speed: { min: 80, max: 220 }, lifespan: 700, scale: { start: 1, end: 0 }, tint: [PALETTE.gold, PALETTE.cyan], blendMode: 'ADD', emitting: false }).setDepth(7000);
-    sp.explode(40);
+    const sp = this.add.particles(img.x, img.y - 80, 'spark', { speed: { min: 80, max: 260 }, lifespan: 800, scale: { start: 1.2, end: 0 }, tint: [PALETTE.gold, PALETTE.cyan, 0xffffff], blendMode: 'ADD', emitting: false }).setDepth(7000);
+    sp.explode(60);
+    // level-up burst: expanding shockwave ring on the ground + a rising light column
+    const ring = this.add.graphics().setDepth(img.depth - 1).setPosition(img.x, img.y - 20);
+    ring.lineStyle(6, PALETTE.gold, 1).strokeEllipse(0, 0, 120, 60);
+    this.tweens.add({ targets: ring, scale: 3.2, alpha: 0, duration: 650, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
+    const col = this.add.image(img.x, img.y - 120, 'glow').setBlendMode('ADD').setTint(PALETTE.gold).setScale(1.2, 3.5).setAlpha(0.85).setDepth(6999);
+    this.tweens.add({ targets: col, scaleX: 0.2, alpha: 0, y: col.y - 120, duration: 700, ease: 'Quad.easeIn', onComplete: () => col.destroy() });
+    this.cameras.main.shake(140, 0.0025);
+    this.fxCount = (this.fxCount ?? 0) + 1;
     this.time.delayedCall(900, () => sp.destroy());
     this.syncLabels();
   }
 
   // Construction progress bar + countdown floating over each building that's upgrading.
-  drawConstruction() {
+  drawConstruction(dtMs = 16) {
     if (!this.buildFx) {
       this.buildFx = this.add.graphics().setDepth(5600);
       this.buildTexts = {};
+      this.scaffolds = {};
+      this.weld = this.add.particles(0, 0, 'spark', { speed: { min: 40, max: 150 }, lifespan: 420, gravityY: 380, scale: { start: 0.7, end: 0 }, tint: [0xffffff, PALETTE.gold, 0xffe08a], blendMode: 'ADD', emitting: false }).setDepth(5599);
+      this.weldT = 0;
     }
     const g = this.buildFx; g.clear();
     const live = new Set();
+    this.weldT += dtMs;
+    const weldNow = this.weldT > 260;
+    if (weldNow) this.weldT = 0;
     for (const j of store.state.construction) {
       const img = j.id === BEACON.id ? this.beaconSprite : this.sprites[j.id]?.img;
       if (!img) continue;
       live.add(j.id);
+      // scaffolding: poles, planks and braces drawn just in front of the building, plus welding sparks
+      let sc = this.scaffolds[j.id];
+      if (!sc) sc = this.scaffolds[j.id] = this.add.graphics();
+      sc.setDepth(img.depth + 0.5).setVisible(true).clear();
+      const sw = img.displayWidth * 0.62, sh = img.displayHeight * 0.66, bx = img.x, by = img.y - 6;
+      const xs = [-sw / 2, -sw / 6, sw / 6, sw / 2].map((d) => bx + d);
+      sc.lineStyle(4, 0x9a7a4a, 0.95);
+      for (const x of xs) sc.lineBetween(x, by, x, by - sh);
+      const planks = 4;
+      for (let k = 1; k <= planks; k++) {
+        const y = by - (sh * k) / planks;
+        sc.fillStyle(0x1a1f27, 0.95).fillRect(xs[0] - 6, y - 5, sw + 12, 10);
+        for (let x = xs[0] - 6, n = 0; x < xs[3] + 6; x += 16, n++) sc.fillStyle(n % 2 ? 0x141414 : PALETTE.gold, 0.95).fillRect(x, y - 4, Math.min(8, xs[3] + 6 - x), 8);
+        sc.lineStyle(2.5, 0x9a7a4a, 0.8);
+        for (let p = 0; p < 3; p++) { const a = (k + p) % 2; sc.lineBetween(xs[p], y + (a ? 0 : sh / planks), xs[p + 1], y + (a ? sh / planks : 0)); }
+      }
+      const blink = Math.sin(this.time.now / 160) > 0;
+      sc.fillStyle(blink ? 0xff4d5e : 0x5a1a20, 1).fillCircle(xs[3], by - sh - 8, 6);
+      if (weldNow) this.weld.explode(5, bx + (Math.random() - 0.5) * sw, by - Math.random() * sh);
       const w = 180, h = 18, x = img.x - w / 2, y = img.y - img.displayHeight * 0.82;
       const pct = Math.min(1, j.progress / j.total);
       g.fillStyle(0x05070a, 0.92).fillRect(x - 4, y - 4, w + 8, h + 8);
@@ -541,10 +574,11 @@ export default class BaseScene extends Phaser.Scene {
       t.setText(`⬆ Lv ${j.toLevel}  ${hh ? `${hh}:${String(mm).padStart(2, '0')}` : mm}:${String(ss).padStart(2, '0')}`).setPosition(img.x, y - 8).setVisible(true);
     }
     for (const [id, t] of Object.entries(this.buildTexts)) if (!live.has(id)) t.setVisible(false);
+    for (const [id, sc] of Object.entries(this.scaffolds)) if (!live.has(id) && sc.visible) sc.setVisible(false).clear();
   }
 
   update(_t, dtMs) {
-    this.drawConstruction();
+    this.drawConstruction(dtMs);
     // orbiting Beacon shards
     this.shardT += dtMs / 1000;
     const c = this.beaconCenter;

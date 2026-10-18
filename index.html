@@ -11,10 +11,21 @@
       html, body { margin: 0; padding: 0; height: 100%; background: #07090d; overflow: hidden; touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
       #game { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
       canvas { touch-action: none; }
+      /* loading screen (removed once the game is ready; never blocks input) */
+      #boot { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: radial-gradient(circle at 50% 42%, #1a1408 0%, #07090d 62%); color: #e8edf3; font: 600 14px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: 4px; pointer-events: none; transition: opacity .35s ease; }
+      #boot.done { opacity: 0; }
+      #boot .orb { width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle, #fff3d6 0%, #ffb347 38%, rgba(255,179,71,0) 72%); animation: pulse 1.4s ease-in-out infinite; }
+      #boot .t { color: #ffb347; font-size: 26px; letter-spacing: 8px; }
+      #boot .bar { width: 200px; height: 4px; background: #141922; overflow: hidden; }
+      #boot .bar i { display: block; height: 100%; width: 40%; background: linear-gradient(90deg, #3ff0ff, #ffb347); animation: slide 1.1s ease-in-out infinite; }
+      #boot .s { color: #5d6878; font-size: 11px; letter-spacing: 3px; }
+      @keyframes pulse { 50% { transform: scale(1.15); opacity: .75; } }
+      @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <div id="boot"><div class="orb"></div><div class="t">BROKEN DAWN</div><div class="bar"><i></i></div><div class="s">IGNITING THE BEACON…</div></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
