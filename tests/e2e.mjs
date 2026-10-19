@@ -1810,7 +1810,7 @@ async function runStage6(url, label, takeShots) {
     // --- 2. HUD: avatar + Power + resources, left queue buttons, right quick buttons
     const ctrls = await ev(() => __BD.controls().map((c) => c.meta).filter(Boolean));
     check('HUD left column: Builder, Research, Training, Healing queue buttons', ['q-builder', 'q-research', 'q-training', 'q-healing'].every((m) => ctrls.includes(m)), ctrls.join(','));
-    check('old right column replaced: Hunt -> World emblem, Rewards -> Cores +, Armory -> tab, Events -> More', !ctrls.some((m) => /^k-/.test(m)) && ctrls.includes('cores-plus') && (await ev(() => !!__BD.ui().hero && __BD.ui().tabs.some((t) => t.id === 'armory') && __BD.ui().tabs.some((t) => t.id === 'more'))));
+    check('old right column replaced: Hunt -> World tab, Rewards -> Cores +, Armory -> tab, Events -> More', !ctrls.some((m) => /^k-/.test(m)) && ctrls.includes('cores-plus') && (await ev(() => !!__BD.ui().hero && __BD.ui().tabs.some((t) => t.id === 'armory') && __BD.ui().tabs.some((t) => t.id === 'more'))));
     check('HUD top bar: commander avatar, Power and resource counters', await ev(() => { const u = __BD.ui(); return u.avatar.texture.key === 'art-avatar' && u.powerText.text === String(__BD.store.power.total) && u.energyText.visible && u.coreText.visible && u.shardText.visible && u.alloyText.visible && u.troopText.visible; }));
     await waitTrue(() => Object.values(__BD.ui().queueBtns).every((b) => b.timer.text)); // first 200 ms HUD refresh
     const qIdle = await ev(() => Object.values(__BD.ui().queueBtns).map((b) => b.timer.text));
@@ -1837,7 +1837,7 @@ async function runStage6(url, label, takeShots) {
     await ev(() => __BD.ui().closeModal());
     await tab('base');
     await tab('world');
-    check('World emblem opens the World map (side columns hide there)', await waitTrue(() => __BD.ui().worldMode && !__BD.ui().queueBtns.builder.visible));
+    check('World tab opens the World map (side columns hide there)', await waitTrue(() => __BD.ui().worldMode && !__BD.ui().queueBtns.builder.visible));
     await tab('base');
     await tab('more');
     await click(null, { meta: 'more-events' });
@@ -1949,7 +1949,7 @@ async function runStage6(url, label, takeShots) {
 
 
 // Stage 7 (v0.6 HUD + nav redesign): top HUD (portrait, Power plaque, Beacon gauge, Cores pill, resource
-// capsules + tooltips), sculpted bottom nav (illustrated tabs, World emblem, badges, raised active tab),
+// capsules + tooltips), sculpted bottom nav (illustrated tabs, Base centre emblem, badges, raised active tab),
 // More sheet, safe-area insets and other phone sizes.
 async function runStage7(url, label, takeShots) {
   console.log(`\n=== stage 7 · ${label}: ${url}`);
@@ -2048,12 +2048,14 @@ async function runStage7(url, label, takeShots) {
 
     // --- 2. bottom nav
     const nav = await ev(() => { const u = __BD.ui(); return u.tabs.map((t) => ({ id: t.id, cx: Math.round(t.cx), hero: !!t.hero, key: t.icon?.texture.key, label: t.label?.text })); });
-    check('nav order: Base, Troops, [World emblem], Armory, Squads, More', nav.map((t) => t.id).join(',') === 'base,troops,world,armory,squads,more', nav.map((t) => t.id).join(','));
+    check('nav order: World, Troops, [Base emblem], Armory, Squads, More', nav.map((t) => t.id).join(',') === 'world,troops,base,armory,squads,more' && nav[2].hero, nav.map((t) => t.id).join(','));
+    check('World tab uses the planet globe icon (leftmost)', nav[0].id === 'world' && nav[0].key === 'nav-world' && nav[0].label === 'World');
     check('illustrated tab icons with labels', nav.filter((t) => !t.hero).every((t) => t.key === `nav-${t.id}` && t.label && t.label.length > 3), JSON.stringify(nav));
-    check('World is the big centre emblem button', await ev(() => { const u = __BD.ui(), h = u.hero; return Math.abs(h.x - u.scale.width / 2) < 1 && h.em.texture.key === 'hud-emblem' && h.em.displayWidth >= 120 && h.y - h.em.displayHeight / 2 < u.scale.height - __BD.layout().NAV_H; }));
+    check('Base is the big centre emblem button (beacon-fortress medallion)', await ev(() => { const u = __BD.ui(), h = u.hero; return Math.abs(h.x - u.scale.width / 2) < 1 && h.em.texture.key === 'hud-base-emblem' && h.lab.text === 'BASE' && !u.textures.exists('hud-emblem') && h.em.displayWidth >= 120 && h.y - h.em.displayHeight / 2 < u.scale.height - __BD.layout().NAV_H; }));
     check('nav labels do not overlap', (await overlaps(await ev(() => __BD.ui().scale.height - __BD.layout().NAV_H - __BD.layout().HERO_RISE), 99999)).length === 0);
     const lifted = async (id) => ev((id) => { const u = __BD.ui(), t = u.tabs.find((x) => x.id === id), o = u.tabs.find((x) => !x.hero && x.id !== id); return u.activeTab === id && t.icon.y < o.icon.y && t.icon.scale > o.icon.scale && u.navGlow.visible && Math.abs(u.navGlow.x - t.cx) < 1 && t.label.style.color === '#ffb347'; }, id);
-    check('active tab (Base) is raised and glowing gold', await lifted('base'));
+    check('the game opens on Base: the Base emblem is lit, no tab plate', await ev(() => { const u = __BD.ui(); return u.activeTab === 'base' && !u.worldMode && !u.screen && !u.navGlow.visible && u.hero.em.scale > u.hero.baseScale; }));
+    check('Research queue button and More sheet use the new illustrated icons', await ev(() => { const u = __BD.ui(), q = u.queueBtns.research; return q.list.some((o) => o.texture?.key === 'more-research'); }));
     for (const id of ['troops', 'armory', 'squads']) {
       await tab(id);
       check(`${id} tab opens its screen and becomes the raised tab`, (await ev((id) => __BD.ui().screen?.id === id, id)) && await lifted(id));
@@ -2062,15 +2064,18 @@ async function runStage7(url, label, takeShots) {
     await tab('troops');
     await shot('stage7-tab-troops.png');
     await tab('world');
-    check('World emblem opens the World map and lights up (no tab plate)', await waitTrue(() => __BD.ui().worldMode && __BD.ui().activeTab === 'world' && !__BD.ui().navGlow.visible));
-    check('the World emblem is not covered by the World squad bar', await ev(() => { const u = __BD.ui(); return u.worldHud.barRect.bottom <= u.hero.y - u.hero.em.displayHeight / 2 + 4; }));
+    check('World tab opens the World map and becomes the raised tab', await waitTrue(() => __BD.ui().worldMode) && await lifted('world'));
+    check('…the Base emblem is unlit there', await ev(() => { const h = __BD.ui().hero; return Math.abs(h.em.scale - h.baseScale) < 1e-6; }));
+    await shot('stage7-tab-world.png');
+    check('the centre emblem is not covered by the World squad bar', await ev(() => { const u = __BD.ui(); return u.worldHud.barRect.bottom <= u.hero.y - u.hero.em.displayHeight / 2 + 4; }));
     await tab('base');
-    check('Base tab returns to the base', await waitTrue(() => !__BD.ui().worldMode && !__BD.ui().screen && __BD.ui().activeTab === 'base'));
-    check('screens end above the World emblem', await ev(() => { const u = __BD.ui(), a = u.area; return a.y + a.h <= u.hero.y - u.hero.em.displayHeight / 2 + 2; }));
+    check('Base emblem returns to the base', await waitTrue(() => !__BD.ui().worldMode && !__BD.ui().screen && __BD.ui().activeTab === 'base'));
+    check('screens end above the centre emblem (resting size: screens open on other tabs)', await ev(() => { const u = __BD.ui(), a = u.area, h = u.hero; return a.y + a.h <= h.y - (h.em.height * h.baseScale) / 2 + 2; }));
 
     // --- 3. More sheet
     await tab('more');
     const more = await ev(() => ({ open: !!__BD.ui().modal?.isMore, tab: __BD.ui().activeTab, items: __BD.controls().filter((c) => /^more-/.test(c.meta)).map((c) => c.meta) }));
+    check('More sheet: Research and Events use the new illustrated icons', await ev(() => { const keys = []; const walk = (o) => { if (o.texture) keys.push(o.texture.key); (o.list ?? []).forEach(walk); }; walk(__BD.ui().modal); return keys.includes('more-research') && keys.includes('more-events'); }));
     check('More opens a sheet: Settings, Rewards, Power, Leaders, Research, Events', more.open && more.tab === 'more' && ['settings', 'rewards', 'profile', 'leaders', 'research', 'events'].every((k) => more.items.includes(`more-${k}`)), JSON.stringify(more));
     await shot('stage7-more-sheet.png');
     await tab('more');
@@ -2111,9 +2116,9 @@ async function runStage7(url, label, takeShots) {
     await tab('troops');
     check('Troops badge clears when you open Troops', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'troops').badgeText.text === ''));
     await ev(() => { const st = __BD.store.state; st.beacon.level = 3; st.buildings.archive.placed = false; });
-    check('Base badge (!) while a new building waits to be placed', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'base').badgeText.text === '!'));
+    check('Base emblem badge (!) while a new building waits to be placed', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'base').badgeText.text === '!'));
     await tab('base');
-    check('…and clears on the Base tab', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'base').badgeText.text === ''));
+    check('…and clears back on the Base', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'base').badgeText.text === ''));
     check('stage 7 (390×844): no console errors', errors.length === 0, errors.join(' | '));
     await ctx.close();
 
@@ -2126,7 +2131,7 @@ async function runStage7(url, label, takeShots) {
     });
     check('safe-area insets: HUD and nav grow by the notch / home-indicator insets', S.l.SAFE.top > 70 && S.l.SAFE.bottom > 50 && S.l.TOP_H === S.l.SAFE.top + S.l.HUD_CONTENT_H && S.l.NAV_H === S.l.NAV_BODY + S.l.SAFE.bottom, JSON.stringify(S.l));
     check('…the portrait and Power sit below the top inset', S.avatarTop >= S.l.SAFE.top && S.powerTop >= S.l.SAFE.top, JSON.stringify(S));
-    check('…tab labels and the World label sit above the home indicator', S.labelsBottom <= S.H - S.l.SAFE.bottom && S.heroLab <= S.H - S.l.SAFE.bottom, JSON.stringify(S));
+    check('…tab labels and the Base emblem label sit above the home indicator', S.labelsBottom <= S.H - S.l.SAFE.bottom && S.heroLab <= S.H - S.l.SAFE.bottom, JSON.stringify(S));
     await page.evaluate(() => __BD.ui().openScreen('troops'));
     check('…screens fit between the HUD and nav with insets', await page.evaluate(() => { const u = __BD.ui(), a = u.area, l = __BD.layout(); return a.y === l.TOP_H && a.y + a.h <= u.scale.height - l.NAV_H - l.HERO_RISE; }));
     await page.evaluate(() => __BD.ui().closeScreen());
