@@ -1,4 +1,5 @@
 import { ART_URLS } from '../art/baseArt.js';
+import { UI_ART_URLS } from '../art/uiArt.js';
 import Phaser from 'phaser';
 import { PALETTE, MAP } from '../config.js';
 import { makePortraitTextures } from '../art/portraits.js';
@@ -62,7 +63,7 @@ export default class BootScene extends Phaser.Scene {
 
   preload() {
     // painted Base art (stage 6)
-    for (const [key, url] of Object.entries(ART_URLS)) this.load.image(key, url);
+    for (const [key, url] of Object.entries({ ...ART_URLS, ...UI_ART_URLS })) this.load.image(key, url);
   }
 
   create() {
