@@ -18,6 +18,7 @@ import { Tutorial } from '../tutorial/tutorial.js';
 import { PERF, AUDIO, TUTORIAL } from '../config.js';
 
 import { SAFE, TOP_H, NAV_H, NAV_BODY, HERO_R, HERO_RISE } from '../ui/layout.js';
+const HERO_TAB = 'base'; // the big centre emblem
 export { TOP_H };
 const SCREENS = { troops: renderTroops, squads: renderSquads, armory: renderArmory, infirmary: renderInfirmary, archive: renderArchive };
 
@@ -335,8 +336,10 @@ export default class UIScene extends Phaser.Scene {
     g.fillStyle(0x0b0e13, 0.94).fillCircle(0, 0, r);
     g.lineStyle(3, ring, 0.95).strokeCircle(0, 0, r);
     g.lineStyle(1.5, 0xffffff, 0.12).strokeCircle(0, 0, r - 6);
-    const icon = this.add.graphics();
-    draw(icon, ring);
+    // draw: a function (procedural icon) or a texture key (illustrated icon)
+    let icon;
+    if (typeof draw === 'string') { icon = this.add.image(0, -2, draw); icon.setScale((r * 1.5) / Math.max(icon.width, icon.height)); }
+    else { icon = this.add.graphics(); draw(icon, ring); }
     const arc = this.add.graphics();
     const cap = text(this, 0, r + 1, caption, 14, PALETTE.text, { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5, 0);
     const timer = text(this, 0, r + 32, '', 14, '#ffffff', { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5);
@@ -357,7 +360,7 @@ export default class UIScene extends Phaser.Scene {
     const r = 36, xl = 52, y0 = TOP_H + 104, dy = 114;
     const ic = {
       builder: (g, col) => { g.fillStyle(col, 1).fillRect(-14, -16, 22, 10).fillRect(-4, -8, 6, 26); g.fillRect(8, -14, 6, 6); },
-      research: (g, col) => { g.lineStyle(3, col, 1).strokeCircle(0, -2, 14); g.strokeEllipse(0, -2, 34, 12); g.fillStyle(col, 1).fillCircle(0, -2, 4); },
+      research: 'more-research',
       training: (g, col) => { g.lineStyle(3, col, 1).strokeCircle(0, -10, 7); g.strokePoints([{ x: -13, y: 14 }, { x: -9, y: 2 }, { x: 9, y: 2 }, { x: 13, y: 14 }], false); },
       healing: (g, col) => { g.fillStyle(col, 1).fillRect(-5, -16, 10, 28).fillRect(-14, -7, 28, 10); },
       hunt: (g, col) => { g.lineStyle(3, col, 1).strokeCircle(0, -2, 16); g.lineBetween(-22, -2, -10, -2); g.lineBetween(10, -2, 22, -2); g.lineBetween(0, -24, 0, -12); g.lineBetween(0, 8, 0, 20); g.fillStyle(col, 1).fillCircle(0, -2, 4); },
@@ -460,8 +463,8 @@ export default class UIScene extends Phaser.Scene {
     if (show) this.placeChipBtn.setLabel(`🏗  New: build the ${BUILDINGS[pend[0]].name}`);
   }
 
-  // Bottom nav: sculpted gunmetal bar with gold filigree, illustrated tab icons, a big World emblem in
-  // the centre. Tabs: Base, Troops, [World], Armory, Squads, More.
+  // Bottom nav: sculpted gunmetal bar with gold filigree, illustrated tab icons, a big Base emblem in
+  // the centre. Tabs: World, Troops, [Base], Armory, Squads, More.
   createNav() {
     const y0 = H - NAV_H, hy = y0 - HERO_RISE + HERO_R; // hero centre
     const texTop = y0 - HERO_RISE - 16;                  // texture covers the emblem socket too
@@ -508,7 +511,7 @@ export default class UIScene extends Phaser.Scene {
     const iconY = y0 + 50, labelY = y0 + 96;
     this.tabs = this.navSlots().map((sl) => {
       const cx = (sl.x0 + sl.x1) / 2;
-      if (sl.id === 'world') return { ...sl, cx, cy: hy, label: null, hero: true };
+      if (sl.hero) return { ...sl, cx, cy: hy, label: null };
       const icon = this.add.image(cx, iconY, `nav-${sl.id}`);
       const k = 62 / Math.max(icon.width, icon.height); icon.setScale(k); icon.baseScale = k;
       const label = text(this, cx, labelY, sl.label, 19, PALETTE.textDim, { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 3 }).setOrigin(0.5, 0);
@@ -518,19 +521,24 @@ export default class UIScene extends Phaser.Scene {
       hit.on('pointerup', () => this.onTab(sl.id));
       return { ...sl, cx, cy: iconY, icon, label, badgeText, badge: '' };
     });
-    // World hero emblem
+    // Base hero emblem (centre)
     const hc = this.hero = this.add.container(W / 2, hy).setDepth(2);
     const glow = this.add.image(0, 0, 'glow').setBlendMode('ADD').setTint(0xffc45a).setScale(2.2).setAlpha(0.45);
-    const em = this.add.image(0, 0, 'hud-emblem').setDisplaySize(HERO_R * 2 + 6, HERO_R * 2 + 6);
+    const em = this.add.image(0, 0, 'hud-base-emblem');
+    em.setScale((HERO_R * 2 + 6) / Math.max(em.width, em.height));
     const ring = this.add.graphics();
-    const lab = text(this, 0, HERO_R + 2, 'WORLD', 17, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2, stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5, 0);
+    const lab = text(this, 0, HERO_R + 2, 'BASE', 17, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2, stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5, 0);
     const hit = this.add.circle(0, 0, HERO_R + 8, 0, 0.001).setInteractive({ useHandCursor: true });
-    hc.add([glow, em, ring, lab, hit]);
-    Object.assign(hc, { glow, em, ring, lab, hit });
+    const hb = this.add.graphics();
+    const hbt = text(this, 50, -48, '', 15, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5);
+    hc.add([glow, em, ring, lab, hb, hbt, hit]);
+    Object.assign(hc, { glow, em, ring, lab, hit, badgeG: hb, baseScale: em.scale });
+    const heroTab = this.tabs.find((t) => t.hero);
+    Object.assign(heroTab, { badgeText: hbt, badge: '' });
     let pressed = false;
     hit.on('pointerdown', () => { pressed = true; this.tweens.add({ targets: hc, scale: 0.92, duration: 70 }); audio.play('tap'); audio.haptic(12); });
     hit.on('pointerout', () => { pressed = false; this.tweens.add({ targets: hc, scale: 1, duration: 120 }); });
-    hit.on('pointerup', () => { this.tweens.add({ targets: hc, scale: 1, duration: 220, ease: 'Back.easeOut' }); if (pressed) this.onTab('world'); pressed = false; });
+    hit.on('pointerup', () => { this.tweens.add({ targets: hc, scale: 1, duration: 220, ease: 'Back.easeOut' }); if (pressed) this.onTab(HERO_TAB); pressed = false; });
     this.tweens.add({ targets: glow, alpha: { from: 0.3, to: 0.6 }, scale: { from: 2.1, to: 2.35 }, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.activeTab = 'base';
     this.drawNav();
@@ -538,12 +546,12 @@ export default class UIScene extends Phaser.Scene {
   // tab slots (game x ranges): two tabs left of the emblem, three to the right
   navSlots() {
     const L = W / 2 - HERO_R - 14, R = W / 2 + HERO_R + 14;
-    const left = ['base', 'troops'], right = ['armory', 'squads', 'more'];
+    const left = ['world', 'troops'], right = ['armory', 'squads', 'more'];
     const lw = L / left.length, rw = (W - R) / right.length;
     const names = { base: 'Base', troops: 'Troops', armory: 'Armory', squads: 'Squads', more: 'More', world: 'World' };
     return [
       ...left.map((id, i) => ({ id, label: names[id], x0: i * lw, x1: (i + 1) * lw })),
-      { id: 'world', label: 'World', x0: L, x1: R },
+      { id: HERO_TAB, label: names[HERO_TAB], x0: L, x1: R, hero: true },
       ...right.map((id, i) => ({ id, label: names[id], x0: R + i * rw, x1: R + (i + 1) * rw })),
     ];
   }
@@ -573,16 +581,17 @@ export default class UIScene extends Phaser.Scene {
     this.navGlow.setVisible(glowX != null).setAlpha(glowX != null ? 0.55 : 0).setX(glowX ?? 0);
     const hc = this.hero;
     if (hc) {
-      const on = this.activeTab === 'world';
+      const on = this.activeTab === HERO_TAB;
       hc.ring.clear().lineStyle(on ? 5 : 3, on ? 0xffe2a6 : PALETTE.gold, 1).strokeCircle(0, 0, HERO_R + 3);
       if (on) hc.ring.lineStyle(10, PALETTE.gold, 0.25).strokeCircle(0, 0, HERO_R + 9);
       hc.lab.setColor(on ? '#fff1cf' : PALETTE.textGold);
-      hc.em.setScale((HERO_R * 2 + 6) / hc.em.width * (on ? 1.06 : 1));
+      hc.em.setScale(hc.baseScale * (on ? 1.06 : 1));
+      hc.glow.setTint(on ? 0xffd27f : 0xffc45a);
     }
   }
 
   // red notification badges: Troops (new troops trained / healed since your last visit), Armory (Cores for a
-  // recruit), More (rewards to claim), Base (a new building waiting to be placed)
+  // recruit), More (rewards to claim), Base emblem (a new building waiting to be placed)
   navBadgeValues() {
     const n = (v) => (v > 99 ? '99+' : v > 0 ? String(v) : '');
     const pulls = Math.floor(store.state.resources.cores / store.pullCost(1));
@@ -591,17 +600,23 @@ export default class UIScene extends Phaser.Scene {
       troops: n(this.navNew.troops),
       armory: n(pulls),
       squads: '',
+      world: '',
       more: n(store.rewardsReady()),
     };
   }
   refreshNavBadges() {
     const vals = this.navBadgeValues();
     let dirty = false;
-    for (const t of this.tabs) if (!t.hero && t.badge !== vals[t.id]) { t.badge = vals[t.id]; dirty = true; }
+    for (const t of this.tabs) if (t.badge !== (vals[t.id] ?? '')) { t.badge = vals[t.id] ?? ''; dirty = true; }
     if (!dirty) return;
     const g = this.navBadges; g.clear();
+    const hb = this.hero.badgeG; hb.clear();
     for (const t of this.tabs) {
-      if (t.hero) continue;
+      if (t.hero) {
+        t.badgeText.setText(t.badge);
+        if (t.badge) hb.fillStyle(0xe0263c, 1).fillCircle(50, -48, 15).lineStyle(2, 0xffd0d6, 0.9).strokeCircle(50, -48, 15);
+        continue;
+      }
       const bx = t.cx + 30, by = H - NAV_H + 24;
       t.badgeText.setText(t.badge).setPosition(bx, by);
       if (!t.badge) continue;
@@ -632,8 +647,8 @@ export default class UIScene extends Phaser.Scene {
       { id: 'rewards', label: 'Rewards', icon: 'hud-core', badge: () => store.rewardsReady(), go: () => this.openRewards() },
       { id: 'profile', label: 'Power', icon: 'hud-power', go: () => this.openPowerBreakdown() },
       { id: 'leaders', label: 'Leaders', icon: 'nav-troops', go: () => this.openScreen('armory', { armoryTab: 'leaders' }) },
-      { id: 'research', label: 'Research', icon: null, go: () => { this.closeModal(); this.onQueue('research'); } },
-      { id: 'events', label: 'Events', icon: null, soon: true, go: () => this.toast('Events are coming soon, Commander.') },
+      { id: 'research', label: 'Research', icon: 'more-research', go: () => { this.closeModal(); this.onQueue('research'); } },
+      { id: 'events', label: 'Events', icon: 'more-events', soon: true, go: () => this.toast('Events are coming soon, Commander.') },
     ];
     const c = this.add.container(0, 0).setDepth(100);
     const bottom = H - NAV_H - HERO_RISE - 10;
