@@ -157,6 +157,13 @@ window.__BD = {
         out.push(`${label}: tap targets overlap ${name(taps[i].o)} / ${name(taps[j].o)}`);
       }
     };
+    // HUD capsules: the numbers must stay inside their capsule (and on screen)
+    for (const [id, key] of [['energy', 'energyText'], ['alloy', 'alloyText'], ['shards', 'shardText'], ['troops', 'troopText']]) {
+      const cap = ui.capsules?.[id], t = ui[key];
+      if (!cap || !t) continue;
+      const b = t.getBounds(), right = id === 'energy' ? ui.rateText.getBounds().left - 4 : cap.x + cap.w - 4;
+      if (b.right > right + T || b.right > Wd) out.push(`HUD: "${t.text}" overflows the ${id} capsule`);
+    }
     if (ui.reveal) check(ui.reveal, { x: 0, y: S.top, w: Wd, h: H - S.top - S.bottom }, 'reveal');
     else if (ui.modal) check(ui.modal, ui.modal.panelRect ?? { x: 0, y: 0, w: Wd, h: H }, 'modal');
     else {

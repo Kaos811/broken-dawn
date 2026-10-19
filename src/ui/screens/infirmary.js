@@ -68,7 +68,9 @@ export function renderInfirmary(ui, c, a, api) {
   });
 
   // --- healing queue
-  const qy = compact ? y0 + 122 + 482 : y0 + 122 + 3 * (CH + 10), qh = a.y + a.h - qy - 12;
+  // queue goes right after the unit rows; when that runs past the screen it scrolls (scroll.js)
+  const qy = y0 + 122 + units.length * (CH + (compact ? 8 : 10)) + 2;
+  const qh = Math.max(Math.max(1, Math.min(3, store.state.infirmary.queue.length)) * 58 + 150, a.y + a.h - qy - 12);
   card(ui, c, 16, qy, 688, qh, { stroke: 0x8a6a3a });
   const qInfo = sectionHeader(ui, c, 32, qy + 14, 'HEALING QUEUE', { w: 656, color: '#8fffc1', rule: GREEN, right: '' }).rightText;
   const qg = ui.add.graphics(); c.add(qg);

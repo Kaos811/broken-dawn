@@ -138,7 +138,11 @@ function renderEdit(ui, c, a, api, st, y0) {
   const maxFor = (i, t) => Math.max(0, store.availableFor(t, id) - draftUse(t, i));
   sectionHeader(ui, c, 20, y0 + 2, `EDIT FORMATION · ${SQUADS[id].name.toUpperCase()}`, { w: 680, size: 20 });
   const shown = TROOP_IDS.filter((t) => tierOf(t) === 1 || store.state.troops[t] > 0);
-  c.add(text(ui, 24, y0 + 32, 'Available:  ' + shown.map((t) => `${TROOP_CLASSES[t].plural} ${store.availableFor(t, id) - draftUse(t)}`).join('  '), shown.length > 4 ? 16 : 19, PALETTE.textCyan, { wordWrap: { width: 680 } }));
+  // one line: shrink to fit (late game has 9 types with five-digit counts)
+  const avail = text(ui, 24, y0 + 32, 'Available:  ' + shown.map((t) => `${TROOP_CLASSES[t].plural} ${fmt(store.availableFor(t, id) - draftUse(t))}`).join('  '), shown.length > 4 ? 16 : 19, PALETTE.textCyan);
+  if (avail.width > 676) avail.setScale(Math.max(0.55, 676 / avail.width));
+  if (avail.width * avail.scaleX > 676) avail.setWordWrapWidth(676 / avail.scaleX);
+  c.add(avail);
   const LH = 168;
   e.lines.forEach((l, i) => {
     const ly = y0 + 64 + i * (LH + 8);

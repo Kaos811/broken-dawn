@@ -1482,7 +1482,14 @@ export default class UIScene extends Phaser.Scene {
     this.alloyText.setText(fmt(s.resources.alloy));
     const q = store.queuedUnits();
     const tot = TROOP_IDS.reduce((n, t) => n + s.troops[t], 0);
-    this.troopText.setText(`${fmt(tot)}${q ? ` (+${q})` : ''}`);
+    this.troopText.setText(`${fmt(tot)}${q ? ` (+${fmt(q)})` : ''}`);
+    // long numbers (1.2M, 184.4K (+1,234)) shrink to stay inside their capsule
+    const [en, al, sh, tr] = this.capsuleSlots();
+    const fitW = (t, max) => { const w0 = t.width / (t.scaleX || 1); t.setScale(w0 > max ? max / w0 : 1); };
+    fitW(this.energyText, en[1] - 42 - this.rateText.width - 20);
+    fitW(this.alloyText, al[1] - 48 - 12);
+    fitW(this.shardText, sh[1] - 42 - 12);
+    fitW(this.troopText, tr[1] - 44 - 12);
 
     this.panelTimer += dtMs;
     if (this.panelTimer > 200) {
