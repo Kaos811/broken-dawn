@@ -1,4 +1,4 @@
-# Broken Dawn: Stage 5 (Sound, Polish & Tutorial)
+# Broken Dawn: Stage 6 (Painted Base & New HUD)
 
 Broken Dawn is a sci-fi idle base-builder with auto-battle. It's a mobile web game built with
 [Phaser 3](https://phaser.io) and [Vite](https://vitejs.dev), and it uses only free, open-source tools.
@@ -11,7 +11,9 @@ in rings around your base, squad marches and auto-battles, troop losses with an 
 **Auto** hunt mode that keeps going while you're offline. Stage 4 adds the **Archive** research tree (Economy,
 Military, Healing and World branches) and **troop tiers** T1–T3, with promotion in the Barracks. Stage 5 adds
 **sound** (generated music + effects), **polish** (juice, transitions, loading screen, rotation re-layout) and a
-skippable 8-step **tutorial** for new players.
+skippable 8-step **tutorial** for new players. Stage 6 redesigns the base: a full-screen **painted** map bigger
+than the screen, painted building art, buildings that stay **hidden until unlocked** (then you place them), and a
+new HUD with commander avatar, left **queue** buttons and right **quick** buttons.
 
 ## Run it
 
@@ -21,7 +23,7 @@ npm run dev        # dev server at http://localhost:5173 (with --host, so phones
 npm run build      # -> dist/ (multi-file) AND broken-dawn.html (single self-contained file)
 npm run preview    # serve dist/
 npm test           # headless Chromium e2e test (needs a build; CHROME_PATH=/path/to/chrome to override)
-                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=1…5 runs one suite, QUICK=1 skips the dist/ pass
+                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=1…6 runs one suite, QUICK=1 skips the dist/ pass
 ```
 
 `broken-dawn.html` has everything inlined, so you can open it directly from disk or host it
@@ -32,7 +34,7 @@ anywhere, including GitHub Pages. `dist/` is the standard build for static hosti
 | Action | Touch | Mouse |
 |---|---|---|
 | Pan map | drag empty ground (or quick-swipe anywhere) | drag |
-| Zoom | pinch (clamped 0.4x to 1.8x) | wheel |
+| Zoom | pinch (0.42x, or whatever fills the screen, up to 1.6x) | wheel |
 | Building info | tap a building | click |
 | Move a building | **long-press** it, then drag. Or tap it, press **Move**, then drag | same |
 | Finish moving | tap empty ground or **Done** | same |
@@ -40,7 +42,7 @@ anywhere, including GitHub Pages. `dist/` is the standard build for static hosti
 Pans and moves don't get mixed up: a quick swipe that starts on a building still pans the map.
 A building only follows your finger after a long-press (0.42 s) or after you choose **Move**.
 While you're moving one, the placement grid appears, blocked tiles show red, and the target footprint
-turns green or red. Buildings snap to the iso grid, must sit fully on the metal platform, and can't
+turns green or red. Buildings snap to the iso grid, must sit fully inside the base area, and can't
 overlap each other or the Beacon. An invalid drop snaps back. Dragging near a screen edge auto-pans the map.
 The Beacon is anchored: long-pressing it just shows "can't be moved".
 
@@ -315,14 +317,42 @@ pointer (the camera glides to off-screen buildings):
 
 1. **Beacon:** tap it. 2. **Build:** tap the Barracks, then Upgrade. 3. **Train:** Troops → x10 Sentinels.
 4. **Squad:** Squads → Edit Formation → Max → Save (the first batch is rushed for you). 5. **Recruit:** Armory → Pull x1.
-6. **Hunt:** World → tap a creature → Attack. 7. **Infirmary:** open it from the Base. 8. **Research:** tap the Archive.
+6. **Hunt:** World → tap a creature → Attack. 7. **Infirmary:** open it from the Base. 8. **Research:** tap the Research queue button (left column).
 
 - If a step could get stuck it tops you up quietly (Energy for the upgrade/training, a Core for the pull,
   stamina for the hunt). Finishing pays **+500 Energy and +2 Beacon Cores** once.
 - **Skip** on every step; **Replay Tutorial** in Settings.
-- **Saves (v8):** v7 saves migrate automatically (backup `brokenDawn.save.v1.backup-v7`), get the default audio
+- **Saves (v8, stage 5):** v7 saves migrate automatically (backup `brokenDawn.save.v1.backup-v7`), get the default audio
   settings, and have the tutorial marked **done**, so existing players aren't interrupted; they get a one-time
   toast pointing to Replay in Settings. New games start the tutorial.
+
+## Stage 6: Painted base & new HUD
+
+- **Full-screen base:** a 44×44 iso map (ground 2480×3040 px, ~6× the screen) that always fills the screen. You
+  can't zoom or pan past the painted ground, so there's no void. Terrain (painted ground tile, flagstone paths, a
+  compacted base area, a glowing plaza round the Beacon, a vignette) is baked once into a half-res texture.
+  Painted crystals, plants and rocks are scattered outside the base, with small details inside that hide under buildings.
+- **Painted art:** Command Center, Barracks, Armory, Infirmary, Archive and the Beacon are painted sprites. All
+  art is 20 WebP files, about 0.5 MB in total, in `src/art/base/` (see `src/art/baseArt.js`). The source JPGs were keyed off
+  their magenta backgrounds, despilled, cropped and resized by `artwork/process.py` (outside the repo).
+- **Buildings:** each has a name plate with a round level badge, construction scaffolding and an upgrade
+  progress bar. Tap one to open its panel. They're still movable (long-press, or **Move**) with grid snapping
+  and collision. The Beacon (4×4) stays fixed at the centre.
+- **Hidden until unlocked:** the Archive doesn't exist on the map until Beacon Lv 3. When the upgrade finishes,
+  a toast says it's unlocked and the game enters **placement mode** at a suggested free spot. Drag it (or tap
+  the ground) to choose a spot, then **Place**. **Later** puts it away, and a "🏗 New: build the Archive" chip
+  waits under the top bar.
+- **HUD:**
+  - Top bar: commander avatar (tap for the Power breakdown) with a Beacon-level badge, **Power**, the Beacon
+    pill, and resource counters.
+  - Left column: queue buttons **Builder**, **Research**, **Training** and **Healing**, each with a live timer
+    and a progress ring. Each one jumps to the right building or screen.
+  - Right column: **Hunt** (World), **Rewards** (Beacon Cores), **Armory**, and **Events** (placeholder).
+- **Tutorial:** step 8 is now "tap the Research button". Before Beacon Lv 3 it explains where research comes from.
+- **Saves (v9):** v8 saves migrate automatically (backup `brokenDawn.save.v1.backup-v8`). Buildings on their
+  old default tiles move to the new defaults. Moved buildings keep their direction from the Beacon (scaled
+  ×1.75 to the bigger map), and any that end up on an invalid spot snap to the nearest free one. An Archive that's
+  already unlocked stays placed; a locked one is hidden.
 
 ## Code layout
 
@@ -338,10 +368,11 @@ src/
   world/worldService.js LocalWorldService: the single boundary for world logic (swap for a remote one for PvP)
   systems/power.js     Base / Building / Troop / Squad power formulas
   systems/research.js  research levels, Archive seal, researchMods() (every research bonus in one pure function)
+  art/baseArt.js       painted base art (WebP imports, sprite sizes/origins); art/base/*.webp
   art/portraits.js     procedural troop/leader portraits, gear icons, card back (canvas 2D)
   systems/grid.js      iso <-> world math, platform + placement validation
-  scenes/BootScene.js  procedural textures (swap for real art later)
-  scenes/BaseScene.js  map, camera (pan/pinch/wheel), picking, long-press, drag and snap
+  scenes/BootScene.js  procedural textures + preload of the painted base art
+  scenes/BaseScene.js  baked painted terrain, decorations, camera (pan/pinch/wheel), picking, long-press, drag, placement
   scenes/WorldScene.js World Map: zones, creatures, marches, battle fx, pan/pinch/wheel, tap-to-select
   scenes/UIScene.js    HUD, bottom nav, info panel, move banner, screens, overlays, gacha reveal, toasts, game tick
   ui/world.js          World HUD (stamina, Auto, Reports, squad chips), creature sheet, report card, replay player
@@ -362,7 +393,7 @@ screens/               screenshots from the test run
 
 ## Known gaps
 
-- All art is placeholder (procedural shapes). Music and sound effects are generated (synth), not recorded.
+- Base art is painted. World map creatures, portraits and icons are still procedural. Music and sound effects are generated (synth), not recorded.
 - Rotation re-layout works by saving and reloading the page (about a second). It's built for portrait; landscape
   works but is letterboxed.
 - Haptics do nothing on iPhones (Safari has no `navigator.vibrate`).
@@ -375,4 +406,5 @@ screens/               screenshots from the test run
 - The world map is local to this device. Nothing is shared between players yet (see PvP path).
 - Only one research slot, and research can't be sped up with Cores yet (`store.speedUpResearch` exists as a hook).
 - Tier Power (1/2/4) feeds Troop Power; research bonuses don't show up in Base Power.
-- The bundle is about 1.4 MB (395 KB gzipped), almost all of it Phaser. Stage 5 added about 29 KB (≈10 KB gzipped), no asset files.
+- The JS bundle is about 1.4 MB (≈400 KB gzipped), almost all of it Phaser. Stage 6 adds ~0.5 MB of WebP art
+  (separate files in `dist/`, inlined as base64 in `broken-dawn.html`, which is ~2.1 MB).

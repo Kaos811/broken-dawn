@@ -1,4 +1,4 @@
-// Headless e2e test for stages 1-5. Runs against the single-file build
+// Headless e2e test for stages 1-6. Runs against the single-file build
 // (file://) and the dist/ build (served over http) at a 390x844 phone viewport.
 //   npm run build && npm test
 import { chromium } from 'playwright-core';
@@ -14,7 +14,7 @@ const check = (name, ok, extra = '') => { results.push({ name, ok }); console.lo
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function serveDist() {
-  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png' };
   const srv = createServer(async (req, res) => {
     try {
       const p = join(ROOT, 'dist', req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
@@ -52,13 +52,12 @@ async function run(url, label, takeShots) {
   const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
   const power = () => ev(() => __BD.store.power.total);
   // page coords of a footprint centre, of a world point, of a UI (game-space) point
-  const fpCenter = (id) => ev((id) => {
-    const s = __BD.store.state, isB = id === 'beacon';
-    const gx = isB ? 12 : s.buildings[id].gx, gy = isB ? 12 : s.buildings[id].gy;
-    const b = __BD.base(); const ox = 26 * 48, oy = 140; // grid origin
-    return __BD.worldToPage(ox + (gx + 1 - (gy + 1)) * 48, oy + (gx + 1 + gy + 1) * 24);
-  }, id);
-  const tileCenter = (gx, gy) => ev(([gx, gy]) => __BD.worldToPage(26 * 48 + (gx + 0.5 - (gy + 0.5)) * 48, 140 + (gx + gy + 1) * 24), [gx, gy]);
+  // (stage 6: computed with the game's own grid math, __BD.grid; the map is 44 tiles, Beacon 4x4 at 20,20)
+  const fpCenter = (id) => ev((id) => __BD.fpToPage(id), id);
+  const tileCenter = (gx, gy) => ev(([gx, gy]) => __BD.baseTileToPage(gx, gy), [gx, gy]);
+  // footprint centre of a building of size `size` standing at (gx, gy)
+  const fpAt = (gx, gy, size = 3) => ev(([gx, gy, size]) => { const w = __BD.grid.isoToWorld(gx + size / 2, gy + size / 2); return __BD.worldToPage(w.x, w.y); }, [gx, gy, size]);
+  const EMPTY = [28, 28]; // open ground just below the Beacon plaza (no building on default layout)
   const uiPoint = (fn) => ev(fn);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, i) => ({ x: p.x, y: p.y, id: i })) });
 
@@ -69,10 +68,13 @@ async function run(url, label, takeShots) {
   await page.mouse.move(195, 420);
   for (let i = 0; i < 25; i++) { await page.mouse.wheel(0, 200); await sleep(20); }
   const zMin = (await cam()).zoom;
-  check('wheel zoom out works and clamps at min', zMin < z0 && Math.abs(zMin - 0.4) < 1e-6, `${z0.toFixed(2)} -> ${zMin.toFixed(2)}`);
+  const zFloor = await ev(() => __BD.base().minZoom());
+  check('wheel zoom out works and clamps at min (never past the painted ground)', zMin < z0 && Math.abs(zMin - zFloor) < 1e-6 && zFloor > 0.4, `${z0.toFixed(2)} -> ${zMin.toFixed(2)} (floor ${zFloor.toFixed(3)})`);
+  const edge = await ev(() => { const c = __BD.base().cameras.main, v = c.worldView, G = __BD.grid.GROUND; return v.x >= G.x - 1 && v.y >= G.y - 1 && v.right <= G.x + G.w + 1 && v.bottom <= G.y + G.h + 1; });
+  check('zoomed all the way out the view stays on painted ground (no void)', edge);
   await shot('01-base-zoomed-out.png');
   for (let i = 0; i < 40; i++) { await page.mouse.wheel(0, -200); await sleep(10); }
-  check('wheel zoom in clamps at max', Math.abs((await cam()).zoom - 1.8) < 1e-6);
+  check('wheel zoom in clamps at max', Math.abs((await cam()).zoom - 1.6) < 1e-6);
   await ev(() => { const b = __BD.base(); b.cameras.main.setZoom(0.62); b.cameras.main.centerOn(b.beaconCenter.x, b.beaconCenter.y - 40); });
   await sleep(100);
 
@@ -93,14 +95,14 @@ async function run(url, label, takeShots) {
   // --- Drag-to-pan on empty ground (mouse) and touch
   const before = await state();
   let c0 = await cam();
-  const empty = await tileCenter(10, 17);
+  const empty = await tileCenter(...EMPTY);
   await page.mouse.move(empty.x, empty.y); await page.mouse.down();
   for (let i = 1; i <= 8; i++) { await page.mouse.move(empty.x + i * 10, empty.y + i * 6); await sleep(16); }
   await page.mouse.up();
   let c1 = await cam();
   check('mouse drag on empty ground pans the map', Math.abs(c1.x - c0.x) > 50 && Math.abs(c1.y - c0.y) > 30, `dx ${(c1.x - c0.x).toFixed(0)} dy ${(c1.y - c0.y).toFixed(0)}`);
   c0 = c1;
-  const e2 = await tileCenter(10, 17);
+  const e2 = await tileCenter(...EMPTY);
   await touch('touchStart', [e2]);
   for (let i = 1; i <= 8; i++) { await touch('touchMove', [{ x: e2.x - i * 10, y: e2.y - i * 6 }]); await sleep(16); }
   await touch('touchEnd', []);
@@ -169,14 +171,14 @@ async function run(url, label, takeShots) {
   // --- Long-press + drag Barracks to a new tile (touch)
   const br0 = (await state()).buildings.barracks;
   const bS = await fpCenter('barracks');
-  const bT = await ev(([gx, gy]) => __BD.worldToPage(26 * 48 + (gx + 1 - (gy + 1)) * 48, 140 + (gx + gy + 2) * 24), [br0.gx, br0.gy + 3]);
+  const bT = await fpAt(br0.gx, br0.gy - 3);
   await touch('touchStart', [bS]); await sleep(600);
   for (let i = 0; i < 30 && (await ev(() => __BD.base().moveId)) !== 'barracks'; i++) await sleep(100);
   check('long-press enters move mode', (await ev(() => __BD.base().moveId)) === 'barracks');
   for (let i = 1; i <= 12; i++) { await touch('touchMove', [{ x: bS.x + ((bT.x - bS.x) * i) / 12, y: bS.y + ((bT.y - bS.y) * i) / 12 }]); await sleep(20); }
   await touch('touchEnd', []); await sleep(150);
   const br1 = (await state()).buildings.barracks;
-  check('dragging Barracks moves it (snapped to grid)', br1.gx === br0.gx && br1.gy === br0.gy + 3, `(${br0.gx},${br0.gy}) -> (${br1.gx},${br1.gy})`);
+  check('dragging Barracks moves it (snapped to grid)', br1.gx === br0.gx && br1.gy === br0.gy - 3, `(${br0.gx},${br0.gy}) -> (${br1.gx},${br1.gy})`);
   // Done
   const done = await uiPoint(() => { const r = __BD.ui().bannerRect; return __BD.gameToPage(r.x + r.width - 80, r.y + r.height / 2); });
   check('move banner visible', await ev(() => __BD.ui().banner.visible));
@@ -185,18 +187,21 @@ async function run(url, label, takeShots) {
 
   // --- Tap-select route: tap Armory -> Move button -> drag (mouse)
   const ar0 = (await state()).buildings.armory;
+  // the Barracks drag may have edge-panned the map; bring the Armory back into the open (clear of the HUD side columns)
+  await ev(() => __BD.base().focus('armory', 0)); await sleep(100);
   const aS = await fpCenter('armory');
   await page.mouse.click(aS.x, aS.y); await sleep(250);
   const mv = await uiPoint(() => { const b = __BD.ui().pMove; return __BD.gameToPage(b.x, b.y); });
   const dbg = await ev(() => `panel=${__BD.ui().panelOpenFor} panelY=${__BD.ui().panel.y} move=${__BD.base().moveId}`);
   await page.mouse.click(mv.x, mv.y); await sleep(200);
   check('Move button enters move mode', (await ev(() => __BD.base().moveId)) === 'armory', dbg);
-  const aT = await ev(([gx, gy]) => __BD.worldToPage(26 * 48 + (gx + 1 - (gy + 1)) * 48, 140 + (gx + gy + 2) * 24), [ar0.gx - 3, ar0.gy]);
+  const aT = await fpAt(ar0.gx - 3, ar0.gy);
   await page.mouse.move(aS.x, aS.y); await page.mouse.down();
   for (let i = 1; i <= 12; i++) { await page.mouse.move(aS.x + ((aT.x - aS.x) * i) / 12, aS.y + ((aT.y - aS.y) * i) / 12); await sleep(20); }
   await page.mouse.up(); await sleep(150);
   const ar1 = (await state()).buildings.armory;
-  check('mouse drag moves Armory in move mode', ar1.gx === ar0.gx - 3 && ar1.gy === ar0.gy, `(${ar0.gx},${ar0.gy}) -> (${ar1.gx},${ar1.gy})`);
+  const arDbg = await ev(([gx, gy]) => JSON.stringify({ can: __BD.store.canMove ? __BD.store.canMove('armory', gx, gy) : null, b: Object.fromEntries(Object.entries(__BD.store.state.buildings).map(([k, v]) => [k, [v.gx, v.gy, v.placed]])) }), [ar0.gx - 3, ar0.gy]);
+  check('mouse drag moves Armory in move mode', ar1.gx === ar0.gx - 3 && ar1.gy === ar0.gy, `(${ar0.gx},${ar0.gy}) -> (${ar1.gx},${ar1.gy}) aS=${JSON.stringify(aS)} aT=${JSON.stringify(aT)} ${arDbg}`);
 
   // --- Invalid drop on the Beacon is rejected
   const aS2 = await fpCenter('armory');
@@ -206,19 +211,19 @@ async function run(url, label, takeShots) {
   await page.mouse.up(); await sleep(150);
   check('dropping onto the Beacon is rejected (snaps back)', JSON.stringify((await state()).buildings.armory) === JSON.stringify(ar1));
   // Invalid drop off-platform
-  const offP = await tileCenter(2, 2);
-  await ev(() => { const c = __BD.base().cameras.main; c.setZoom(0.4); });
+  const offP = await tileCenter(4, 4);
+  await ev(() => { const b = __BD.base(); b.setZoomKeeping(0.52, b.beaconCenter.x, b.beaconCenter.y - 40, 360, b.cameras.main.height / 2); });
   await sleep(50);
-  const aS3 = await fpCenter('armory'); const off2 = await tileCenter(1, 3);
+  const aS3 = await fpCenter('armory'); const off2 = await tileCenter(4, 4); // outside the buildable ellipse
   await page.mouse.move(aS3.x, aS3.y); await page.mouse.down();
   for (let i = 1; i <= 10; i++) { await page.mouse.move(aS3.x + ((off2.x - aS3.x) * i) / 10, aS3.y + ((off2.y - aS3.y) * i) / 10); await sleep(20); }
   await page.mouse.up(); await sleep(150);
-  check('dropping onto rocky terrain is rejected', JSON.stringify((await state()).buildings.armory) === JSON.stringify(ar1));
+  check('dropping outside the base area is rejected', JSON.stringify((await state()).buildings.armory) === JSON.stringify(ar1) && !(await ev(() => __BD.grid.isPlatformTile(4, 4))));
   void offP;
   // tap empty ground exits move mode
   await ev(() => { const b = __BD.base(); b.cameras.main.setZoom(0.62); b.cameras.main.centerOn(b.beaconCenter.x, b.beaconCenter.y - 40); });
   await sleep(100);
-  const emptyTap = await tileCenter(10, 17);
+  const emptyTap = await tileCenter(...EMPTY);
   await page.mouse.click(emptyTap.x, emptyTap.y); await sleep(150);
   check('tapping empty ground exits move mode', (await ev(() => __BD.base().moveId)) === null);
   if (takeShots) await sleep(2700); // let the "can't place" toast fade
@@ -230,7 +235,7 @@ async function run(url, label, takeShots) {
   const restored = await state();
   check('building positions persist after reload', JSON.stringify(restored.buildings) === JSON.stringify(saved.buildings), JSON.stringify(restored.buildings));
   const spritePos = await ev(() => { const b = __BD.base(); return [b.sprites.barracks.img.x, b.sprites.barracks.img.y]; });
-  const expect = await ev(() => { const s = __BD.store.state.buildings.barracks; return [26 * 48 + (s.gx - s.gy) * 48, 140 + (s.gx + s.gy + 4) * 24]; });
+  const expect = await ev(() => { const s = __BD.store.state.buildings.barracks; const a = __BD.grid.footprintAnchor(s.gx, s.gy, 3); return [a.x, a.y]; });
   check('restored sprite drawn at saved tile', Math.abs(spritePos[0] - expect[0]) < 0.5 && Math.abs(spritePos[1] - expect[1]) < 0.5);
   check('Base Power restored after reload', (await power()) === p1);
 
@@ -289,11 +294,11 @@ async function run(url, label, takeShots) {
   rb = await btn('Reset Save'); await page.mouse.click(rb.x, rb.y); await sleep(250);
   rb = await btn('Reset'); await page.mouse.click(rb.x, rb.y); await sleep(300);
   const fresh = await state();
-  check('Reset restores defaults (Base Power 35 incl. Infirmary Lv 1)', fresh.beacon.level === 1 && fresh.buildings.commandCenter.level === 1 && fresh.buildings.barracks.gy === 12 && (await power()) === 35);
+  check('Reset restores defaults (Base Power 35 incl. Infirmary Lv 1)', fresh.beacon.level === 1 && fresh.buildings.commandCenter.level === 1 && fresh.buildings.barracks.gy === 30 && (await power()) === 35);
   const sp2 = await ev(() => { const b = __BD.base(); return [b.sprites.barracks.img.x, b.sprites.barracks.img.y]; });
-  check('Reset moves sprites back', Math.abs(sp2[0] - (26 * 48 + (8 - 12) * 48)) < 0.5);
+  check('Reset moves sprites back', Math.abs(sp2[0] - (await ev(() => __BD.grid.footprintAnchor(23, 30, 3).x))) < 0.5);
   await page.reload(); await ready();
-  check('Reset persists after reload', (await state()).buildings.barracks.gy === 12 && (await power()) === 35);
+  check('Reset persists after reload', (await state()).buildings.barracks.gy === 30 && (await power()) === 35);
 
   // --- Viewport fill
   const rect = await ev(() => { const r = __BD.game.canvas.getBoundingClientRect(); return [r.width, r.height]; });
@@ -367,7 +372,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let m = await state();
-    check('v2 save migrates to version 8 (via v3 … v7)', m.version === 8);
+    check('v2 save migrates to version 9 (via v3 … v8)', m.version === 9);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
@@ -388,7 +393,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v3 save migrates to v8: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 8 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 save migrates to v9: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 9 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
     check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload(); await ready(); return (await state()).resources.cores === 10; })());
 
@@ -404,7 +409,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v4 save migrates to v8: levels, Cores, claims kept; no construction', m.version === 8 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
+    check('v4 save migrates to v9: levels, Cores, claims kept; no construction', m.version === 9 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
     check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
 
     // --- 1. Save migration from a stage-1 (v1) save
@@ -420,8 +425,10 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v1 save migrates to version 8', s.version === 8);
-    check('migration keeps buildings, levels, Energy and Beacon', s.buildings.barracks.gy === 15 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
+    check('v1 save migrates to version 9', s.version === 9);
+    // the Barracks sat off its default tile (8,15): on the v9 map it keeps its direction from the Beacon
+    const bOff = await ev(() => { const b = __BD.store.state.buildings.barracks, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('barracks', b.gx, b.gy), def: b.gx === 23 && b.gy === 30 }; });
+    check('migration keeps buildings (moved Barracks keeps its direction from the Beacon), levels, Energy and Beacon', bOff.ok && !bOff.def && bOff.dx < -200 && Math.abs(bOff.dy) < 220 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
     check('migration adds Shards (500), 10 Cores, Alloy, troops, squad lines', Math.floor(s.resources.shards) === 500 && s.resources.cores === 10 && s.resources.alloy < 5 && s.troops.sentinel === 0 && s.squads.alpha.lines.length === 3 && s.squads.alpha.leader === null);
     check('migration keeps a backup of the v1 save', await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v1')));
     check('Base Power after migration = buildings only (75 incl. new Infirmary)', (await power()).total === 75, JSON.stringify(await power()));
@@ -890,10 +897,12 @@ async function runStage3(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v5 save migrates to v6 (and on to v8)', s.version === 8);
-    check('v6 keeps buildings, levels, resources, troops and squads', s.buildings.armory.gx === 16 && s.buildings.armory.gy === 8 && s.buildings.commandCenter.level === 3 && s.beacon.level === 3 && s.resources.cores === 6 && s.troops.sentinel === 8 && s.squads.alpha.level === 2 && s.squads.alpha.lines[0].count === 6, JSON.stringify(s.buildings));
+    check('v5 save migrates to v6 (and on to v9)', s.version === 9);
+    // the Armory sat on the old Infirmary tile (16,8), right of the Beacon: it stays to the right on the v9 map
+    const aOff = await ev(() => { const b = __BD.store.state.buildings.armory, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('armory', b.gx, b.gy) }; });
+    check('v6 keeps buildings (Armory stays right of the Beacon), levels, resources, troops and squads', aOff.ok && aOff.dx > 200 && Math.abs(aOff.dy) < 250 && s.buildings.commandCenter.level === 3 && s.beacon.level === 3 && s.resources.cores === 6 && s.troops.sentinel === 8 && s.squads.alpha.level === 2 && s.squads.alpha.lines[0].count === 6, JSON.stringify(s.buildings));
     const inf = s.buildings.infirmary;
-    check('v6 adds the Infirmary at Lv 1 on a free platform spot (default tile was taken by the Armory)', inf.level === 1 && !(inf.gx === 16 && inf.gy === 8) && (await ev(() => __BD.store.canPlace('infirmary', __BD.store.state.buildings.infirmary.gx, __BD.store.state.buildings.infirmary.gy))), JSON.stringify(inf));
+    check('v6 adds the Infirmary at Lv 1 on a free spot (no overlap with the Armory)', inf.level === 1 && !(inf.gx === s.buildings.armory.gx && inf.gy === s.buildings.armory.gy) && (await ev(() => __BD.store.canPlace('infirmary', __BD.store.state.buildings.infirmary.gx, __BD.store.state.buildings.infirmary.gy))), JSON.stringify(inf));
     check('v6 formation lines get full = saved count', s.squads.alpha.lines[0].full === 6 && s.squads.alpha.lines[1].full === 4);
     check('v6 generates a world: 40 creatures + your base; stamina starts full (100)', s.world.entities.filter((e) => e.kind === 'creature').length === 40 && s.world.entities.some((e) => e.kind === 'base' && e.owner === 'local') && s.hunt.stamina === 100);
     check('v5 migration keeps a backup of the v5 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v5') || '{}').version === 5));
@@ -1246,22 +1255,23 @@ async function runStage4(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v6 save migrates to v7 (and v8)', s.version === 8);
+    check('v6 save migrates to v7 (and v9)', s.version === 9);
     check('v7 keeps every troop as T1 (sentinel/bearer ids unchanged), no higher tiers', s.troops.sentinel === 12 && s.troops.bearer === 5 && s.troops.bulwark === 0 && s.troops.lancer === 0 && s.troops.aegis === 0, JSON.stringify(s.troops));
     check('v7 keeps the training lane (3 Sentinels, progress 1.5) as a T1 job', s.training.sentinel.count === 3 && near(s.training.sentinel.progress, 1.5, 0.6) && s.training.sentinel.unit === 'sentinel' && s.training.sentinel.from === null, JSON.stringify(s.training.sentinel));
     check('v7 keeps formations, wounded and hunt progress', s.squads.alpha.lines[0].type === 'sentinel' && s.squads.alpha.lines[0].count === 6 && s.squads.alpha.lines[0].full === 8 && s.infirmary.wounded.sentinel.alpha === 2 && s.hunt.bestKill === 3 && s.hunt.stamina === 70 && s.resources.cores === 12);
     check('v7 starts with no research', JSON.stringify(s.research) === JSON.stringify({ levels: {}, job: null }));
-    check('v7 adds the Archive at Lv 1 on its default tile (8,8)', s.buildings.archive.level === 1 && s.buildings.archive.gx === 8 && s.buildings.archive.gy === 8);
+    check('v7 adds the Archive at Lv 1, hidden (not placed) until Beacon Lv 3', s.buildings.archive.level === 1 && s.buildings.archive.placed === false && !(await ev(() => __BD.base().sprites.archive.img.visible)));
     check('v6 migration keeps a backup of the v6 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v6') || '{}').version === 6));
     check('a sealed Archive (Beacon Lv 2) adds no Power', (await ev(() => __BD.store.power.building)) === 30 + 30 + 10 + 0 + 5, String(await ev(() => __BD.store.power.building)));
 
     // --- 1. sealed Archive until Beacon Lv 3
-    const sealed = await ev(() => ({ r: __BD.store.researchInfo('energyYield').reason, u: __BD.store.upgradeInfo('archive').reason, label: __BD.base().sprites.archive.label.text }));
-    check('Archive is sealed below Beacon Lv 3 (no research, no upgrade, locked label)', /unlocks at Beacon Lv 3/.test(sealed.r) && sealed.u === 'Unlocks at Beacon Lv 3' && /🔒/.test(sealed.label), JSON.stringify(sealed));
-    await ev(() => __BD.base().select('archive')); await sleep(400);
-    check('sealed Archive panel explains the unlock', await waitTrue(() => /Sealed until Beacon Lv 3/.test(__BD.ui().pStats.text) && __BD.ui().pOpen.labelText.text === 'Research'));
+    const sealed = await ev(() => ({ r: __BD.store.researchInfo('energyYield').reason, u: __BD.store.upgradeInfo('archive').reason, vis: __BD.base().sprites.archive.img.visible, placed: __BD.store.isPlaced('archive') }));
+    check('Archive is hidden below Beacon Lv 3 (no research, no upgrade, not on the map)', /unlocks at Beacon Lv 3/.test(sealed.r) && sealed.u === 'Unlocks at Beacon Lv 3' && !sealed.vis && !sealed.placed, JSON.stringify(sealed));
     await ev(() => { const st = __BD.store; st.state.beacon.level = 2; st.state.beacon.charge = 100; st.state.resources.energy = 5000; st.upgrade('beacon'); st.speedUpConstruction('beacon', 1e6); });
-    check('Beacon Lv 3 unseals the Archive: +5 Power, research possible', await ev(() => __BD.store.archiveUnlocked() && __BD.store.power.building === 30 + 45 + 10 + 0 + 5 + 5 && __BD.store.researchInfo('energyYield').can && !/🔒/.test(__BD.base().sprites.archive.label.text)));
+    check('Beacon Lv 3 unlocks the Archive: +5 Power, research possible', await ev(() => __BD.store.archiveUnlocked() && __BD.store.power.building === 30 + 45 + 10 + 0 + 5 + 5 && __BD.store.researchInfo('energyYield').can));
+    check('…and drops the player into placing it', await waitTrue(() => __BD.base().placeId === 'archive' && __BD.base().sprites.archive.img.visible));
+    await ev(() => __BD.base().confirmPlace());
+    check('placing it puts the Archive on the map', await waitTrue(() => __BD.store.isPlaced('archive') && __BD.base().sprites.archive.img.visible && !__BD.base().placeId));
     await ev(() => __BD.ui().closePanel(true));
 
     // --- 2. fresh game at Beacon Lv 3: research via the Archive screen
@@ -1271,6 +1281,7 @@ async function runStage4(url, label, takeShots) {
       Object.assign(st.state.beacon, { level: 3, charge: 0 });
       Object.assign(st.state.resources, { energy: 50000, alloy: 5000, shards: 5000 });
       st.state.buildings.commandCenter.level = 5;
+      st.state.buildings.archive.placed = true; // unlocked and built (stage 6: hidden until placed)
       st.save();
     });
     await page.reload(); await ready();
@@ -1533,7 +1544,7 @@ async function runStage5(url, label, takeShots) {
     // --- 0. loading screen, fresh save v8, defaults
     check('loading screen fades out and is removed once the game is ready', await waitTrue(() => !document.getElementById('boot')));
     let s = await state();
-    check('new game: save v8 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 8 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
+    check('new game: save v9 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 9 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
     let t = await tut();
     check('new game: tutorial starts at step 1 (The Beacon) with a coach card and a pointer', t.active && t.step === 0 && t.visible && t.title === 'The Beacon' && !!t.target, JSON.stringify(t));
     let a = await au();
@@ -1698,7 +1709,7 @@ async function runStage5(url, label, takeShots) {
     await ev(() => { const k = 'brokenDawn.save.v1'; __BD.store.save = () => {}; const st = JSON.parse(localStorage.getItem(k)); st.version = 7; delete st.settings; delete st.tutorial; localStorage.setItem(k, JSON.stringify(st)); });
     await page.reload(); await ready();
     s = await state(); t = await tut();
-    check('v7 save migrates to v8: tutorial marked done (no coach), default audio settings, backup kept', s.version === 8 && s.tutorial.done && !s.tutorial.skipped && !t.visible && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
+    check('v7 save migrates to v9: tutorial marked done (no coach), default audio settings, backup kept', s.version === 9 && s.tutorial.done && !s.tutorial.skipped && !t.visible && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
     check('existing players get a one-time "replay the tutorial from Settings" toast', await waitTrue(() => /Replay the tutorial/.test(__BD.ui().toastText.text) && __BD.ui().toastBox.visible, null, 40));
     await ev(() => { delete __BD.store.save; __BD.store.save(); });
     await page.reload(); await ready(); await sleep(800);
@@ -1708,6 +1719,221 @@ async function runStage5(url, label, takeShots) {
     check('stage 5 suite ran without exceptions', false, `${e.message} :: ${JSON.stringify(diag)}`);
   }
   check('stage 5: no console errors', errors.length === 0, errors.join(' | '));
+  await browser.close();
+}
+
+// ------------------------------------------------------------------ STAGE 6 --
+// Painted Base: full-screen ground, art sprites with level badges, HUD queue/quick buttons,
+// buildings hidden until unlocked + placement on unlock, moving buildings, v8 -> v9 migration.
+async function runStage6(url, label, takeShots) {
+  console.log(`\n=== stage 6 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('pageerror', (e) => errors.push(e.message));
+  const cdp = await ctx.newCDPSession(page);
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(500); };
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
+  const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+  const hideToast = () => ev(() => { const u = __BD.ui(); u.tweens.killTweensOf(u.toastBox); u.toastBox.setVisible(false); });
+  const shot = async (name, { keepToast = false, wait = 400 } = {}) => { if (takeShots) { await sleep(wait); if (!keepToast) await hideToast(); await frames(2); await page.screenshot({ path: join(ROOT, 'screens', name) }); console.log(`      saved screens/${name}`); } };
+  const ctl = async (label, { meta, kind } = {}) => {
+    for (let tries = 0; tries < 15; tries++) {
+      const all = await ev(() => __BD.controls());
+      const m = all.filter((c) => (label == null || c.label === label) && (meta === undefined || c.meta === meta) && (!kind || c.kind === kind) && c.enabled);
+      if (m.length) return m[m.length - 1];
+      await sleep(200);
+    }
+    return null;
+  };
+  const click = async (label, opts = {}) => {
+    await frames(2);
+    const c = await ctl(label, opts);
+    if (!c) throw new Error(`control not found: ${label} ${JSON.stringify(opts)}`);
+    await page.mouse.click(c.x, c.y); await frames(4); await sleep(opts.wait ?? 300);
+    return c;
+  };
+  const waitTrue = async (fn, arg, n = 30) => { for (let i = 0; i < n; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
+  const tab = async (id) => { const p = await ev((id) => __BD.tabToPage(id), id); await page.mouse.click(p.x, p.y); await frames(4); await sleep(350); };
+  const fpCenter = (id) => ev((id) => __BD.fpToPage(id), id);
+  const fpAt = (gx, gy, size = 3) => ev(([gx, gy, size]) => { const w = __BD.grid.isoToWorld(gx + size / 2, gy + size / 2); return __BD.worldToPage(w.x, w.y); }, [gx, gy, size]);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, i) => ({ x: p.x, y: p.y, id: i })) });
+  const toastHas = (re) => waitTrue((src) => __BD.ui().toastBox.visible && new RegExp(src).test(__BD.ui().toastText.text), re.source, 30);
+  const centerCam = (zoom = 0.62, dy = -40) => ev(([z, dy]) => { const b = __BD.base(); b.cameras.main.setZoom(z); b.cameras.main.centerOn(b.beaconCenter.x, b.beaconCenter.y + dy); b.clampCamera(); }, [zoom, dy]);
+  // a valid free spot ~4 tiles from (gx,gy) for building `id` (searching a few directions)
+  const freeNear = (id, gx, gy) => ev(([id, gx, gy]) => {
+    for (const [dx, dy] of [[0, 4], [4, 0], [-4, 0], [0, -4], [3, 3], [-3, -3], [3, -3], [-3, 3]]) if (__BD.store.canPlace(id, gx + dx, gy + dy)) return { gx: gx + dx, gy: gy + dy };
+    return null;
+  }, [id, gx, gy]);
+  // long-press (touch) a building and drag it to page point `to`
+  const dragBuilding = async (from, to, longPress = true) => {
+    await touch('touchStart', [from]);
+    if (longPress) { await sleep(600); for (let i = 0; i < 30 && !(await ev(() => __BD.base().moveId)); i++) await sleep(100); }
+    for (let i = 1; i <= 12; i++) { await touch('touchMove', [{ x: from.x + ((to.x - from.x) * i) / 12, y: from.y + ((to.y - from.y) * i) / 12 }]); await sleep(20); }
+    await touch('touchEnd', []); await frames(4); await sleep(200);
+  };
+
+  try {
+    await page.goto(url); await ready();
+    await ev(() => localStorage.clear()); await page.reload(); await ready();
+
+    // --- 1. full-screen painted base, art sprites, level badges
+    let s = await state();
+    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 9 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
+    const art = await ev(() => { const b = __BD.base(); return { cc: b.sprites.commandCenter.img.texture.key, beacon: b.beaconSprite.texture.key, ground: b.ground.texture.key, decos: b.decos.length, inner: b.innerDecos.length }; });
+    check('painted art: building + Beacon sprites, baked ground, scattered crystals/plants/rocks', art.cc === 'art-commandCenter' && art.beacon === 'art-beacon' && art.ground === 'ground-baked' && art.decos >= 60 && art.inner >= 10, JSON.stringify(art));
+    const fill = await ev(() => { const c = __BD.base().cameras.main, v = c.worldView, G = __BD.grid.GROUND; return { ok: v.x >= G.x - 1 && v.y >= G.y - 1 && v.right <= G.x + G.w + 1 && v.bottom <= G.y + G.h + 1, bigger: G.w > v.width && G.h > v.height }; });
+    check('the base fills the screen (no void) and the world is bigger than the screen', fill.ok && fill.bigger, JSON.stringify(fill));
+    // pan hard toward a corner: the view stops at the painted edge
+    await ev(() => { const b = __BD.base(), c = b.cameras.main; c.scrollX -= 5000; c.scrollY -= 5000; b.clampCamera(); });
+    await frames(3);
+    check('panning stops at the edge of the painted ground', await ev(() => { const v = __BD.base().cameras.main.worldView, G = __BD.grid.GROUND; return Math.abs(v.x - G.x) < 1 && Math.abs(v.y - G.y) < 1; }));
+    await ev(() => { const b = __BD.base(); b.setZoomKeeping(0.01, b.beaconCenter.x, b.beaconCenter.y, 360, b.cameras.main.height / 2); });
+    await shot('stage6-base-full.png');
+    await ev(() => { const b = __BD.base(); b.setZoomKeeping(1.25, b.beaconCenter.x, b.beaconCenter.y - 120, 360, b.cameras.main.height / 2 + 60); });
+    await shot('stage6-base-zoomed.png');
+    await centerCam(0.72, -60);
+    const plates = await ev(() => { const b = __BD.base(); return ['commandCenter', 'barracks', 'armory', 'infirmary'].map((id) => [b.sprites[id].plate.visible, b.sprites[id].plate.plate.lv.text, b.sprites[id].label.text]); });
+    check('every building shows a name plate with a round level badge', plates.every(([v, lv, n]) => v && lv === '1' && n.length > 3), JSON.stringify(plates));
+
+    // --- 2. HUD: avatar + Power + resources, left queue buttons, right quick buttons
+    const ctrls = await ev(() => __BD.controls().map((c) => c.meta).filter(Boolean));
+    check('HUD left column: Builder, Research, Training, Healing queue buttons', ['q-builder', 'q-research', 'q-training', 'q-healing'].every((m) => ctrls.includes(m)), ctrls.join(','));
+    check('HUD right column: Hunt, Rewards, Armory, Events quick buttons', ['k-hunt', 'k-rewards', 'k-armory', 'k-events'].every((m) => ctrls.includes(m)));
+    check('HUD top bar: commander avatar, Power and resource counters', await ev(() => { const u = __BD.ui(); return u.avatar.texture.key === 'art-avatar' && u.powerText.text === String(__BD.store.power.total) && u.energyText.visible && u.coreText.visible && u.shardText.visible && u.alloyText.visible && u.troopText.visible; }));
+    const qIdle = await ev(() => Object.values(__BD.ui().queueBtns).map((b) => b.timer.text));
+    check('queue buttons idle on a new game (Research waits for Beacon Lv 3)', qIdle.join('|') === 'Idle|Beacon 3|Idle|Idle', qIdle.join('|'));
+    await ev(() => { const st = __BD.store; st.state.resources.energy = 500; st.upgrade('barracks'); });
+    check('Builder button shows the running upgrade timer', await waitTrue(() => /^\d+:\d\d$/.test(__BD.ui().queueBtns.builder.timer.text)));
+    await click(null, { meta: 'q-builder' });
+    check('tapping Builder opens the building that is under construction', await waitTrue(() => __BD.ui().panelOpenFor === 'barracks'));
+    check('construction scaffolding + progress bar drawn on the art sprite', await ev(() => !!__BD.base().scaffolds?.barracks?.visible && __BD.base().buildTexts?.barracks?.visible));
+    await ev(() => __BD.ui().closePanel(true));
+    await ev(() => __BD.store.speedUpConstruction('barracks', 1e6)); await sleep(300);
+    check('level badge follows the building level (Barracks Lv 2)', await waitTrue(() => __BD.base().sprites.barracks.plate.plate.lv.text === '2'));
+    await click(null, { meta: 'q-training' });
+    check('Training button jumps to the Barracks (Troops) screen', await waitTrue(() => __BD.ui().screen?.id === 'troops'));
+    await tab('base');
+    await click(null, { meta: 'q-healing' });
+    check('Healing button jumps to the Infirmary screen', await waitTrue(() => __BD.ui().screen?.id === 'infirmary'));
+    await tab('base');
+    await click(null, { meta: 'k-armory' });
+    check('Armory quick button opens the Armory', await waitTrue(() => __BD.ui().screen?.id === 'armory'));
+    await tab('base');
+    await click(null, { meta: 'k-rewards' });
+    check('Rewards quick button opens Beacon Core Rewards', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'Beacon Core Rewards')));
+    await ev(() => __BD.ui().closeModal());
+    await tab('base');
+    await click(null, { meta: 'k-hunt' });
+    check('Hunt quick button opens the World map (side columns hide there)', await waitTrue(() => __BD.ui().worldMode && !__BD.ui().queueBtns.builder.visible));
+    await tab('base');
+    await click(null, { meta: 'k-events' });
+    check('Events placeholder explains it is coming soon', await toastHas(/coming soon/));
+
+    // --- 3. hidden until unlocked
+    s = await state();
+    const hid = await ev(() => {
+      const b = __BD.base(), st = __BD.store, d = __BD.grid.BUILDINGS.archive.start;
+      const w = __BD.grid.isoToWorld(d.gx + 1.5, d.gy + 1.5);
+      return { vis: b.sprites.archive.img.visible, plate: b.sprites.archive.plate.visible, placed: st.isPlaced('archive'), pick: b.pick(w.x, w.y), pending: st.pendingPlacements().length, others: st.othersFootprints('commandCenter').length };
+    });
+    check('Archive is hidden before Beacon Lv 3: no sprite, no plate, not tappable, no footprint', !hid.vis && !hid.plate && !hid.placed && hid.pick !== 'archive' && hid.pending === 0 && hid.others === 3, JSON.stringify(hid));
+    await click(null, { meta: 'q-research' });
+    check('Research button explains where research comes from (Archive at Beacon Lv 3)', await toastHas(/Beacon Lv 3/));
+    check('a hidden building can not be moved or placed early', await ev(() => { const st = __BD.store; return !st.moveBuilding('archive', 12, 19) && !st.placeBuilding('archive', 12, 19).ok; }));
+
+    // --- 4. unlock -> notify + placement mode
+    await centerCam(0.72, -60);
+    await ev(() => { const st = __BD.store; st.state.beacon.level = 2; st.state.beacon.charge = 100; st.state.resources.energy = 50000; st.upgrade('beacon'); st.speedUpConstruction('beacon', 1e6); });
+    check('reaching Beacon Lv 3 tells the player the Archive is unlocked', await toastHas(/Archive unlocked/));
+    check('…and enters placement mode with the Archive at a suggested free spot', await waitTrue(() => { const b = __BD.base(); return b.placeId === 'archive' && b.moveId === 'archive' && b.sprites.archive.img.visible && b.placeTarget?.valid && b.gridG.visible; }));
+    check('placement banner: "Build the Archive" with Place + Later', await waitTrue(() => { const u = __BD.ui(); return u.banner.visible && /Build the Archive/.test(u.bannerText.text) && u.bannerPlace.visible && u.bannerPlace.isEnabled() && u.bannerLater.visible; }));
+    check('not saved as placed until confirmed', !(await state()).buildings.archive.placed);
+    await shot('stage6-unlock-placement.png', { keepToast: true });
+    // Later: hidden again, "New building" chip offers it
+    await click('Later', { meta: 'place-later' });
+    check('Later postpones: Archive hidden again, still unplaced', await waitTrue(() => !__BD.base().placeId && !__BD.base().sprites.archive.img.visible && !__BD.store.isPlaced('archive')));
+    check('a "New: build the Archive" chip waits under the top bar', await waitTrue(() => __BD.ui().placeChip.visible && /build the Archive/.test(__BD.ui().placeChipBtn.labelText.text)));
+    await click(null, { meta: 'place-new' });
+    check('the chip re-enters placement mode', await waitTrue(() => __BD.base().placeId === 'archive'));
+    // tap outside the base area: target follows, Place disabled
+    const t0 = await ev(() => ({ ...__BD.base().placeTarget }));
+    await ev(() => __BD.base().setPlaceTarget(4, 4));
+    check('an invalid spot (outside the base) disables Place', await waitTrue(() => !__BD.base().placeTarget.valid && !__BD.ui().bannerPlace.isEnabled()));
+    check('Place on an invalid spot is refused', !(await ev(() => __BD.base().confirmPlace().ok)) && !(await state()).buildings.archive.placed);
+    await ev(([gx, gy]) => __BD.base().setPlaceTarget(gx, gy), [t0.gx, t0.gy]); await frames(3);
+    // drag it (no long-press needed while placing) to another free spot
+    const dest = await freeNear('archive', t0.gx, t0.gy);
+    const from = await fpCenter('archive');
+    await dragBuilding(from, await fpAt(dest.gx, dest.gy), false);
+    const pt = await ev(() => ({ ...__BD.base().placeTarget }));
+    check('dragging the new building moves the proposed spot (snapped to the grid)', pt.gx === dest.gx && pt.gy === dest.gy && pt.valid, `${JSON.stringify(t0)} -> ${JSON.stringify(pt)} want ${JSON.stringify(dest)}`);
+    await click('Place', { meta: 'place-confirm' });
+    s = await state();
+    check('Place builds it there: placed, visible, saved', s.buildings.archive.placed && s.buildings.archive.gx === dest.gx && s.buildings.archive.gy === dest.gy && (await ev(() => __BD.base().sprites.archive.img.visible && !__BD.base().placeId && !__BD.ui().banner.visible)));
+    check('placement chip gone once built', await waitTrue(() => !__BD.ui().placeChip.visible));
+    const arc = await fpCenter('archive');
+    await page.mouse.click(arc.x, arc.y); await frames(4); await sleep(300);
+    check('the placed Archive opens its panel on tap', await waitTrue(() => __BD.ui().panelOpenFor === 'archive'));
+    await ev(() => __BD.ui().closePanel(true));
+    await click(null, { meta: 'q-research' });
+    check('Research button now opens the Archive research screen', await waitTrue(() => __BD.ui().screen?.id === 'archive'));
+    await tab('base');
+    await page.reload(); await ready();
+    s = await state();
+    check('placement persists after reload', s.buildings.archive.placed && s.buildings.archive.gx === dest.gx && s.buildings.archive.gy === dest.gy && (await ev(() => __BD.base().sprites.archive.img.visible)));
+
+    // --- 5. moving buildings stays possible on the new map
+    await centerCam(0.72, -60);
+    const cc0 = s.buildings.commandCenter;
+    const ccDest = await freeNear('commandCenter', cc0.gx, cc0.gy);
+    await dragBuilding(await fpCenter('commandCenter'), await fpAt(ccDest.gx, ccDest.gy));
+    s = await state();
+    check('long-press + drag moves the Command Center to a free spot', s.buildings.commandCenter.gx === ccDest.gx && s.buildings.commandCenter.gy === ccDest.gy, `${JSON.stringify(cc0)} -> ${JSON.stringify(s.buildings.commandCenter)}`);
+    check('move mode shows the placement grid + Done banner', await ev(() => __BD.base().gridG.visible && __BD.ui().banner.visible && __BD.ui().bannerDone.visible && !__BD.ui().bannerPlace.visible));
+    await shot('stage6-move-mode.png');
+    // onto the Archive: rejected
+    await dragBuilding(await fpCenter('commandCenter'), await fpCenter('archive'), false);
+    check('dropping onto another building is rejected', JSON.stringify((await state()).buildings.commandCenter) === JSON.stringify(s.buildings.commandCenter));
+    await click('Done');
+    check('Done leaves move mode (grid hidden)', await waitTrue(() => !__BD.base().moveId && !__BD.base().gridG.visible));
+    check('small ground details hide under buildings and show elsewhere', await ev(() => { const b = __BD.base(); const v = b.innerDecos.filter((d) => d.img.visible).length; return v > 0 && v <= b.innerDecos.length; }));
+
+    // --- 6. v8 -> v9 migration (old 26x26 map), with backup
+    const v8 = (lv, extra) => ev(([lv, extra]) => {
+      localStorage.clear();
+      localStorage.setItem('brokenDawn.save.v1', JSON.stringify({
+        version: 8, resources: { energy: 700, shards: 50, alloy: 9, cores: 4 }, beacon: { level: lv, charge: 20 },
+        buildings: { commandCenter: { level: 4, gx: 12, gy: 8 }, barracks: { level: 3, gx: 9, gy: 15 }, armory: { level: 2, gx: 16, gy: 16 }, infirmary: { level: 2, gx: 16, gy: 8 }, archive: { level: 2, gx: 8, gy: 8 }, ...extra },
+        settings: { music: 0.5, sfx: 0.8, muted: false, haptics: true }, tutorial: { done: true, step: 8, skipped: false }, construction: [], lastSaved: Date.now(),
+      }));
+      __BD.store.save = () => {};
+    }, [lv, extra ?? {}]);
+    await v8(3); await page.reload(); await ready();
+    s = await state();
+    const mig = await ev(() => {
+      const st = __BD.store, B = st.state.buildings, ids = Object.keys(B), o = __BD.grid.BEACON_CENTER;
+      const off = (id) => { const c = __BD.grid.isoToWorld(B[id].gx + 1.5, B[id].gy + 1.5); return { dx: c.x - o.x, dy: c.y - o.y }; };
+      return { valid: ids.every((id) => st.canPlace(id, B[id].gx, B[id].gy)), cc: [B.commandCenter.gx, B.commandCenter.gy], arch: [B.archive.gx, B.archive.gy, B.archive.placed], br: off('barracks'), levels: ids.map((id) => B[id].level).join(',') };
+    });
+    check('v8 save migrates to v9', s.version === 9);
+    check('v9: buildings on their old default tiles move to the new defaults (CC 12,8 -> 11,11; Archive 8,8 -> 12,19)', mig.cc.join() === '11,11' && mig.arch.join() === '12,19,true', JSON.stringify(mig));
+    check('v9: a moved building keeps its direction from the Beacon (Barracks 9,15 stays lower-left)', mig.br.dx < -150 && mig.br.dy > -100, JSON.stringify(mig.br));
+    check('v9: every migrated position is valid (inside the base, no overlaps), levels kept', mig.valid && mig.levels === '4,3,2,2,2', JSON.stringify(mig));
+    check('v9: unlocked Archive (Beacon Lv 3) stays placed and visible; other progress kept', mig.arch[2] && (await ev(() => __BD.base().sprites.archive.img.visible)) && s.resources.cores === 4 && s.settings.music === 0.5 && s.tutorial.done);
+    check('v8 migration keeps a backup with the old positions', await ev(() => { const b = JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v8') || '{}'); return b.version === 8 && b.buildings.commandCenter.gx === 12 && b.buildings.commandCenter.gy === 8; }));
+    await v8(2); await page.reload(); await ready();
+    s = await state();
+    check('v9: a locked Archive (Beacon Lv 2) is hidden until unlocked', !s.buildings.archive.placed && !(await ev(() => __BD.base().sprites.archive.img.visible)) && (await ev(() => __BD.store.pendingPlacements().length === 0)));
+  } catch (e) {
+    const diag = await ev(() => ({ screen: __BD.ui().screen?.id, modal: !!__BD.ui().modal, place: __BD.base().placeId, move: __BD.base().moveId, controls: __BD.controls().map((c) => c.label + (c.meta ? `#${c.meta}` : '')) })).catch(() => ({}));
+    check('stage 6 suite ran without exceptions', false, `${e.message} :: ${JSON.stringify(diag)}`);
+  }
+  check('stage 6: no console errors', errors.length === 0, errors.join(' | '));
   await browser.close();
 }
 
@@ -1725,6 +1951,8 @@ try {
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '4')) await runStage4(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
   if (!process.env.ONLY || process.env.ONLY === '5') await runStage5(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '5')) await runStage5(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+  if (!process.env.ONLY || process.env.ONLY === '6') await runStage6(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
+  if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '6')) await runStage6(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
