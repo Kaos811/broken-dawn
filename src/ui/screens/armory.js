@@ -36,7 +36,7 @@ function renderRecruit(ui, c, a, api, st, y0) {
   const rim = ui.add.graphics(); c.add(rim);
   rim.lineStyle(2, SKIN.gold, 1).strokeRect(bx + 6, y0 + 6, bw - 12, bh - 12);
   c.add(text(ui, bx + bw / 2, y0 + 20, 'BEACON CALL', 46, '#ffd27f', { fontStyle: 'bold', letterSpacing: 6, stroke: '#2e1e06', strokeThickness: 7 }).setOrigin(0.5, 0).setShadow(0, 4, '#000000', 8, true, true));
-  c.add(text(ui, bx + bw / 2, y0 + 76, 'Leaders · Armor · Weapons', 19, '#e8d6b0', { stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5, 0));
+  c.add(text(ui, bx + bw / 2, y0 + 88, 'Leaders · Armor · Weapons', 19, '#e8d6b0', { stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5, 0));
   // odds strip
   const og = ui.add.graphics(); c.add(og);
   const oy = y0 + bh - 48;

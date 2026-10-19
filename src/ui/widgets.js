@@ -44,7 +44,10 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
   const W = Math.round(w), Hh = Math.round(h);
   const skin = scene.add.image(0, 1, '__DEFAULT').setOrigin(0.5);
   const t = text(scene, 0, -1, label, size, '#fff', { fontStyle: 'bold' }).setOrigin(0.5);
-  const hit = scene.add.rectangle(0, 0, Math.max(W, MIN_TAP), Math.max(Hh, MIN_TAP), 0x000000, 0.001).setInteractive({ useHandCursor: true });
+  // visual-size rect (bounds match the drawn button) with a padded input area of at least MIN_TAP
+  const TW = Math.max(W, MIN_TAP), TH = Math.max(Hh, MIN_TAP);
+  const hit = scene.add.rectangle(0, 0, W, Hh, 0x000000, 0.001)
+    .setInteractive({ hitArea: new Phaser.Geom.Rectangle((W - TW) / 2, (Hh - TH) / 2, TW, TH), hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true });
   c.add([skin, t, hit]);
   let enabled = true, current = style, pressed = false;
   const draw = () => {
