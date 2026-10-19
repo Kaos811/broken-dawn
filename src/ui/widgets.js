@@ -69,7 +69,7 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
   hit.on('pointerup', () => {
     springTo(1, 220, 'Back.easeOut');
     // defer so handlers can safely destroy this button (e.g. closing a modal)
-    if (pressed && enabled) scene.time.delayedCall(0, () => onClick?.());
+    if (pressed && enabled && !scene.scrollDragged) scene.time.delayedCall(0, () => onClick?.());
     pressed = false;
   });
   c.setEnabled = (v) => { if (enabled !== !!v) { enabled = !!v; draw(); } return c; };

@@ -108,11 +108,16 @@ export function tile(ui, c, key, x, y, w, h, { rim = SKIN.steel, stars = null, m
   let img = null;
   if (key) {
     const ih = imgH ?? h;
-    img = ui.add.image(x + w / 2, y + 3, key).setOrigin(0.5, 0);
-    const sc = fit === 'height' ? (ih - 6) / img.height : fit === 'cover' ? Math.max((w - 6) / img.width, (ih - 6) / img.height) : (w - 6) / img.width;
+    // origin (0,0) + explicit offsets: Phaser draws a crop relative to the frame's top-left, so a
+    // centred origin shifted the visible part (heads / item tops were cut off in the Squads slots)
+    img = ui.add.image(0, 0, key).setOrigin(0, 0);
+    const iw = img.width, ihh = img.height, bw = w - 6, bh = ih - 6;
+    const sc = fit === 'height' ? bh / ihh : fit === 'cover' ? Math.max(bw / iw, bh / ihh) : fit === 'contain' ? Math.min(bw / iw, bh / ihh) : bw / iw;
     img.setScale(sc);
-    const visH = Math.min(img.height, (ih - 6) / sc), visW = Math.min(img.width, (w - 6) / sc);
-    img.setCrop((img.width - visW) / 2, 0, visW, visH);
+    const visW = Math.min(iw, bw / sc), visH = Math.min(ihh, bh / sc);
+    const cx = (iw - visW) / 2; // centre horizontally, keep the top (heads) when cropping vertically
+    if (visW < iw - 0.5 || visH < ihh - 0.5) img.setCrop(cx, 0, visW, visH);
+    img.setPosition(x + 3 + (bw - visW * sc) / 2 - cx * sc, y + 3 + (fit === 'contain' ? (bh - visH * sc) / 2 : 0));
     if (dim) img.setTint(0x1c2028); else if (tint) img.setTint(tint);
     c.add(img);
   }

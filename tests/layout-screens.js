@@ -1,0 +1,31 @@
+// Every screen / panel / modal / tab the layout check visits (shared by tests/e2e.mjs and tools/fitprobe).
+// Each entry: [name, code]. The code runs in the page with `u` = the UI scene and may return { tap: control }.
+const panel = (id) => `if (${id === 'beacon'} || __BD.store.state.buildings['${id}']?.placed !== false) __BD.base().select('${id}');`;
+export const LAYOUT_SCREENS = [
+  ['base', ''],
+  ...['beacon', 'commandCenter', 'barracks', 'armory', 'infirmary', 'archive'].map((id) => [`panel ${id}`, panel(id)]),
+  ['more', 'u.openMore();'],
+  ['power', 'u.openPowerBreakdown();'],
+  ['rewards', 'u.openRewards();'],
+  ['settings', 'u.openSettings();'],
+  ['missions', 'u.openMissions();'],
+  ['events', 'u.openEvents();'],
+  ['exchange', 'u.openExchange();'],
+  ['troops', "u.openScreen('troops');"],
+  ['class info', "u.openScreen('troops'); const z = __BD.controls().find((c) => c.label === 'info-sentinel'); return z && { tap: z };"],
+  ['infirmary', "u.openScreen('infirmary');"],
+  ['squads', "u.openScreen('squads', { squadId: 'alpha' });"],
+  ['squads bravo', "u.openScreen('squads', { squadId: 'bravo' });"],
+  ['squads charlie', "u.openScreen('squads', { squadId: 'charlie' });"],
+  ['squads edit', "const sq = __BD.store.state.squads.alpha; u.openScreen('squads', { squadId: 'alpha', edit: { squadId: 'alpha', lines: sq.lines.map((l) => ({ ...l })), leader: sq.leader } });"],
+  ['leader picker', "u.openScreen('squads', { squadId: 'alpha', edit: null }); const z = __BD.controls().find((c) => c.label === 'slot-leader'); return z && { tap: z };"],
+  ['gear picker', "u.openScreen('squads', { squadId: 'alpha', edit: null }); const z = __BD.controls().find((c) => c.label === 'slot-weapon'); return z && { tap: z };"],
+  ['armory recruit', "u.openScreen('armory', { armoryTab: 'recruit' });"],
+  ['armory leaders', "u.openScreen('armory', { armoryTab: 'leaders' });"],
+  ['leader detail', "u.openScreen('armory', { armoryTab: 'leaders' }); const z = __BD.controls().find((c) => c.label === 'leader-kael'); return z && { tap: z };"],
+  ['armory gear', "u.openScreen('armory', { armoryTab: 'gear' });"],
+  ...['economy', 'military', 'healing', 'world'].map((t) => [`archive ${t}`, `if (__BD.store.state.beacon.level >= 3) u.openScreen('archive', { archiveBranch: '${t}' });`]),
+  ['reveal x1', "u.playReveal([{ kind: 'leader', id: 'kael', rarity: 'legendary', result: 'new' }]);"],
+  ['reveal x10', "u.playReveal(['kael', 'lyra', 'jax', 'seren', 'vex', 'orin', 'nova', 'rook', 'dax', 'mira'].map((id) => ({ kind: 'leader', id, rarity: 'rare', result: 'dup', shards: 10 })));"],
+  ['reset modal', "u.openModal({ title: 'Reset all progress?', body: 'This permanently erases your base, troops, squads, leaders, gear and all resources. This can\\u2019t be undone.', buttons: [{ label: 'Cancel' }, { label: 'Reset', style: 'danger' }] });"],
+];

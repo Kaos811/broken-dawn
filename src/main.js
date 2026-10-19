@@ -39,18 +39,27 @@ export function hideLoader() {
 }
 const waitUi = setInterval(() => { if (game.scene.getScene('UI')?.panel) { clearInterval(waitUi); hideLoader(); } }, 50);
 
-// Rotation / resize: the layout height is picked from the aspect ratio at load. If it changes a lot
-// (phone rotated, window resized), save and reload so everything is laid out for the new shape.
-const layoutH = () => Math.round(GAME_WIDTH * Math.min(21 / 9, Math.max(16 / 9, window.innerHeight / Math.max(1, window.innerWidth))));
+// Rotation / resize. The layout height is picked from the aspect ratio at load. Mobile Safari's
+// toolbars change the visible height by ~80 CSS px as they show and hide while you play; that must
+// not reload the game: Scale.FIT refits the canvas (screens scroll inside their own area), so only
+// refresh. A real shape change (rotation or a width change) saves and reloads to lay out again.
+const viewSize = () => ({ w: window.visualViewport?.width ?? window.innerWidth, h: window.visualViewport?.height ?? window.innerHeight });
+const startSize = viewSize();
 let relayoutTimer = null;
 const onResize = () => {
+  game.scale.refresh();
   clearTimeout(relayoutTimer);
   relayoutTimer = setTimeout(() => {
-    if (Math.abs(layoutH() - GAME_HEIGHT) > 60) { store.save(); window.__BD_RELAYOUT = true; location.reload(); }
-  }, 600);
+    game.scale.refresh();
+    const v = viewSize();
+    const rotated = (v.w > v.h) !== (startSize.w > startSize.h);
+    const widthChanged = Math.abs(v.w - startSize.w) > startSize.w * 0.12;
+    if (rotated || widthChanged) { store.save(); window.__BD_RELAYOUT = true; location.reload(); }
+  }, 400);
 };
 window.addEventListener('resize', onResize);
 window.addEventListener('orientationchange', onResize);
+window.visualViewport?.addEventListener('resize', onResize);
 
 // Small debug/testing hook (used by the Playwright smoke test).
 window.__BD = {
@@ -102,6 +111,59 @@ window.__BD = {
     };
     ui.children.list.forEach(walk);
     return out;
+  },
+  // Layout check (stage 9c): everything visible and tappable sits on screen, inside the safe area and
+  // its own panel, and tap targets don't overlap. Returns a list of human-readable problems.
+  layoutIssues() {
+    const ui = game.scene.getScene('UI');
+    const H = GAME_HEIGHT, Wd = GAME_WIDTH, S = layout.SAFE;
+    const vis = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active || p.alpha < 0.05) return false; return true; };
+    const inScroll = (o) => { for (let p = o.parentContainer; p; p = p.parentContainer) if (p.isScrollBody) return p.scrollView; return null; };
+    const out = [];
+    const name = (o) => (o.type === 'Text' ? `"${o.text.replace(/\s+/g, ' ').slice(0, 28)}"` : o.parentContainer?.isButton ? `[${o.parentContainer.labelText.text.slice(0, 20)}]` : o.zoneName ? `<${o.zoneName}>` : o.type);
+    const T = 2; // px tolerance
+    const inside = (b, r) => b.left >= r.x - T && b.right <= r.x + r.w + T && b.top >= r.y - T && b.bottom <= r.y + r.h + T;
+    const check = (root, rect, label) => {
+      if (!root || !vis(root)) return;
+      const safe = { x: 0, y: S.top, w: Wd, h: H - S.top - S.bottom };
+      const items = [], taps = [];
+      const walk = (o) => {
+        if (!vis(o)) return;
+        const isText = o.type === 'Text' && o.text.trim();
+        const isTap = o.input?.enabled && !o.noLayoutCheck;
+        if (isText || isTap) {
+          const b = o.getBounds();
+          const big = b.width >= rect.w - 4 && b.height >= rect.h - 4; // dimmers / input blockers
+          if (!big && b.width > 0 && b.height > 0) {
+            const sv = inScroll(o);
+            if (sv) { if (b.left < sv.x - T || b.right > sv.x + sv.width + T) out.push(`${label}: ${name(o)} sticks out of the scroll area sideways`); }
+            else {
+              if (!inside(b, safe)) out.push(`${label}: ${name(o)} is outside the safe area (${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)})`);
+              else if (!inside(b, rect)) out.push(`${label}: ${name(o)} leaves its panel (${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)})`);
+            }
+            if (isTap && (o.parentContainer?.isButton || o.zoneName)) taps.push({ o, b, sv, btn: !!o.parentContainer?.isButton });
+          }
+        }
+        (o.list ?? []).forEach(walk);
+      };
+      walk(root);
+      // tap targets: two buttons must not overlap; a zone may sit fully behind a button (card + action)
+      for (let i = 0; i < taps.length; i++) for (let j = i + 1; j < taps.length; j++) {
+        const A = taps[i].b, B = taps[j].b;
+        const w = Math.min(A.right, B.right) - Math.max(A.left, B.left), h = Math.min(A.bottom, B.bottom) - Math.max(A.top, B.top);
+        if (w <= 4 || h <= 4) continue;
+        const contains = (P, Q) => P.left <= Q.left + T && P.right >= Q.right - T && P.top <= Q.top + T && P.bottom >= Q.bottom - T;
+        if (!(taps[i].btn && taps[j].btn) && (contains(A, B) || contains(B, A))) continue;
+        out.push(`${label}: tap targets overlap ${name(taps[i].o)} / ${name(taps[j].o)}`);
+      }
+    };
+    if (ui.reveal) check(ui.reveal, { x: 0, y: S.top, w: Wd, h: H - S.top - S.bottom }, 'reveal');
+    else if (ui.modal) check(ui.modal, ui.modal.panelRect ?? { x: 0, y: 0, w: Wd, h: H }, 'modal');
+    else {
+      if (ui.screen) { const a = ui.area; check(ui.screen.container, { x: a.x, y: a.y, w: a.w, h: a.h }, `screen ${ui.screen.id}`); }
+      if (ui.panel?.visible) { const r = ui.panelRect; check(ui.panel, { x: r.x, y: r.y, w: r.width, h: r.height }, 'building panel'); }
+    }
+    return [...new Set(out)];
   },
   // stage 5 test hooks
   audio,

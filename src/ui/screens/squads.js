@@ -70,7 +70,7 @@ function renderDetails(ui, c, a, api, st, y0) {
   card(ui, c, 16, y1, 688, 176, { stroke: 0x8a6a3a });
   const slot = (x, label, key, name, sub, color, onTap, zone) => {
     c.add(text(ui, x, y1 + 10, label, 16, '#e8c27a', { fontStyle: 'bold', letterSpacing: 2 }));
-    if (key) tile(ui, c, key, x, y1 + 34, 92, 116, { rim: color, fit: key.startsWith('leader') ? 'width' : 'width', imgH: 116 });
+    if (key) tile(ui, c, key, x, y1 + 34, 92, 116, { rim: color, fit: key.startsWith('leader') ? 'cover' : 'contain', imgH: 116 });
     else {
       const t = tile(ui, c, null, x, y1 + 34, 92, 116, { rim: SKIN.steel });
       t.fg.lineStyle(3, 0x56606f, 1).lineBetween(x + 46, y1 + 74, x + 46, y1 + 110).lineBetween(x + 28, y1 + 92, x + 64, y1 + 92);
@@ -256,7 +256,7 @@ export function gearPicker(ui, api, squadId, slot) {
         card(ui, c, x, y, w, 94, { state: sel ? 'selected' : 'normal', stroke: sel ? null : gid ? lerpC(RARITY[GEAR[gid].rarity].color, 0x000000, 0.2) : null, cut: 8 });
         if (gid) {
           const G = GEAR[gid];
-          tile(ui, c, gearTexture(gid), x + 10, y + 7, 80, 80, { rim: RARITY[G.rarity].color });
+          tile(ui, c, gearTexture(gid), x + 10, y + 7, 80, 80, { fit: 'contain', rim: RARITY[G.rarity].color });
           c.add(text(ui, x + 104, y + 12, G.name, 23, RARITY[G.rarity].hex, { fontStyle: 'bold' }));
           c.add(text(ui, x + 104, y + 50, `${RARITY[G.rarity].name} · ${fmtGearBuff(G)}`, 18, PALETTE.textDim));
           c.add(text(ui, x + w - 16, y + 34, free > 0 ? `${free} free` : 'all equipped', 18, free > 0 ? PALETTE.textCyan : '#ff8a95').setOrigin(1, 0));

@@ -189,7 +189,7 @@ function renderGear(ui, c, a, api, st, y0) {
     const col = k % 2, row = Math.floor(k / 2);
     const x = 16 + col * (CW + GAP), y = y0 + 34 + row * (CH + GAP);
     card(ui, c, x, y, CW, CH, { state: n ? 'normal' : 'locked', stroke: n ? lerpC(R.color, 0x000000, 0.3) : null, cut: 8 });
-    tile(ui, c, gearTexture(gid), x + 8, y + 8, 100, 100, { rim: n ? R.color : 0x3b4452, dim: !n });
+    tile(ui, c, gearTexture(gid), x + 8, y + 8, 100, 100, { fit: 'contain', rim: n ? R.color : 0x3b4452, dim: !n });
     c.add(text(ui, x + 116, y + 10, G.name, 20, n ? R.hex : '#5d6878', { fontStyle: 'bold' }));
     c.add(text(ui, x + 116, y + 38, `${R.name} ${G.slot}`, 15, n ? PALETTE.textDim : '#4a5260'));
     c.add(text(ui, x + 116, y + 60, fmtGearBuff(G), 16, n ? PALETTE.textCyan : '#4a5260'));
@@ -204,7 +204,7 @@ export function gearDetail(ui, api, gid) {
   api.overlay({
     title: G.name, h: 760,
     build: (c, r, close) => {
-      tile(ui, c, gearTexture(gid), r.x + 28, r.y + 86, 180, 180, { rim: R.color });
+      tile(ui, c, gearTexture(gid), r.x + 28, r.y + 86, 180, 180, { fit: 'contain', rim: R.color });
       c.add(text(ui, r.x + 230, r.y + 92, `${R.name.toUpperCase()} ${G.slot.toUpperCase()}`, 22, R.hex, { fontStyle: 'bold', letterSpacing: 2 }));
       c.add(text(ui, r.x + 230, r.y + 132, fmtGearBuff(G), 24, PALETTE.textCyan));
       c.add(text(ui, r.x + 230, r.y + 172, `Owned ${store.state.gear[gid]}  ·  Free ${store.gearFree(gid)}`, 21, PALETTE.text));

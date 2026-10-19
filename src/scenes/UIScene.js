@@ -6,6 +6,7 @@ import { buildingPower } from '../systems/power.js';
 import { text, fmt, fmtDuration, panelBg, button } from '../ui/widgets.js';
 import { SKIN, drawBar, drawCard, drawFrame, drawBadge, glyph, diamond, oct, lerpC } from '../ui/skin.js';
 import { statLine, priceTag, sectionHeader, tile } from '../ui/kit.js';
+import { installScrolling, scrollify } from '../ui/scroll.js';
 import { renderTroops } from '../ui/screens/troops.js';
 import { renderSquads } from '../ui/screens/squads.js';
 import { renderArmory, resultTag, drawCoreIcon } from '../ui/screens/armory.js';
@@ -29,6 +30,7 @@ export default class UIScene extends Phaser.Scene {
   constructor() { super('UI'); }
 
   create() {
+    installScrolling(this);
     this.panelOpenFor = null;
     this.modal = null;
     this.screen = null;        // { id, container, dyn: [fn] }
@@ -697,6 +699,7 @@ export default class UIScene extends Phaser.Scene {
     c.sheetRect = new Phaser.Geom.Rectangle(x, y, w, h);
     c.alpha = 0; c.y = 24;
     this.tweens.add({ targets: c, alpha: 1, y: 0, duration: 160, ease: 'Cubic.easeOut' });
+    c.panelRect = { x, y, w, h };
     this.modal = c;
     this.activeTab = 'more'; this.drawNav();
     audio.play('open');
@@ -719,6 +722,7 @@ export default class UIScene extends Phaser.Scene {
       this.screen?.container.destroy();
       const c = this.add.container(0, 0).setDepth(50);
       this.screen = { id, container: c, dyn: [] };
+      for (const k of Object.keys(this.scrollPos)) if (k.startsWith(`${id}:`)) delete this.scrollPos[k];
       if (id !== 'squads') this.screenState.edit = null;
       // transition: quick fade (no movement, so taps always land where the controls are drawn)
       c.alpha = 0; this.tweens.add({ targets: c, alpha: 1, duration: 140, ease: 'Quad.easeOut' });
@@ -745,6 +749,8 @@ export default class UIScene extends Phaser.Scene {
     this.screen.dyn = [];
     const api = this.screenApi();
     SCREENS[this.screen.id](this, c, a, api, this.screenState);
+    const st = this.screenState;
+    scrollify(this, c, 2, { x: a.x, y: a.y, w: a.w, h: a.h }, `${this.screen.id}:${st.armoryTab ?? ''}:${st.archiveBranch ?? ''}:${st.squadId ?? ''}:${st.edit ? 'edit' : ''}`);
     this.screenDirty = false;
     this.flushInput();
   }
@@ -845,10 +851,15 @@ export default class UIScene extends Phaser.Scene {
     }
     c.add(button(this, x + w - 40, y + 40, 56, 56, '✕', () => this.closeModal(true), { style: 'ghost', size: 26 }));
     const rect = { x, y, w, h };
+    const keep = c.list.length;
     build(c, rect, () => this.closeModal(true));
+    // tall sheets on short phones: everything below the title scrolls above the Close button
+    const top = title ? y + 78 : y + 8, bot = closeLabel ? y + h - 98 : y + h - 8;
+    scrollify(this, c, keep, { x: x + 4, y: top, w: w - 8, h: bot - top }, `overlay:${title ?? ''}`);
     if (closeLabel) c.add(button(this, x + w / 2, y + h - 54, 260, 70, closeLabel, () => this.closeModal(true), { style: 'ghost', size: 26 }));
     c.alpha = 0;
     this.tweens.add({ targets: c, alpha: 1, duration: 120 });
+    c.panelRect = rect;
     this.modal = c;
     this.flushInput();
     return c;
@@ -1307,13 +1318,17 @@ export default class UIScene extends Phaser.Scene {
     this.closeModal();
     const c = this.add.container(0, 0).setDepth(100);
     const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x020305, 0.7).setInteractive();
-    const w = 620, h = 420, x = (W - w) / 2, y = (H - h) / 2 - 40;
+    const w = 620, x = (W - w) / 2;
+    const t = text(this, x + 32, 0, title, 36, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
+    if (t.width > w - 64) t.setScale((w - 64) / t.width);
+    const b = text(this, x + 32, 0, body, 23, PALETTE.text, { wordWrap: { width: w - 64 }, lineSpacing: 6 });
+    // grow with the message (long bodies were cut off by the fixed 420 px sheet)
+    const h = Math.min(H - 2 * SAFE.top - 40, Math.max(420, 106 + b.height + 140)), y = Math.max(SAFE.top + 20, (H - h) / 2 - 40);
+    t.setY(y + 30); b.setY(y + 106);
     const g = this.add.graphics();
     panelBg(g, x, y, w, h);
     for (let k = 0; k < 5; k++) g.lineStyle(2, SKIN.gold, 0.7 - k * 0.13).lineBetween(x + 30 + k * (w - 60) / 5, y + 86, x + 30 + (k + 1) * (w - 60) / 5, y + 86);
     diamond(g, x + 30, y + 86, 5);
-    const t = text(this, x + 32, y + 30, title, 36, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
-    const b = text(this, x + 32, y + 106, body, 23, PALETTE.text, { wordWrap: { width: w - 64 }, lineSpacing: 6 });
     c.add([dim, g, t, b]);
     const bw = (w - 64 - (buttons.length - 1) * 20) / buttons.length;
     buttons.forEach((btn, i) => {
@@ -1324,6 +1339,7 @@ export default class UIScene extends Phaser.Scene {
     });
     c.alpha = 0;
     this.tweens.add({ targets: c, alpha: 1, duration: 140 });
+    c.panelRect = { x, y, w, h };
     this.modal = c;
     if (tab) { this.activeTab = tab; this.drawNav(); }
   }

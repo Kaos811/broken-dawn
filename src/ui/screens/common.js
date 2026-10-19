@@ -79,7 +79,7 @@ export function tapZone(ui, c, x, y, w, h, onTap, name) {
   let down = false;
   hit.on('pointerdown', () => { down = true; });
   hit.on('pointerout', () => { down = false; });
-  hit.on('pointerup', () => { if (down) { audio.play(hit.zoneDisabled ? 'error' : 'tap'); ui.time.delayedCall(0, onTap); } down = false; });
+  hit.on('pointerup', () => { if (down && !ui.scrollDragged) { audio.play(hit.zoneDisabled ? 'error' : 'tap'); ui.time.delayedCall(0, onTap); } down = false; });
   hit.zoneName = name;
   hit.zoneDisabled = false;
   c.add(hit);
