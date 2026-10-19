@@ -31,11 +31,15 @@ function buildingPos(ui, id) {
   const p = base.worldToScreen(img.x, img.y - img.displayHeight * 0.35);
   const r = Math.max(50, img.displayWidth * base.cameras.main.zoom * 0.35);
   const H = ui.scale.height;
-  if (p.y > 360 && p.y < H - 520 && p.x > 60 && p.x < W - 60) return { x: p.x, y: p.y, r };
-  // off-screen (or under the HUD/panel): glide the camera over to it, then point
+  // stay clear of the HUD side columns (queue / quick buttons, ~100 px wide each) and the bottom panel
+  const clear = p.y > 360 && p.y < H - 520 && p.x > 150 && p.x < W - 150;
+  if (clear) { base._tutPan = null; return { x: p.x, y: p.y, r }; }
+  // off-screen or under the HUD/panel: glide the camera over to it first, then point
   const cam = base.cameras.main;
-  if (!cam.panEffect.isRunning && (p.y < 200 || p.y > H - 140 || p.x < 20 || p.x > W - 20)) cam.pan(img.x, img.y - img.displayHeight * 0.3, 450, 'Sine.easeInOut');
-  return p.y > 200 && p.y < H - 140 && p.x > 20 && p.x < W - 20 ? { x: p.x, y: p.y, r } : null;
+  if (cam.panEffect.isRunning) return null;
+  if (base._tutPan !== id) { base._tutPan = id; base.focus(id, 450); return null; }
+  // already glided once (the map edge can stop the camera short): point if it's at least tappable
+  return p.y > 220 && p.y < H - 140 && p.x > 130 && p.x < W - 130 ? { x: p.x, y: p.y, r } : null;
 }
 const goBase = (ui) => (ui.worldMode || ui.screen ? tab(ui, 'base') : null);
 const readyTroops = () => TROOP_IDS.reduce((n, t) => n + store.readyCount(t), 0);
@@ -118,9 +122,10 @@ export const STEPS = [
   },
   {
     id: 'research', title: 'Research',
-    body: 'The Archive researches permanent bonuses. It unseals at Beacon Lv 3. Tap it to take a look.',
-    done: (ui) => ui.panelOpenFor === 'archive' || ui.screen?.id === 'archive',
-    target: (ui) => goBase(ui) ?? (ui.panelOpenFor ? null : buildingPos(ui, 'archive')),
+    body: 'Research gives permanent bonuses. It happens in the Archive, which appears at Beacon Lv 3. Tap the Research button on the left.',
+    enter: (ui, t) => { t.mark = ui.queueTaps?.research ?? 0; },
+    done: (ui, t) => (ui.queueTaps?.research ?? 0) > (t.mark ?? Infinity) || ui.screen?.id === 'archive',
+    target: (ui) => goBase(ui) ?? (ui.panelOpenFor ? null : findButton(ui, (o) => o.chip === 'q-research')),
   },
 ];
 

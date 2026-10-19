@@ -42,6 +42,8 @@ export default class UIScene extends Phaser.Scene {
     this.createNav();
     this.createPanel();
     this.createBanner();
+    this.createSideColumns();
+    this.createPlaceChip();
     this.worldMode = false;
     this.replay = null;
     this.worldHud = createWorldHud(this, TOP_H, H);
@@ -60,7 +62,8 @@ export default class UIScene extends Phaser.Scene {
     const ev = this.game.events;
     ev.on('base:select', (id) => this.openPanel(id), this);
     ev.on('base:deselect', () => this.closePanel(false), this);
-    ev.on('base:moveMode', (id) => this.showBanner(id), this);
+    ev.on('base:moveMode', (id, o) => this.showBanner(id, o), this);
+    ev.on('base:placeTarget', (valid) => this.bannerPlace?.setEnabled(valid), this);
     ev.on('toast', (msg) => this.toast(msg), this);
     ev.on('world:select', (id) => this.worldHud.openSheet(id), this);
     ev.on('world:deselect', () => this.worldHud.closeSheet(), this);
@@ -96,6 +99,8 @@ export default class UIScene extends Phaser.Scene {
       store.on('researchStart', () => { this.refreshPanel(); audio.play('build'); }),
       store.on('healed', (h) => { const n = Object.values(h).reduce((a, b) => a + b, 0); if (n && !this.screen) this.bumpTroops = true; if (n && !store.simulating) audio.play('heal', { gap: 600 }); }),
       store.on('march', () => audio.play('march')),
+      store.on('unlocked', (id) => this.onUnlocked(id)),
+      store.on('placed', (id) => { audio.play('levelup'); this.toast(`${BUILDINGS[id].name} built. Tap it to open.`, 2000); }),
     ];
     this.events.once('shutdown', () => this.unsubs.forEach((u) => u()));
 
@@ -130,64 +135,224 @@ export default class UIScene extends Phaser.Scene {
     if (this.tutorial?.blocks(x, y)) return true;
     if (this.panel.visible && Phaser.Geom.Rectangle.Contains(this.panelRect, x, y)) return true;
     if (this.banner.visible && Phaser.Geom.Rectangle.Contains(this.bannerRect, x, y)) return true;
+    if (this.placeChip?.visible && Phaser.Geom.Rectangle.Contains(this.placeChipRect, x, y)) return true;
+    if (this.sideBlocks(x, y)) return true;
     return false;
   }
 
   // ------------------------------------------------------------ HUD -----
   createTopBar() {
     const g = this.add.graphics();
-    g.fillGradientStyle(0x0b0e13, 0x0b0e13, 0x0b0e13, 0x0b0e13, 0.98, 0.98, 0.85, 0.85).fillRect(0, 0, W, TOP_H);
+    g.fillGradientStyle(0x0b0e13, 0x0b0e13, 0x0b0e13, 0x0b0e13, 0.97, 0.97, 0.88, 0.88).fillRect(0, 0, W, TOP_H);
     g.lineStyle(2, PALETTE.gold, 0.6).lineBetween(0, TOP_H, W, TOP_H);
     g.lineStyle(6, PALETTE.gold, 0.12).lineBetween(0, TOP_H, W, TOP_H);
-    g.lineStyle(1, PALETTE.metalEdge, 0.5).lineBetween(14, 142, W - 14, 142);
     this.add.rectangle(W / 2, TOP_H / 2, W, TOP_H, 0, 0.001).setInteractive(); // swallow taps
 
-    text(this, 20, 12, 'BROKEN DAWN', 18, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 4 });
-    text(this, W - 20, 12, 'STAGE 5 · POLISH', 16, PALETTE.textDim, { letterSpacing: 2 }).setOrigin(1, 0);
+    // Commander avatar (tap -> Base Power breakdown) with the Beacon level as the commander badge
+    const ax = 66, ay = 66, ar = 52;
+    g.fillStyle(0x05070a, 1).fillCircle(ax, ay, ar + 6);
+    const av = this.add.image(ax, ay, 'art-avatar').setDisplaySize(ar * 2, ar * 2);
+    g.lineStyle(5, PALETTE.gold, 1).strokeCircle(ax, ay, ar + 3);
+    this.hudFront = this.add.graphics();
+    this.hudFront.fillStyle(PALETTE.gold, 1).fillCircle(ax + 40, ay + 42, 18).lineStyle(3, 0x2a1a06, 1).strokeCircle(ax + 40, ay + 42, 18);
+    this.avatarLv = text(this, ax + 40, ay + 42, '1', 18, '#140d04', { fontStyle: 'bold' }).setOrigin(0.5);
+    this.avatar = av;
+    const avHit = this.add.circle(ax, ay, ar + 6, 0, 0.001).setInteractive({ useHandCursor: true });
+    avHit.on('pointerup', () => this.openPowerBreakdown());
 
-    // Energy pill
-    const pill = (x, w) => { panelBg(g, x, 42, w, 96, { accent: null, cut: 12, fill: 0x141922 }); };
-    pill(14, 216); pill(238, 220); pill(466, 240);
-    g.fillStyle(PALETTE.cyan, 1).fillPoints([{ x: 44, y: 58 }, { x: 30, y: 92 }, { x: 42, y: 92 }, { x: 36, y: 122 }, { x: 56, y: 82 }, { x: 44, y: 82 }, { x: 52, y: 58 }], true);
-    text(this, 70, 52, 'ENERGY', 15, PALETTE.textDim, { letterSpacing: 2 });
-    this.energyText = text(this, 70, 70, '0', 34, PALETTE.text, { fontStyle: 'bold' });
-    this.rateText = text(this, 70, 110, '+1.0/s', 17, PALETTE.textCyan);
-
-    // Base Power pill
-    g.fillStyle(PALETTE.gold, 1).fillPoints([{ x: 266, y: 60 }, { x: 290, y: 66 }, { x: 290, y: 92 }, { x: 278, y: 118 }, { x: 266, y: 92 }], true);
-    g.fillStyle(PALETTE.gold, 0.6).fillPoints([{ x: 266, y: 60 }, { x: 266, y: 92 }, { x: 278, y: 118 }, { x: 254, y: 92 }, { x: 254, y: 66 }], true);
-    text(this, 302, 52, 'BASE POWER', 15, PALETTE.textDim, { letterSpacing: 2 });
-    this.powerText = text(this, 302, 70, '0', 34, PALETTE.textGold, { fontStyle: 'bold' });
-    this.powerSub = text(this, 302, 110, 'Bldg 0 · Troops 0', 17, PALETTE.textDim);
-
-    // Beacon pill (tappable -> beacon info)
-    text(this, 484, 52, 'BEACON', 15, PALETTE.textDim, { letterSpacing: 2 });
-    this.beaconLv = text(this, 690, 50, 'Lv 1', 20, PALETTE.textGold, { fontStyle: 'bold' }).setOrigin(1, 0);
-    this.chargeBar = this.add.graphics();
-    this.chargeText = text(this, 484, 108, 'Charge 0%', 17, PALETTE.textDim);
-    const beaconHit = this.add.rectangle(466 + 120, 90, 240, 96, 0, 0.001).setInteractive({ useHandCursor: true });
-    beaconHit.on('pointerup', () => { this.closeScreen(); this.game.events.emit('ui:focusBeacon'); });
-    const powerHit = this.add.rectangle(238 + 110, 90, 220, 96, 0, 0.001).setInteractive({ useHandCursor: true });
+    // Commander + Base Power (tap -> breakdown)
+    text(this, 138, 14, 'COMMANDER', 15, PALETTE.textDim, { letterSpacing: 3 });
+    g.fillStyle(PALETTE.gold, 1).fillPoints([{ x: 152, y: 46 }, { x: 170, y: 51 }, { x: 170, y: 72 }, { x: 161, y: 92 }, { x: 152, y: 72 }], true);
+    g.fillStyle(PALETTE.gold, 0.6).fillPoints([{ x: 152, y: 46 }, { x: 152, y: 72 }, { x: 161, y: 92 }, { x: 142, y: 72 }, { x: 142, y: 51 }], true);
+    this.powerText = text(this, 182, 40, '0', 40, PALETTE.textGold, { fontStyle: 'bold' });
+    text(this, 182, 30, 'POWER', 13, PALETTE.textGold, { letterSpacing: 3 }).setVisible(false);
+    this.powerSub = text(this, 140, 98, 'Bldg 0 · Troops 0', 16, PALETTE.textDim);
+    const powerHit = this.add.rectangle(290, 70, 320, 112, 0, 0.001).setInteractive({ useHandCursor: true });
     powerHit.on('pointerup', () => this.openPowerBreakdown());
 
-    // Resource row: Beacon Cores (tap -> rewards), Shards, Alloy, Troops (+ training indicator)
-    const ry = 146;
-    drawCoreIcon(g, 32, ry + 17, 12);
-    this.coreText = text(this, 54, ry + 3, '0', 22, CORES.hex, { fontStyle: 'bold' });
+    // Beacon pill (tappable -> beacon info)
+    panelBg(g, 466, 14, 240, 104, { accent: null, cut: 12, fill: 0x141922 });
+    text(this, 484, 24, 'BEACON', 15, PALETTE.textDim, { letterSpacing: 2 });
+    this.beaconLv = text(this, 690, 22, 'Lv 1', 20, PALETTE.textGold, { fontStyle: 'bold' }).setOrigin(1, 0);
+    this.chargeBar = this.add.graphics();
+    this.chargeText = text(this, 484, 86, 'Charge 0%', 17, PALETTE.textDim);
+    const beaconHit = this.add.rectangle(466 + 120, 66, 240, 104, 0, 0.001).setInteractive({ useHandCursor: true });
+    beaconHit.on('pointerup', () => { this.closeScreen(); this.hideWorld(); this.game.events.emit('ui:focus', BEACON.id); this.game.events.emit('ui:focusBeacon'); });
+
+    // Resource row: Energy (+rate), Beacon Cores (tap -> rewards), Shards, Alloy, Troops (+ training)
+    const ry = 130, rh = 44, cy = ry + rh / 2;
+    const slots = [['energy', 8, 168], ['cores', 182, 118], ['shards', 306, 128], ['alloy', 440, 112], ['troops', 558, 154]];
+    const X = {};
+    for (const [id, x, w] of slots) {
+      g.fillStyle(0x05070a, 0.85).fillRoundedRect(x, ry, w, rh, 14);
+      g.lineStyle(1.5, PALETTE.metalEdge, 0.7).strokeRoundedRect(x, ry, w, rh, 14);
+      X[id] = { x, w };
+    }
+    const ex = X.energy.x + 22;
+    g.fillStyle(PALETTE.cyan, 1).fillPoints([{ x: ex + 4, y: cy - 16 }, { x: ex - 7, y: cy + 2 }, { x: ex, y: cy + 2 }, { x: ex - 4, y: cy + 17 }, { x: ex + 9, y: cy - 4 }, { x: ex + 2, y: cy - 4 }, { x: ex + 8, y: cy - 16 }], true);
+    this.energyText = text(this, ex + 18, cy, '0', 22, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    this.rateText = text(this, X.energy.x + X.energy.w - 10, cy, '+1.0/s', 14, PALETTE.textCyan).setOrigin(1, 0.5);
+    drawCoreIcon(g, X.cores.x + 22, cy, 12);
+    this.coreText = text(this, X.cores.x + 42, cy, '0', 22, CORES.hex, { fontStyle: 'bold' }).setOrigin(0, 0.5);
     this.coreBadge = this.add.graphics();
-    const coreHit = this.add.rectangle(85, ry + 17, 160, 40, 0, 0.001).setInteractive({ useHandCursor: true });
+    const coreHit = this.add.rectangle(X.cores.x + X.cores.w / 2, cy, X.cores.w, rh, 0, 0.001).setInteractive({ useHandCursor: true });
     coreHit.on('pointerup', () => this.openRewards());
     this.coreHit = coreHit;
-    const sx = 186;
-    g.fillStyle(0xc58aff, 1).fillPoints([{ x: sx, y: ry + 2 }, { x: sx + 10, y: ry + 16 }, { x: sx, y: ry + 30 }, { x: sx - 10, y: ry + 16 }], true);
-    this.shardText = text(this, sx + 20, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
-    const ax = 348;
-    g.fillStyle(0x9fb4c8, 1).fillPoints([{ x: ax, y: ry + 4 }, { x: ax + 12, y: ry + 10 }, { x: ax + 12, y: ry + 24 }, { x: ax, y: ry + 30 }, { x: ax - 12, y: ry + 24 }, { x: ax - 12, y: ry + 10 }], true);
-    this.alloyText = text(this, ax + 22, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
-    const tx = 492;
-    g.lineStyle(3, PALETTE.blue, 1).strokeCircle(tx, ry + 11, 7);
-    g.strokePoints([{ x: tx - 12, y: ry + 32 }, { x: tx - 9, y: ry + 22 }, { x: tx + 9, y: ry + 22 }, { x: tx + 12, y: ry + 32 }], false);
-    this.troopText = text(this, tx + 22, ry + 3, '0', 22, PALETTE.text, { fontStyle: 'bold' });
+    const sx = X.shards.x + 22;
+    g.fillStyle(0xc58aff, 1).fillPoints([{ x: sx, y: cy - 14 }, { x: sx + 10, y: cy }, { x: sx, y: cy + 14 }, { x: sx - 10, y: cy }], true);
+    this.shardText = text(this, sx + 20, cy, '0', 22, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    const axx = X.alloy.x + 24;
+    g.fillStyle(0x9fb4c8, 1).fillPoints([{ x: axx, y: cy - 13 }, { x: axx + 12, y: cy - 7 }, { x: axx + 12, y: cy + 7 }, { x: axx, y: cy + 13 }, { x: axx - 12, y: cy + 7 }, { x: axx - 12, y: cy - 7 }], true);
+    this.alloyText = text(this, axx + 20, cy, '0', 22, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    const tx = X.troops.x + 22;
+    g.lineStyle(3, PALETTE.blue, 1).strokeCircle(tx, cy - 6, 6);
+    g.strokePoints([{ x: tx - 11, y: cy + 14 }, { x: tx - 8, y: cy + 5 }, { x: tx + 8, y: cy + 5 }, { x: tx + 11, y: cy + 14 }], false);
+    this.troopText = text(this, tx + 20, cy, '0', 21, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    this.resX = X;
+  }
+
+  // Round HUD button (queue / quick buttons). Exposes the same shape as widgets.button for tests,
+  // the tutorial pointer and __BD.controls().
+  roundButton(x, y, r, caption, chip, draw, onClick, ring = PALETTE.gold) {
+    const c = this.add.container(x, y).setDepth(6);
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, 0.45).fillCircle(3, 5, r + 2);
+    g.fillStyle(0x0b0e13, 0.94).fillCircle(0, 0, r);
+    g.lineStyle(3, ring, 0.95).strokeCircle(0, 0, r);
+    g.lineStyle(1.5, 0xffffff, 0.12).strokeCircle(0, 0, r - 6);
+    const icon = this.add.graphics();
+    draw(icon, ring);
+    const arc = this.add.graphics();
+    const cap = text(this, 0, r + 3, caption, 14, PALETTE.text, { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5, 0);
+    const timer = text(this, 0, r + 30, '', 14, '#ffffff', { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5);
+    const badge = this.add.graphics();
+    const hit = this.add.circle(0, 0, r + 4, 0, 0.001).setInteractive({ useHandCursor: true });
+    c.add([g, arc, icon, timer, cap, badge, hit]);
+    let pressed = false;
+    hit.on('pointerdown', () => { pressed = true; this.tweens.add({ targets: c, scale: 0.92, duration: 70 }); audio.play('tap'); audio.haptic(8); });
+    hit.on('pointerout', () => { pressed = false; this.tweens.add({ targets: c, scale: 1, duration: 120 }); });
+    hit.on('pointerup', () => { this.tweens.add({ targets: c, scale: 1, duration: 200, ease: 'Back.easeOut' }); if (pressed) this.time.delayedCall(0, onClick); pressed = false; });
+    Object.assign(c, { isButton: true, hit, labelText: cap, chip, isEnabled: () => true, r, arc, timer, badge, ring });
+    return c;
+  }
+
+  // Left: queue buttons (builder, research, training, healing). Right: quick buttons.
+  createSideColumns() {
+    const r = 36, xl = 52, xr = W - 52, y0 = TOP_H + 116, dy = 114;
+    const ic = {
+      builder: (g, col) => { g.fillStyle(col, 1).fillRect(-14, -16, 22, 10).fillRect(-4, -8, 6, 26); g.fillRect(8, -14, 6, 6); },
+      research: (g, col) => { g.lineStyle(3, col, 1).strokeCircle(0, -2, 14); g.strokeEllipse(0, -2, 34, 12); g.fillStyle(col, 1).fillCircle(0, -2, 4); },
+      training: (g, col) => { g.lineStyle(3, col, 1).strokeCircle(0, -10, 7); g.strokePoints([{ x: -13, y: 14 }, { x: -9, y: 2 }, { x: 9, y: 2 }, { x: 13, y: 14 }], false); },
+      healing: (g, col) => { g.fillStyle(col, 1).fillRect(-5, -16, 10, 28).fillRect(-14, -7, 28, 10); },
+      hunt: (g, col) => { g.lineStyle(3, col, 1).strokeCircle(0, -2, 16); g.lineBetween(-22, -2, -10, -2); g.lineBetween(10, -2, 22, -2); g.lineBetween(0, -24, 0, -12); g.lineBetween(0, 8, 0, 20); g.fillStyle(col, 1).fillCircle(0, -2, 4); },
+      rewards: (g) => { drawCoreIcon(g, 0, -2, 16); },
+      armory: (g, col) => { g.lineStyle(3, col, 1).strokePoints([{ x: 0, y: -22 }, { x: 14, y: -4 }, { x: 0, y: 16 }, { x: -14, y: -4 }], true); g.fillStyle(col, 0.5).fillPoints([{ x: 0, y: -14 }, { x: 7, y: -4 }, { x: 0, y: 7 }, { x: -7, y: -4 }], true); },
+      events: (g, col) => { g.lineStyle(3, col, 1).strokeRect(-14, -14, 28, 26); g.lineBetween(-14, -5, 14, -5); g.fillStyle(col, 1).fillRect(-8, -20, 4, 9).fillRect(4, -20, 4, 9); },
+    };
+    this.queueBtns = {
+      builder: this.roundButton(xl, y0, r, 'Builder', 'q-builder', ic.builder, () => this.onQueue('builder'), PALETTE.gold),
+      research: this.roundButton(xl, y0 + dy, r, 'Research', 'q-research', ic.research, () => this.onQueue('research'), 0xb58cff),
+      training: this.roundButton(xl, y0 + dy * 2, r, 'Training', 'q-training', ic.training, () => this.onQueue('training'), PALETTE.blue),
+      healing: this.roundButton(xl, y0 + dy * 3, r, 'Healing', 'q-healing', ic.healing, () => this.onQueue('healing'), 0x4dff9a),
+    };
+    this.quickBtns = {
+      hunt: this.roundButton(xr, y0, r, 'Hunt', 'k-hunt', ic.hunt, () => { this.closeModal(); this.closeScreen(); this.showWorld(); }, 0xff7a1a),
+      rewards: this.roundButton(xr, y0 + dy, r, 'Rewards', 'k-rewards', ic.rewards, () => this.openRewards(), CORES.color),
+      armory: this.roundButton(xr, y0 + dy * 2, r, 'Armory', 'k-armory', ic.armory, () => this.openScreen('armory'), PALETTE.cyan),
+      events: this.roundButton(xr, y0 + dy * 3, r, 'Events', 'k-events', ic.events, () => this.toast('Events are coming soon, Commander.'), 0x8a96a8),
+    };
+    this.sideBtns = [...Object.values(this.queueBtns), ...Object.values(this.quickBtns)];
+    this.queueTaps = {};
+  }
+  sideVisible() { return !this.worldMode; }
+  sideBlocks(x, y) {
+    if (!this.sideVisible()) return false;
+    return this.sideBtns.some((b) => b.visible && (x - b.x) ** 2 + (y - b.y) ** 2 <= (b.r + 8) ** 2);
+  }
+
+  // Queue buttons jump to the matching screen (or explain why there's nothing there yet).
+  onQueue(kind) {
+    this.queueTaps[kind] = (this.queueTaps[kind] ?? 0) + 1;
+    this.closeReplay?.();
+    if (kind === 'builder') {
+      const j = store.state.construction[0];
+      this.closeModal(); this.closeScreen(); this.hideWorld();
+      if (!j) { this.toast('Builder idle: tap a building, then Upgrade.'); return; }
+      this.game.events.emit('ui:focus', j.id);
+      if (j.id === BEACON.id) this.game.events.emit('ui:focusBeacon');
+      else this.game.events.emit('base:select', j.id), this.scene.get('Base').select(j.id);
+      return;
+    }
+    if (kind === 'research') {
+      if (!store.archiveUnlocked()) { this.toast(`Research happens in the Archive. It appears on your base at Beacon Lv ${BUILDINGS.archive.unlockBeacon}.`, 2800); return; }
+      if (!store.isPlaced('archive')) { this.closeModal(); this.closeScreen(); this.hideWorld(); this.startPlacement('archive'); return; }
+      this.openScreen('archive');
+      return;
+    }
+    if (kind === 'training') { this.openScreen('troops'); return; }
+    if (kind === 'healing') { this.openScreen('infirmary'); }
+  }
+
+  refreshSide() {
+    const vis = this.sideVisible();
+    for (const b of this.sideBtns) b.setVisible(vis);
+    if (!vis) return;
+    const s = store.state;
+    const setQ = (b, label, pct, color = '#ffffff') => {
+      b.timer.setText(label).setColor(color);
+      b.arc.clear();
+      if (pct != null) {
+        b.arc.lineStyle(6, 0x05070a, 0.9).beginPath().arc(0, 0, b.r + 6, 0, Math.PI * 2).strokePath();
+        b.arc.lineStyle(5, b.ring, 1).beginPath().arc(0, 0, b.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, pct)).strokePath();
+      }
+    };
+    const j = s.construction[0];
+    setQ(this.queueBtns.builder, j ? fmtClock(j.total - j.progress) : 'Idle', j ? j.progress / j.total : null, j ? PALETTE.textGold : PALETTE.textDim);
+    const rj = store.researchJob();
+    if (!store.archiveUnlocked()) setQ(this.queueBtns.research, `Beacon ${BUILDINGS.archive.unlockBeacon}`, null, PALETTE.textDim);
+    else if (!store.isPlaced('archive')) setQ(this.queueBtns.research, 'Build!', null, PALETTE.textGold);
+    else setQ(this.queueBtns.research, rj ? fmtClock(store.researchLeft()) : 'Idle', rj ? rj.progress / rj.total : null, rj ? '#d9c2ff' : PALETTE.textDim);
+    const q = store.queuedUnits();
+    setQ(this.queueBtns.training, q ? fmtClock(store.trainingSecondsLeft()) : 'Idle', null, q ? '#a8c8ff' : PALETTE.textDim);
+    const hq = s.infirmary.queue.length;
+    const wounded = store.woundedTotal();
+    setQ(this.queueBtns.healing, hq ? fmtClock(store.healQueueSeconds()) : (wounded ? `${wounded} hurt` : 'Idle'), null, hq ? '#a8ffcc' : (wounded ? '#ff8a95' : PALETTE.textDim));
+    for (const b of Object.values(this.quickBtns)) b.timer.setText('');
+    const rb = this.quickBtns.rewards.badge; rb.clear();
+    const ready = store.rewardsReady();
+    if (ready) { rb.fillStyle(0xff3355, 1).fillCircle(26, -26, 12).lineStyle(2, 0xffffff, 0.9).strokeCircle(26, -26, 12); }
+    this.quickBtns.rewards.timer.setText(ready ? `${ready}` : '').setPosition(26, -26);
+  }
+
+  // ------------------------------------------- new buildings: placement -----
+  // Gated buildings stay hidden until unlocked. On unlock the player is told and dropped into
+  // placement mode; if they postpone it, a "New building" chip under the top bar offers it again.
+  createPlaceChip() {
+    const c = this.placeChip = this.add.container(W / 2, TOP_H + 44).setDepth(8).setVisible(false);
+    this.placeChipBtn = button(this, 0, 0, 360, 62, '', () => { const id = store.pendingPlacements()[0]; if (id) this.startPlacement(id); }, { style: 'gold', size: 22 });
+    this.placeChipBtn.chip = 'place-new';
+    c.add(this.placeChipBtn);
+    this.placeChipRect = new Phaser.Geom.Rectangle(W / 2 - 180, TOP_H + 13, 360, 62);
+  }
+  startPlacement(id) {
+    this.closePanel(true);
+    this.closeModal();
+    this.closeScreen();
+    this.hideWorld();
+    this.game.events.emit('ui:place', id);
+  }
+  onUnlocked(id) {
+    audio.play('reward'); audio.haptic([20, 40, 20]);
+    const canNow = !this.screen && !this.modal && !this.reveal && !this.replay && !this.worldMode;
+    this.toast(`${BUILDINGS[id].name} unlocked! ${canNow ? 'Choose a spot and tap Place.' : 'Build it from the Base view.'}`, 3200);
+    if (canNow) this.time.delayedCall(300, () => { if (store.pendingPlacements().includes(id) && !this.scene.get('Base').placeId) this.startPlacement(id); });
+  }
+  refreshPlaceChip() {
+    const pend = store.pendingPlacements();
+    const base = this.scene.get('Base');
+    const show = pend.length > 0 && !this.worldMode && !this.screen && !base?.moveId;
+    this.placeChip.setVisible(show);
+    if (show) this.placeChipBtn.setLabel(`🏗  New: build the ${BUILDINGS[pend[0]].name}`);
   }
 
   createNav() {
@@ -483,7 +648,7 @@ export default class UIScene extends Phaser.Scene {
       'BUILDING POWER',
       `  Beacon Relay  Lv ${s.beacon.level}:  +${buildingPower(BEACON.id, s.beacon.level)}`,
       ...Object.keys(BUILDINGS).map((id) => (BUILDINGS[id].unlockBeacon && s.beacon.level < BUILDINGS[id].unlockBeacon
-        ? `  ${BUILDINGS[id].name}:  sealed until Beacon Lv ${BUILDINGS[id].unlockBeacon}`
+        ? `  ${BUILDINGS[id].name}:  unlocks at Beacon Lv ${BUILDINGS[id].unlockBeacon}`
         : `  ${BUILDINGS[id].name}  Lv ${s.buildings[id].level}:  +${buildingPower(id, s.buildings[id].level)}`)),
       '',
       'TROOP POWER  (T1 1 · T2 2 · T3 4 per soldier, +10 per squad level above 1)',
@@ -675,13 +840,22 @@ export default class UIScene extends Phaser.Scene {
     panelBg(g, x, y, w, h, { accent: PALETTE.cyan, stroke: PALETTE.cyan, fill: 0x0c1a1f });
     const block = this.add.rectangle(x + w / 2, y + h / 2, w, h, 0, 0.001).setInteractive();
     this.bannerText = text(this, x + 22, y + 14, '', 23, PALETTE.textCyan, { fontStyle: 'bold' });
-    const sub = text(this, x + 22, y + 46, 'Drag it onto open platform tiles', 18, PALETTE.textDim);
-    const done = button(this, x + w - 80, y + h / 2, 130, 58, 'Done', () => this.game.events.emit('ui:moveDone'), { style: 'cyan', size: 24 });
-    c.add([g, block, this.bannerText, sub, done]);
+    this.bannerSub = text(this, x + 22, y + 46, 'Drag it onto open ground', 18, PALETTE.textDim);
+    this.bannerDone = button(this, x + w - 80, y + h / 2, 130, 58, 'Done', () => this.game.events.emit('ui:moveDone'), { style: 'cyan', size: 24 });
+    this.bannerPlace = button(this, x + w - 80, y + h / 2, 130, 58, 'Place', () => this.game.events.emit('ui:placeConfirm'), { style: 'gold', size: 24 });
+    this.bannerPlace.chip = 'place-confirm';
+    this.bannerLater = button(this, x + w - 220, y + h / 2, 120, 58, 'Later', () => this.game.events.emit('ui:moveDone'), { style: 'ghost', size: 22 });
+    this.bannerLater.chip = 'place-later';
+    c.add([g, block, this.bannerText, this.bannerSub, this.bannerDone, this.bannerPlace, this.bannerLater]);
   }
-  showBanner(id) {
+  showBanner(id, o = {}) {
     if (!id) { this.banner.setVisible(false); return; }
-    this.bannerText.setText(`Moving ${BUILDINGS[id].name}`);
+    const placing = !!o?.placing;
+    this.bannerText.setText(placing ? `Build the ${BUILDINGS[id].name}` : `Moving ${BUILDINGS[id].name}`);
+    this.bannerSub.setText(placing ? 'Drag it or tap the ground, then Place' : 'Drag it onto open ground');
+    this.bannerDone.setVisible(!placing);
+    this.bannerPlace.setVisible(placing).setEnabled(o?.valid !== false);
+    this.bannerLater.setVisible(placing);
     this.banner.setVisible(true);
   }
 
@@ -748,7 +922,7 @@ export default class UIScene extends Phaser.Scene {
         }, { style: 'gold', size: 22 }); rep.chip = 'replay-tutorial'; c.add(rep);
         // game
         c.add(text(this, x0, r.y + 650, 'GAME', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
-        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.5 (stage 5: sound, polish + tutorial)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
+        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.6 (stage 6: painted base + new HUD)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
         const rs = button(this, r.x + r.w / 2, r.y + 836, 300, 64, 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
         this.refreshSettings = () => {
           if (!c.active) { this.refreshSettings = null; return; }
@@ -835,19 +1009,20 @@ export default class UIScene extends Phaser.Scene {
     this.powerSub.setText(`Bldg ${fmt(p.building)} · Troops ${fmt(p.troop)}`);
     const pct = s.beacon.charge / BEACON.maxCharge;
     this.beaconLv.setText(`Lv ${s.beacon.level}`);
+    this.avatarLv.setText(String(s.beacon.level));
     this.chargeText.setText(pct >= 1 ? 'Fully charged' : `Charge ${Math.floor(pct * 100)}%`).setColor(pct >= 1 ? PALETTE.textGold : PALETTE.textDim);
     const bar = this.chargeBar; bar.clear();
-    bar.fillStyle(0x05070a, 1).fillRect(484, 80, 206, 20);
-    bar.fillStyle(pct >= 1 ? PALETTE.gold : PALETTE.orange, 1).fillRect(486, 82, 202 * pct, 16);
-    if (pct >= 1) bar.fillStyle(0xffffff, 0.25 + 0.25 * Math.sin(this.time.now / 200)).fillRect(486, 82, 202, 16);
-    bar.lineStyle(1.5, PALETTE.metalEdge, 1).strokeRect(484, 80, 206, 20);
+    bar.fillStyle(0x05070a, 1).fillRect(484, 56, 206, 22);
+    bar.fillStyle(pct >= 1 ? PALETTE.gold : PALETTE.orange, 1).fillRect(486, 58, 202 * pct, 18);
+    if (pct >= 1) bar.fillStyle(0xffffff, 0.25 + 0.25 * Math.sin(this.time.now / 200)).fillRect(486, 58, 202, 18);
+    bar.lineStyle(1.5, PALETTE.metalEdge, 1).strokeRect(484, 56, 206, 22);
 
     this.coreText.setText(fmt(s.resources.cores));
     this.shardText.setText(fmt(s.resources.shards));
     this.alloyText.setText(fmt(s.resources.alloy));
     const q = store.queuedUnits();
     const tot = TROOP_IDS.reduce((n, t) => n + s.troops[t], 0);
-    this.troopText.setText(`${fmt(tot)} ${tot === 1 ? 'troop' : 'troops'}${q ? `  (+${q})` : ''}`);
+    this.troopText.setText(`${fmt(tot)}${q ? ` (+${q})` : ''}`);
 
     this.panelTimer += dtMs;
     if (this.panelTimer > 200) {
@@ -856,9 +1031,11 @@ export default class UIScene extends Phaser.Scene {
       const ready = store.rewardsReady();
       this.coreBadge.clear();
       if (ready) {
-        const bx = 60 + this.coreText.width + 12;
-        this.coreBadge.fillStyle(0xff3355, 1).fillCircle(bx, 150, 9).lineStyle(2, 0xffffff, 0.9).strokeCircle(bx, 150, 9);
+        const bx = this.resX.cores.x + this.resX.cores.w - 8;
+        this.coreBadge.fillStyle(0xff3355, 1).fillCircle(bx, 134, 9).lineStyle(2, 0xffffff, 0.9).strokeCircle(bx, 134, 9);
       }
+      this.refreshSide();
+      this.refreshPlaceChip();
       this.rewardsReadyCount = ready;
       if (this.screen) {
         if (this.screenDirty && !this.modal && !this.reveal) this.renderScreen();
