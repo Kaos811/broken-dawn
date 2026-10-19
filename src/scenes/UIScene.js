@@ -4,6 +4,8 @@ import { fmtClock } from '../ui/widgets.js';
 import { store } from '../state/store.js';
 import { buildingPower } from '../systems/power.js';
 import { text, fmt, fmtDuration, panelBg, button } from '../ui/widgets.js';
+import { SKIN, drawBar, drawCard, drawFrame, drawBadge, glyph, diamond, oct, lerpC } from '../ui/skin.js';
+import { statLine, priceTag, sectionHeader, tile } from '../ui/kit.js';
 import { renderTroops } from '../ui/screens/troops.js';
 import { renderSquads } from '../ui/screens/squads.js';
 import { renderArmory, resultTag, drawCoreIcon } from '../ui/screens/armory.js';
@@ -1019,29 +1021,61 @@ export default class UIScene extends Phaser.Scene {
 
   // ---------------------------------------------------------- panel -----
   createPanel() {
-    const x = 16, w = W - 32, h = 452, y = H - NAV_H - HERO_RISE - h - 8;
+    // Stage 9 building panel: painted building art + title / level plaque, three stat rows with icons,
+    // a cost row (Energy + time, or the countdown bar while upgrading), then Upgrade (gold), the
+    // building's action (teal) and Move (metal). pStats keeps the full stat text (tests, a11y).
+    const x = 16, w = W - 32, h = 556, y = H - NAV_H - HERO_RISE - h - 8;
     this.panelRect = new Phaser.Geom.Rectangle(x, y, w, h);
     const c = this.panel = this.add.container(0, 0).setVisible(false).setDepth(10);
     const g = this.add.graphics();
     panelBg(g, x, y, w, h);
     const block = this.add.rectangle(x + w / 2, y + h / 2, w, h, 0, 0.001).setInteractive();
-    this.pTitle = text(this, x + 28, y + 26, '', 36, PALETTE.textGold, { fontStyle: 'bold' });
-    this.pLevel = text(this, x + w - 90, y + 32, '', 26, PALETTE.text, { fontStyle: 'bold' }).setOrigin(1, 0);
-    this.pDesc = text(this, x + 28, y + 80, '', 21, PALETTE.textDim, { wordWrap: { width: w - 56 }, lineSpacing: 4 });
-    this.pStats = text(this, x + 28, y + 172, '', 23, PALETTE.text, { lineSpacing: 10 });
-    this.pReason = text(this, x + 28, y + 330, '', 20, '#ff8a95');
+    c.add([g, block]);
+    // art window
+    const ax = x + 22, ay = y + 22, aw = 196, ah = 150;
+    const ag = this.add.graphics();
+    ag.fillStyle(0x000000, 0.4).fillRect(ax + 2, ay + 4, aw, ah);
+    ag.fillStyle(SKIN.goldDk, 1).fillRect(ax - 3, ay - 3, aw + 6, ah + 6);
+    ag.fillGradientStyle(0x2a3442, 0x2a3442, 0x07090d, 0x07090d, 1, 1, 1, 1).fillRect(ax, ay, aw, ah);
+    this.pArt = this.add.image(ax + aw / 2, ay + ah / 2 + 6, 'art-barracks');
+    const af = this.add.graphics();
+    af.lineStyle(2, SKIN.gold, 1).strokeRect(ax, ay, aw, ah).lineStyle(1, SKIN.goldHi, 0.35).strokeRect(ax + 4, ay + 4, aw - 8, ah - 8);
+    for (const [cx, cy] of [[ax, ay], [ax + aw, ay], [ax, ay + ah], [ax + aw, ay + ah]]) diamond(af, cx, cy, 6);
+    this.pArtMask = this.make.graphics({}, false).fillRect(ax + 2, ay + 2, aw - 4, ah - 4);
+    this.pArt.setMask(this.pArtMask.createGeometryMask());
+    c.add([ag, this.pArt, af]);
+    this.pArtRect = { ax, ay, aw, ah };
+    const tx = ax + aw + 22;
+    this.pTitle = text(this, tx, y + 20, '', 36, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
+    this.pLvG = this.add.graphics();
+    this.pLevel = text(this, tx + 18, y + 92, '', 25, '#ffe2a6', { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    this.pDesc = text(this, tx, y + 122, '', 17, PALETTE.textDim, { wordWrap: { width: x + w - 24 - tx }, lineSpacing: 3, maxLines: 3 });
+    this.pStats = text(this, x + 28, y + 172, '', 23, PALETTE.text, { lineSpacing: 10 }).setVisible(false);
+    c.add([this.pTitle, this.pLvG, this.pLevel, this.pDesc, this.pStats]);
+    // stat rows
+    this.pRows = [0, 1, 2].map((i) => statLine(this, c, x + 22, y + 190 + i * 58, w - 44, 50, { label: '', a: '' }));
+    this.pRowIcons = this.pRows.map(() => null);
+    // cost row
+    const cy = y + 372;
+    this.pCost = priceTag(this, c, x + 22, cy, { icon: 'hud-energy', label: '', h: 50, size: 22 });
+    this.pTime = priceTag(this, c, x + w - 22 - 150, cy, { glyphKind: 'clock', label: '', h: 50, w: 150, size: 22 });
+    this.pCap = text(this, x + w - 24, y + 432, '', 17, PALETTE.textDim).setOrigin(1, 0);
     this.pBar = this.add.graphics();
+    this.pJob = text(this, x + 22, cy - 2, '', 19, '#ffe2a6', { fontStyle: 'bold' });
+    this.pReason = text(this, x + 24, y + 432, '', 18, '#ff8a95');
+    c.add([this.pCap, this.pBar, this.pJob, this.pReason]);
     const close = button(this, x + w - 40, y + 44, 56, 56, '✕', () => this.closePanel(true), { style: 'ghost', size: 26 });
-    this.pUpgrade = button(this, x + 28 + 210, y + h - 56, 420, 76, 'Upgrade', () => this.doUpgrade(), { style: 'gold', size: 28 });
-    this.pMove = button(this, x + w - 28 - 105, y + h - 56, 210, 76, 'Move', () => {
-      const id = this.panelOpenFor; this.closePanel(false); this.game.events.emit('ui:move', id);
-    }, { style: 'cyan', size: 28 });
-    this.pOpen = button(this, x + w - 28 - 105, y + h - 146, 210, 70, 'Open', () => {
+    const by = y + h - 60;
+    this.pUpgrade = button(this, x + 22 + 130, by, 260, 80, 'Upgrade', () => this.doUpgrade(), { style: 'gold', size: 28 });
+    this.pOpen = button(this, x + 22 + 260 + 14 + 108, by, 216, 80, 'Open', () => {
       const id = this.panelOpenFor;
       const target = { barracks: 'troops', armory: 'armory', commandCenter: 'squads', infirmary: 'infirmary', archive: 'archive' }[id];
       if (target) this.openScreen(target);
-    }, { style: 'cyan', size: 26 });
-    c.add([g, block, this.pTitle, this.pLevel, this.pDesc, this.pStats, this.pReason, this.pBar, close, this.pUpgrade, this.pMove, this.pOpen]);
+    }, { style: 'cyan', size: 27 });
+    this.pMove = button(this, x + w - 22 - 77, by, 154, 80, 'Move', () => {
+      const id = this.panelOpenFor; this.closePanel(false); this.game.events.emit('ui:move', id);
+    }, { style: 'ghost', size: 27 });
+    c.add([close, this.pUpgrade, this.pMove, this.pOpen]);
   }
 
   openPanel(id) {
@@ -1049,6 +1083,7 @@ export default class UIScene extends Phaser.Scene {
     this.panel.setVisible(true);
     this.panel.y = 30; this.panel.alpha = 0;
     this.tweens.add({ targets: this.panel, y: 0, alpha: 1, duration: 160, ease: 'Cubic.easeOut' });
+    this.panelArtFor = null;
     this.refreshPanel();
   }
 
@@ -1065,20 +1100,36 @@ export default class UIScene extends Phaser.Scene {
     const s = store.state;
     const info = store.upgradeInfo(id);
     const lv = info.level;
+    const r = this.panelRect;
+    if (this.panelArtFor !== id) {
+      this.panelArtFor = id;
+      const key = `art-${id === BEACON.id ? 'beacon' : id}`;
+      const { aw, ah } = this.pArtRect;
+      this.pArt.setTexture(this.textures.exists(key) ? key : 'art-beacon');
+      this.pArt.setScale(Math.min((aw - 8) / this.pArt.width, (ah + 30) / this.pArt.height));
+    }
+    let rows, lines;
     if (id === BEACON.id) {
       this.pTitle.setText(BEACON.name);
       this.pDesc.setText(BEACON.description);
       const now = buildingPower(id, lv), next = buildingPower(id, lv + 1);
       const pct = Math.floor((s.beacon.charge / BEACON.maxCharge) * 100);
-      this.pStats.setText([
+      const e0 = (ECONOMY.energyPerSec(lv) * store.mods.energy).toFixed(2), e1 = (ECONOMY.energyPerSec(lv + 1) * store.mods.energy).toFixed(2);
+      lines = [
         `Power (Beacon Relay):  +${now}   →  +${next}`,
-        `Charge:  ${pct}%   ·   Energy income ${(ECONOMY.energyPerSec(lv) * store.mods.energy).toFixed(2)}/s → ${(ECONOMY.energyPerSec(lv + 1) * store.mods.energy).toFixed(2)}/s`,
+        `Charge:  ${pct}%   ·   Energy income ${e0}/s → ${e1}/s`,
         `Building level cap:  Lv ${store.buildingLevelCap()}   ·   Anchored (can't move)`,
         info.job ? `Upgrading to Lv ${info.job.toLevel}:  ${fmtClock(info.job.total - info.job.progress)} left` : `Upgrade:  ${fmt(info.cost)} Energy + full charge  ·  ${fmtClock(info.seconds)}`,
-      ].join('\n'));
+      ];
+      rows = [
+        { icon: 'hud-power', label: 'Power', a: `+${now}`, b: `+${next}`, up: next > now },
+        { icon: 'hud-energy', label: 'Energy', a: `${e0}/s`, b: `${e1}/s`, up: +e1 > +e0 },
+        { glyph: 'charge', label: 'Charge', a: `${pct}%${pct >= 100 ? '  ·  FULL' : ''}`, b: null, up: false },
+      ];
       this.pMove.setVisible(false);
       this.pOpen.setVisible(false);
-      this.pUpgrade.setPosition(this.panelRect.x + this.panelRect.width / 2, this.pUpgrade.y);
+      this.pUpgrade.setPosition(r.x + r.width / 2, this.pUpgrade.y);
+      this.pCap.setText(`Cap Lv ${store.buildingLevelCap()}  ·  anchored`);
     } else {
       const def = BUILDINGS[id];
       this.pTitle.setText(def.name);
@@ -1092,29 +1143,90 @@ export default class UIScene extends Phaser.Scene {
         infirmary: `Beds ${store.woundedTotal()}/${store.infirmaryCapacity()} → ${Math.floor(INFIRMARY.capacity(lv + 1) * store.mods.beds)}  ·  Heal x${store.healSpeed().toFixed(2)} → x${(INFIRMARY.healSpeed(lv + 1) * store.mods.healSpeed).toFixed(2)}`,
         archive: !store.archiveUnlocked() ? `Sealed until Beacon Lv ${def.unlockBeacon}: no research, no Power yet` : (store.researchJob() ? `Researching ${RESEARCH[store.researchJob().id].name} Lv ${store.researchJob().toLevel}: ${fmtClock(store.researchLeft())} left` : `Research node cap Lv ${lv} → ${lv + 1}  ·  Archive idle`),
       }[id];
-      this.pStats.setText([
+      lines = [
         `Power contribution:  +${now}   →  +${next} at Lv ${lv + 1}`,
         extra,
         `Level cap:  Lv ${store.buildingLevelCap()}  (Beacon Lv ${s.beacon.level} + 2)`,
         info.job ? `Upgrading to Lv ${info.job.toLevel}:  ${fmtClock(info.job.total - info.job.progress)} left` : `Upgrade:  ${fmt(info.cost)} Energy  ·  takes ${fmtClock(info.seconds)}`,
-      ].join('\n'));
+      ];
+      const power = { icon: 'hud-power', label: 'Power', a: `+${now}`, b: `+${next}`, up: next > now };
+      const rj = store.researchJob();
+      const per = {
+        barracks: [
+          { glyph: 'lanes', label: 'Lanes', a: `${BARRACKS.laneCapacity(lv)}`, b: `${BARRACKS.laneCapacity(lv + 1)}`, up: true },
+          { glyph: 'speed', label: 'Speed', a: `x${BARRACKS.trainSpeed(lv).toFixed(1)}`, b: `x${BARRACKS.trainSpeed(lv + 1).toFixed(1)}`, up: BARRACKS.trainSpeed(lv + 1) > BARRACKS.trainSpeed(lv) },
+        ],
+        commandCenter: [
+          { glyph: 'squad', label: 'Squad level cap', a: `Lv ${lv}`, b: `Lv ${lv + 1}`, up: true },
+          { icon: 'hud-alloy', label: 'Alloy', a: `${(store.alloyRate * 3600).toFixed(0)}/h`, b: null },
+        ],
+        armory: [
+          { icon: 'hud-core', label: 'Beacon Cores', a: `${fmt(s.resources.cores)}  ·  pulls`, b: null },
+          { icon: 'hud-shards', label: 'Shards', a: `${fmt(s.resources.shards)}  (+${(store.shardRate * 3600).toFixed(0)}/h)`, b: null },
+        ],
+        infirmary: [
+          { glyph: 'beds', glyphColor: SKIN.green, label: 'Beds', a: `${store.woundedTotal()}/${store.infirmaryCapacity()}`, b: `${Math.floor(INFIRMARY.capacity(lv + 1) * store.mods.beds)}`, up: true },
+          { glyph: 'speed', glyphColor: SKIN.green, label: 'Heal speed', a: `x${store.healSpeed().toFixed(2)}`, b: `x${(INFIRMARY.healSpeed(lv + 1) * store.mods.healSpeed).toFixed(2)}`, up: true },
+        ],
+        archive: !store.archiveUnlocked()
+          ? [{ glyph: 'lock', label: 'Sealed', a: `until Beacon Lv ${def.unlockBeacon}`, b: null }, { glyph: 'research', glyphColor: 0xb07cff, label: 'Research', a: 'none yet', b: null }]
+          : [
+            { glyph: 'research', glyphColor: 0xb07cff, label: 'Node cap', a: `Lv ${lv}`, b: `Lv ${lv + 1}`, up: true },
+            { glyph: 'clock', glyphColor: 0xb07cff, label: rj ? RESEARCH[rj.id].name : 'Archive', a: rj ? `${fmtClock(store.researchLeft())} left` : 'idle', b: null },
+          ],
+      }[id];
+      rows = [power, ...per];
       this.pMove.setVisible(true);
       this.pOpen.setVisible(true).setLabel({ barracks: 'Train', armory: 'Recruit', commandCenter: 'Squads', infirmary: 'Heal', archive: 'Research' }[id]);
-      this.pUpgrade.setPosition(this.panelRect.x + 28 + 210, this.pUpgrade.y);
+      this.pUpgrade.setPosition(r.x + 22 + 130, this.pUpgrade.y);
+      this.pCap.setText(`Cap Lv ${store.buildingLevelCap()}`);
     }
-    this.pLevel.setText(`Lv ${lv}`);
-    const r = this.panelRect, bar = this.pBar;
+    this.pStats.setText(lines.join('\n'));
+    // stat rows: swap the icon only when it changes
+    rows.forEach((row, i) => {
+      const key = row.icon ?? `g:${row.glyph}:${row.glyphColor ?? ''}`;
+      if (this.pRowIcons[i]?.key !== key) {
+        this.pRowIcons[i]?.obj.destroy();
+        const R = this.panelRect, yy = R.y + 190 + i * 58 + 25, xx = R.x + 22 + 30;
+        let obj;
+        if (row.icon) { obj = this.add.image(xx, yy, row.icon); obj.setScale(36 / Math.max(obj.width, obj.height)); }
+        else { obj = this.add.graphics(); glyph(obj, row.glyph, xx, yy, 15, row.glyphColor ?? SKIN.gold); }
+        this.panel.add(obj);
+        this.pRowIcons[i] = { key, obj };
+      }
+      this.pRows[i].set({ label: row.label, a: row.a, b: row.b, up: !!row.up && !!row.b });
+    });
+    // level plaque "Lv 5 → 6"
+    const lvTxt = `Lv ${lv}${info.job ? `  →  ${info.job.toLevel}` : `  →  ${lv + 1}`}`;
+    if (this.pLevel.text !== lvTxt) {
+      this.pLevel.setText(lvTxt);
+      const px = this.pLevel.x - 18, py = this.pLevel.y - 22, pw = this.pLevel.width + 36, ph = 44;
+      this.pLvG.clear();
+      this.pLvG.fillStyle(SKIN.goldDk, 1).fillPoints(oct(px - 2, py - 2, pw + 4, ph + 4, 10), true);
+      this.pLvG.fillGradientStyle(SKIN.goldHi, SKIN.goldHi, SKIN.goldMid, SKIN.goldMid, 1, 1, 1, 1).fillPoints(oct(px, py, pw, ph, 9), true);
+      this.pLvG.fillGradientStyle(0x4a3412, 0x4a3412, 0x1c1306, 0x1c1306, 1, 1, 1, 1).fillPoints(oct(px + 3, py + 3, pw - 6, ph - 6, 7), true);
+    }
+    const bar = this.pBar;
     bar.clear();
     if (info.job) {
       // countdown bar in the panel; the button becomes Cancel (full refund)
-      const pct = Math.min(1, info.job.progress / info.job.total), bx = r.x + 28, by = r.y + 334, bw = r.width - 56 - 236;
-      bar.fillStyle(0x05070a, 1).fillRect(bx, by, bw, 16);
-      bar.fillStyle(PALETTE.gold, 1).fillRect(bx, by, bw * pct, 16);
-      bar.lineStyle(2, PALETTE.gold, 0.9).strokeRect(bx, by, bw, 16);
+      const pct = Math.min(1, info.job.progress / info.job.total), bx = r.x + 22, by = r.y + 400, bw = r.width - 44;
+      drawBar(bar, bx, by, bw, 18, pct, { color: SKIN.gold });
+      this.pJob.setText(`Upgrading to Lv ${info.job.toLevel}  ·  ${fmtClock(info.job.total - info.job.progress)} left`).setVisible(true);
+      this.pCost.setVisible(false); this.pTime.setVisible(false);
+      this.pCap.setVisible(false);
       this.pUpgrade.setLabel(`Cancel  ·  refund ${fmt(info.job.cost)}`).setStyle('danger').setEnabled(true);
       this.pReason.setText('');
     } else {
-      this.pUpgrade.setLabel(`Upgrade  ·  ${fmt(info.cost)}  ·  ${fmtClock(info.seconds)}`).setStyle('gold').setEnabled(info.can);
+      this.pJob.setVisible(false);
+      this.pCost.setVisible(true); this.pTime.setVisible(true);
+      this.pCap.setVisible(true);
+      const costStr = `${fmt(info.cost)} Energy${id === BEACON.id ? ' + full charge' : ''}`;
+      const okE = s.resources.energy >= info.cost;
+      if (this.pCost.t.text !== costStr || this.pCost.okE !== okE) { this.pCost.set(costStr, okE); this.pCost.okE = okE; }
+      const tStr = fmtClock(info.seconds);
+      if (this.pTime.t.text !== tStr) this.pTime.set(tStr);
+      this.pUpgrade.setLabel('Upgrade').setStyle('gold').setEnabled(info.can);
       this.pReason.setText(info.reason ? `⚠ ${info.reason}` : '');
     }
   }

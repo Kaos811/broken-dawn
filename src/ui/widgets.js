@@ -54,7 +54,8 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
     skin.setTexture(key);
     t.setColor(s.text).setShadow(0, st === 'gold' ? 1 : 2, s.shadow, 0, false, true);
   };
-  draw();
+  const fit = () => { const max = W - 20; t.setScale(t.width > max ? max / t.width : 1); };
+  draw(); fit();
   // juice: squash on press, springy release, click sound + a light haptic tick
   const springTo = (s, ms, ease) => { if (!c.active) return; scene.tweens.killTweensOf(c); scene.tweens.add({ targets: c, scale: s, duration: ms, ease }); };
   hit.on('pointerdown', () => {
@@ -69,7 +70,7 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
     pressed = false;
   });
   c.setEnabled = (v) => { if (enabled !== !!v) { enabled = !!v; draw(); } return c; };
-  c.setLabel = (s) => { if (t.text !== s) t.setText(s); return c; };
+  c.setLabel = (s) => { if (t.text !== s) { t.setText(s); fit(); } return c; };
   c.setStyle = (s) => { if (current !== s) { current = s; draw(); } return c; };
   c.hit = hit;
   c.isButton = true;

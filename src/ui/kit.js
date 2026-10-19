@@ -82,7 +82,8 @@ export function priceTag(ui, c, x, y, { icon = 'hud-energy', glyphKind = null, l
     g.lineStyle(1.5, ok ? SKIN.goldDk : 0x7a2430, 1).strokeRoundedRect(x, y, ww, h, h / 2);
     g.lineStyle(1, 0xffffff, 0.08).lineBetween(x + h / 2, y + 2, x + ww - h / 2, y + 2);
   };
-  const api = { t, g, set(str, okv = ok) { ok = okv; t.setText(str).setColor(ok ? PALETTE.text : '#ff8a95'); draw(); return api; } };
+  const api = { t, g, set(str, okv = ok) { ok = okv; t.setText(str).setColor(ok ? PALETTE.text : '#ff8a95'); draw(); return api; },
+    setVisible(v) { for (const o of [t, g, gg, im]) o?.setVisible(v); return api; } };
   api.set(label, ok);
   return api;
 }
