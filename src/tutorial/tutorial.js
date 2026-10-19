@@ -164,7 +164,7 @@ export class Tutorial {
   skipNow() {
     store.skipTutorial();
     this.hide();
-    this.ui.toast('Tutorial skipped. Replay it any time from Settings.', 2600);
+    this.ui.toast('Tutorial skipped. Replay it any time from More → Settings.', 2600);
   }
 
   hide() { this.card.setVisible(false); this.pointer.setVisible(false); this.arrow.setVisible(false); }
@@ -240,7 +240,7 @@ export class Tutorial {
     audio.haptic(15);
     if (next >= TUTORIAL.steps) {
       this.hide();
-      this.ui.toast(`Tutorial complete, Commander! +${fmt(TUTORIAL.reward.energy)} Energy, +${TUTORIAL.reward.cores} Beacon Cores.\nReplay it any time from Settings.`, 4200);
+      this.ui.toast(`Tutorial complete, Commander! +${fmt(TUTORIAL.reward.energy)} Energy, +${TUTORIAL.reward.cores} Beacon Cores.\nReplay it any time from More → Settings.`, 4200);
       this.ui.floatText?.(110, 96, `+${TUTORIAL.reward.energy}`, PALETTE.textCyan);
     }
   }

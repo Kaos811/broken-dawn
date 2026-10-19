@@ -116,7 +116,7 @@ export default class UIScene extends Phaser.Scene {
     }
     // stage 5: one-time hint for existing players (their tutorial was marked done in the v8 migration)
     if (store.migratedFrom && store.migratedFrom < 8) {
-      this.time.delayedCall(off && off.energy >= 1 ? 5200 : 500, () => this.toast('New: sound, music and a tutorial. Replay the tutorial any time from Settings.', 4200));
+      this.time.delayedCall(off && off.energy >= 1 ? 5200 : 500, () => this.toast('New: sound, music and a tutorial. Replay the tutorial any time from More → Settings.', 4200));
     }
     this.panelTimer = 0;
   }
@@ -1245,6 +1245,7 @@ export default class UIScene extends Phaser.Scene {
     this.toastBox.add([this.toastBg, this.toastText]);
   }
   toast(msg, ms = 2200) {
+    (this.toastLog ??= []).push(msg); if (this.toastLog.length > 8) this.toastLog.shift(); // recent toasts (tests / debugging)
     this.toastText.setText(msg);
     audio.play('toast', { gap: 250 });
     const w = Math.min(W - 60, this.toastText.width + 48), h = this.toastText.height + 30;

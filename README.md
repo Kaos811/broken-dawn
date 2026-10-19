@@ -23,7 +23,7 @@ npm run dev        # dev server at http://localhost:5173 (with --host, so phones
 npm run build      # -> dist/ (multi-file) AND broken-dawn.html (single self-contained file)
 npm run preview    # serve dist/
 npm test           # headless Chromium e2e test (needs a build; CHROME_PATH=/path/to/chrome to override)
-                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=1…6 runs one suite, QUICK=1 skips the dist/ pass
+                   # `node tests/e2e.mjs --screens` also saves screenshots; ONLY=1…7 runs one suite, QUICK=1 skips the dist/ pass
 ```
 
 `broken-dawn.html` has everything inlined, so you can open it directly from disk or host it
@@ -67,8 +67,8 @@ The Beacon is anchored: long-pressing it just shows "can't be moved".
   plus troop and squad stubs. It autosaves every 5 s, after every move or upgrade, and when the tab is hidden. Saves are
   sanitized on load. Offline earnings (Energy and charge) are applied on reload, capped at 8 h, with a
   "welcome back" toast.
-- **Bottom nav:** Base / Troops / Armory / Squads / Settings. Troops, Armory and Squads show "Coming in stage 2".
-  Settings has **Reset Save**, which asks for confirmation.
+- **Bottom nav:** Base / Troops / Armory / Squads / Settings (stage 1; see the v0.6.0 redesign below: Settings now lives
+  under More). Settings has **Reset Save**, which asks for confirmation.
 - **Layout:** designed for portrait 9:16 (720×1280 logical). On taller phones (19.5:9 and up) the height stretches so the HUD and
   nav sit at the real screen edges.
 
@@ -347,12 +347,38 @@ pointer (the camera glides to off-screen buildings):
     pill, and resource counters.
   - Left column: queue buttons **Builder**, **Research**, **Training** and **Healing**, each with a live timer
     and a progress ring. Each one jumps to the right building or screen.
-  - Right column: **Hunt** (World), **Rewards** (Beacon Cores), **Armory**, and **Events** (placeholder).
+  - Right column (stage 6): Hunt, Rewards, Armory, Events. The v0.6.0 HUD redesign (below) moved these into
+    the World emblem, the Cores **+**, the Armory tab and the More sheet.
 - **Tutorial:** step 8 is now "tap the Research button". Before Beacon Lv 3 it explains where research comes from.
 - **Saves (v9):** v8 saves migrate automatically (backup `brokenDawn.save.v1.backup-v8`). Buildings on their
   old default tiles move to the new defaults. Moved buildings keep their direction from the Beacon (scaled
   ×1.75 to the bigger map), and any that end up on an invalid spot snap to the nearest free one. An Archive that's
   already unlocked stays placed; a locked one is hidden.
+
+## v0.6.0: HUD & nav redesign
+
+Built from the approved mockup and adapted for portrait phones.
+
+- **Top HUD:** commander portrait in a gold ring with the commander-level badge (tap it for the Power
+  breakdown), a gold beveled **Power** plaque with a shield, and a **Beacon Cores** pill on the right whose
+  **+** opens the rewards (a red badge counts rewards ready to claim). Beacon level and charge sit in a small
+  gauge under the portrait; tap it to jump to the Beacon. Below that is a slim row of glass resource capsules:
+  Energy (with its rate), Alloy, Shards and Troops. Tap a capsule for a tooltip that says where the resource
+  comes from.
+- **Bottom nav:** a sculpted gunmetal bar with gold filigree and illustrated icons. Tabs: **Base**, **Troops**,
+  [**World** emblem, the large centre button], **Armory**, **Squads**, **More**. The active tab is raised and glows gold.
+- **Red badges:**
+  - Troops: troops trained or healed since you last looked.
+  - Armory: the number of recruits your Cores can buy.
+  - More: rewards ready to claim.
+  - Base: a building waiting to be placed.
+- **More** opens a sheet with Settings, Rewards, Power, Leaders, Research and Events (coming soon). The nav
+  stays usable while the sheet is open.
+- **Safe areas:** with `viewport-fit=cover`, the HUD and nav grow by the notch and home-indicator insets
+  (`src/ui/layout.js`). Tested at 390×844 (with and without insets), 360×640, 375×667 and 430×932.
+- **Art:** 12 WebP icons (~77 KB) in `src/art/ui/`. They were keyed from the magenta (nav) and green (HUD)
+  sheets by `artwork/process_ui.py` (outside the repo). The HUD and nav chrome is drawn once and baked into
+  textures.
 
 ## Code layout
 
@@ -369,6 +395,8 @@ src/
   systems/power.js     Base / Building / Troop / Squad power formulas
   systems/research.js  research levels, Archive seal, researchMods() (every research bonus in one pure function)
   art/baseArt.js       painted base art (WebP imports, sprite sizes/origins); art/base/*.webp
+  art/uiArt.js         HUD + nav icons; art/ui/*.webp
+  ui/layout.js         HUD/nav sizes + safe-area insets
   art/portraits.js     procedural troop/leader portraits, gear icons, card back (canvas 2D)
   systems/grid.js      iso <-> world math, platform + placement validation
   scenes/BootScene.js  procedural textures + preload of the painted base art

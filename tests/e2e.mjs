@@ -123,12 +123,12 @@ async function run(url, label, takeShots) {
   const beaconSpriteBefore = await ev(() => { const s = __BD.base().beaconSprite; return [s.x, s.y]; });
   const bp = await fpCenter('beacon');
   await touch('touchStart', [bp]); await sleep(650);
-  for (let i = 0; i < 30 && !(await ev(() => __BD.ui().toastBox.visible)); i++) await sleep(100); // slow frames: wait for the long-press
+  for (let i = 0; i < 30 && !(await ev(() => (__BD.ui().toastLog ?? []).some((m) => /anchored/i.test(m)))); i++) await sleep(100); // slow frames: wait for the long-press
   for (let i = 1; i <= 8; i++) { await touch('touchMove', [{ x: bp.x + i * 12, y: bp.y + i * 8 }]); await sleep(16); }
   await touch('touchEnd', []);
   await sleep(100);
   const beaconSpriteAfter = await ev(() => { const s = __BD.base().beaconSprite; return [s.x, s.y]; });
-  const beaconToast = await ev(() => __BD.ui().toastBox.visible && __BD.ui().toastText.text);
+  const beaconToast = await ev(() => (__BD.ui().toastLog ?? []).find((m) => /anchored/i.test(m)));
   check('Beacon cannot be moved by long-press + drag', JSON.stringify(beaconSpriteBefore) === JSON.stringify(beaconSpriteAfter) && /anchored/i.test(beaconToast || ''), beaconToast || 'no toast');
   check('Beacon is not in move mode', (await ev(() => __BD.base().moveId)) === null);
   check('Beacon has no movable entry and canPlace("beacon") is false', (await ev(() => __BD.store.canPlace('beacon', 9, 9))) === false);
@@ -1611,7 +1611,7 @@ async function runStage5(url, label, takeShots) {
     check('tutorial 8/8: Archive tapped', await follow(7, 9));
     s = await state(); t = await tut();
     check('tutorial complete: marked done, reward paid once (+500 Energy, +2 Cores), coach hidden', s.tutorial.done && !s.tutorial.skipped && s.tutorial.rewarded && s.resources.cores === res0.cores + 2 && s.resources.energy >= res0.energy + 499 && !t.visible, JSON.stringify({ tu: s.tutorial, c0: res0.cores, c1: s.resources.cores }));
-    check('completion toast mentions replaying from Settings', await ev(() => /Tutorial complete/.test(__BD.ui().toastText.text) && /Settings/.test(__BD.ui().toastText.text)));
+    check('completion toast mentions replaying from More → Settings', await waitTrue(() => (__BD.ui().toastLog ?? []).some((m) => /Tutorial complete/.test(m) && /More → Settings/.test(m))), JSON.stringify(await ev(() => __BD.ui().toastLog)));
 
     // --- 9. Settings: audio panel
     await ev(() => { const u = __BD.ui(); u.closePanel(true); u.closeScreen(); });
@@ -1812,6 +1812,7 @@ async function runStage6(url, label, takeShots) {
     check('HUD left column: Builder, Research, Training, Healing queue buttons', ['q-builder', 'q-research', 'q-training', 'q-healing'].every((m) => ctrls.includes(m)), ctrls.join(','));
     check('old right column replaced: Hunt -> World emblem, Rewards -> Cores +, Armory -> tab, Events -> More', !ctrls.some((m) => /^k-/.test(m)) && ctrls.includes('cores-plus') && (await ev(() => !!__BD.ui().hero && __BD.ui().tabs.some((t) => t.id === 'armory') && __BD.ui().tabs.some((t) => t.id === 'more'))));
     check('HUD top bar: commander avatar, Power and resource counters', await ev(() => { const u = __BD.ui(); return u.avatar.texture.key === 'art-avatar' && u.powerText.text === String(__BD.store.power.total) && u.energyText.visible && u.coreText.visible && u.shardText.visible && u.alloyText.visible && u.troopText.visible; }));
+    await waitTrue(() => Object.values(__BD.ui().queueBtns).every((b) => b.timer.text)); // first 200 ms HUD refresh
     const qIdle = await ev(() => Object.values(__BD.ui().queueBtns).map((b) => b.timer.text));
     check('queue buttons idle on a new game (Research waits for Beacon Lv 3)', qIdle.join('|') === 'Idle|Beacon 3|Idle|Idle', qIdle.join('|'));
     await ev(() => { const st = __BD.store; st.state.resources.energy = 500; st.upgrade('barracks'); });
