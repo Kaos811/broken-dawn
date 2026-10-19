@@ -1,6 +1,6 @@
 {
   "name": "broken-dawn",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Broken Dawn - sci-fi idle base-builder (stage 5: sound, polish, tutorial)",
   "scripts": {
     "dev": "vite --host",

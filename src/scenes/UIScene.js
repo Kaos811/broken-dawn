@@ -13,6 +13,7 @@ import { renderInfirmary } from '../ui/screens/infirmary.js';
 import { renderArchive } from '../ui/screens/archive.js';
 import { RESEARCH } from '../config.js';
 import { createWorldHud, openReport } from '../ui/world.js';
+import { createRightColumn, refreshRightColumn, openMissions } from '../ui/stage8.js';
 import { audio } from '../audio/audio.js';
 import { Tutorial } from '../tutorial/tutorial.js';
 import { PERF, AUDIO, TUTORIAL } from '../config.js';
@@ -98,6 +99,7 @@ export default class UIScene extends Phaser.Scene {
       store.on('placed', (id) => { audio.play('levelup'); this.toast(`${BUILDINGS[id].name} built. Tap it to open.`, 2000); }),
     ];
     this.events.once('shutdown', () => this.unsubs.forEach((u) => u()));
+    createRightColumn(this); // stage 8: Missions (+ live event) on the right edge
 
     // autosave + save on hide
     this.time.addEvent({ delay: ECONOMY.autosaveMs, loop: true, callback: () => store.save() });
@@ -121,6 +123,8 @@ export default class UIScene extends Phaser.Scene {
     }
     this.panelTimer = 0;
   }
+
+  openMissions() { return openMissions(this); }
 
   // Lets BaseScene know a screen point belongs to the UI.
   blocksPointer(x, y) {
@@ -1335,6 +1339,7 @@ export default class UIScene extends Phaser.Scene {
       this.refreshNavBadges();
       if (this.tip && this.time.now > this.tip.until) this.hideTip();
       this.refreshSide();
+      refreshRightColumn(this);
       this.refreshPlaceChip();
       this.rewardsReadyCount = ready;
       if (this.screen) {

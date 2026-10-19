@@ -378,7 +378,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let m = await state();
-    check('v2 save migrates to version 9 (via v3 … v8)', m.version === 9);
+    check('v2 save migrates to version 10 (via v3 … v8)', m.version === 10);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
@@ -399,7 +399,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v3 save migrates to v9: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 9 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 save migrates to v10: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 10 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
     check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload(); await ready(); return (await state()).resources.cores === 10; })());
 
@@ -415,7 +415,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v4 save migrates to v9: levels, Cores, claims kept; no construction', m.version === 9 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
+    check('v4 save migrates to v10: levels, Cores, claims kept; no construction', m.version === 10 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
     check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
 
     // --- 1. Save migration from a stage-1 (v1) save
@@ -431,7 +431,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v1 save migrates to version 9', s.version === 9);
+    check('v1 save migrates to version 10', s.version === 10);
     // the Barracks sat off its default tile (8,15): on the v9 map it keeps its direction from the Beacon
     const bOff = await ev(() => { const b = __BD.store.state.buildings.barracks, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('barracks', b.gx, b.gy), def: b.gx === 23 && b.gy === 30 }; });
     check('migration keeps buildings (moved Barracks keeps its direction from the Beacon), levels, Energy and Beacon', bOff.ok && !bOff.def && bOff.dx < -200 && Math.abs(bOff.dy) < 220 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
@@ -907,7 +907,7 @@ async function runStage3(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v5 save migrates to v6 (and on to v9)', s.version === 9);
+    check('v5 save migrates to v6 (and on to v10)', s.version === 10);
     // the Armory sat on the old Infirmary tile (16,8), right of the Beacon: it stays to the right on the v9 map
     const aOff = await ev(() => { const b = __BD.store.state.buildings.armory, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('armory', b.gx, b.gy) }; });
     check('v6 keeps buildings (Armory stays right of the Beacon), levels, resources, troops and squads', aOff.ok && aOff.dx > 200 && Math.abs(aOff.dy) < 250 && s.buildings.commandCenter.level === 3 && s.beacon.level === 3 && s.resources.cores === 6 && s.troops.sentinel === 8 && s.squads.alpha.level === 2 && s.squads.alpha.lines[0].count === 6, JSON.stringify(s.buildings));
@@ -1265,7 +1265,7 @@ async function runStage4(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v6 save migrates to v7 (and v9)', s.version === 9);
+    check('v6 save migrates to v7 (and v10)', s.version === 10);
     check('v7 keeps every troop as T1 (sentinel/bearer ids unchanged), no higher tiers', s.troops.sentinel === 12 && s.troops.bearer === 5 && s.troops.bulwark === 0 && s.troops.lancer === 0 && s.troops.aegis === 0, JSON.stringify(s.troops));
     check('v7 keeps the training lane (3 Sentinels, progress 1.5) as a T1 job', s.training.sentinel.count === 3 && near(s.training.sentinel.progress, 1.5, 0.6) && s.training.sentinel.unit === 'sentinel' && s.training.sentinel.from === null, JSON.stringify(s.training.sentinel));
     check('v7 keeps formations, wounded and hunt progress', s.squads.alpha.lines[0].type === 'sentinel' && s.squads.alpha.lines[0].count === 6 && s.squads.alpha.lines[0].full === 8 && s.infirmary.wounded.sentinel.alpha === 2 && s.hunt.bestKill === 3 && s.hunt.stamina === 70 && s.resources.cores === 12);
@@ -1554,7 +1554,7 @@ async function runStage5(url, label, takeShots) {
     // --- 0. loading screen, fresh save v8, defaults
     check('loading screen fades out and is removed once the game is ready', await waitTrue(() => !document.getElementById('boot')));
     let s = await state();
-    check('new game: save v9 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 9 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
+    check('new game: save v10 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 10 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
     let t = await tut();
     check('new game: tutorial starts at step 1 (The Beacon) with a coach card and a pointer', t.active && t.step === 0 && t.visible && t.title === 'The Beacon' && !!t.target, JSON.stringify(t));
     let a = await au();
@@ -1720,7 +1720,7 @@ async function runStage5(url, label, takeShots) {
     await ev(() => { const k = 'brokenDawn.save.v1'; __BD.store.save = () => {}; const st = JSON.parse(localStorage.getItem(k)); st.version = 7; delete st.settings; delete st.tutorial; localStorage.setItem(k, JSON.stringify(st)); });
     await page.reload(); await ready();
     s = await state(); t = await tut();
-    check('v7 save migrates to v9: tutorial marked done (no coach), default audio settings, backup kept', s.version === 9 && s.tutorial.done && !s.tutorial.skipped && !t.visible && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
+    check('v7 save migrates to v10: tutorial marked done (no coach), default audio settings, backup kept', s.version === 10 && s.tutorial.done && !s.tutorial.skipped && !t.visible && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
     check('existing players get a one-time "replay the tutorial from Settings" toast', await waitTrue(() => /Replay the tutorial/.test(__BD.ui().toastText.text) && __BD.ui().toastBox.visible, null, 40));
     await ev(() => { delete __BD.store.save; __BD.store.save(); });
     await page.reload(); await ready(); await sleep(800);
@@ -1794,7 +1794,7 @@ async function runStage6(url, label, takeShots) {
 
     // --- 1. full-screen painted base, art sprites, level badges
     let s = await state();
-    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 9 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
+    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 10 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
     const art = await ev(() => { const b = __BD.base(); return { cc: b.sprites.commandCenter.img.texture.key, beacon: b.beaconSprite.texture.key, ground: b.ground.texture.key, decos: b.decos.length, inner: b.innerDecos.length }; });
     check('painted art: building + Beacon sprites, baked ground, scattered crystals/plants/rocks', art.cc === 'art-commandCenter' && art.beacon === 'art-beacon' && art.ground === 'ground-baked' && art.decos >= 60 && art.inner >= 10, JSON.stringify(art));
     const fill = await ev(() => { const c = __BD.base().cameras.main, v = c.worldView, G = __BD.grid.GROUND; return { ok: v.x >= G.x - 1 && v.y >= G.y - 1 && v.right <= G.x + G.w + 1 && v.bottom <= G.y + G.h + 1, bigger: G.w > v.width && G.h > v.height }; });
@@ -1934,7 +1934,7 @@ async function runStage6(url, label, takeShots) {
       const off = (id) => { const c = __BD.grid.isoToWorld(B[id].gx + 1.5, B[id].gy + 1.5); return { dx: c.x - o.x, dy: c.y - o.y }; };
       return { valid: ids.every((id) => st.canPlace(id, B[id].gx, B[id].gy)), cc: [B.commandCenter.gx, B.commandCenter.gy], arch: [B.archive.gx, B.archive.gy, B.archive.placed], br: off('barracks'), levels: ids.map((id) => B[id].level).join(',') };
     });
-    check('v8 save migrates to v9', s.version === 9);
+    check('v8 save migrates to v9', s.version === 10);
     check('v9: buildings on their old default tiles move to the new defaults (CC 12,8 -> 11,11; Archive 8,8 -> 12,19)', mig.cc.join() === '11,11' && mig.arch.join() === '12,19,true', JSON.stringify(mig));
     check('v9: a moved building keeps its direction from the Beacon (Barracks 9,15 stays lower-left)', mig.br.dx < -150 && mig.br.dy > -100, JSON.stringify(mig.br));
     check('v9: every migrated position is valid (inside the base, no overlaps), levels kept', mig.valid && mig.levels === '4,3,2,2,2', JSON.stringify(mig));
@@ -2170,6 +2170,190 @@ async function runStage7(url, label, takeShots) {
   await browser.close();
 }
 
+async function runStage8(url, label, takeShots) {
+  console.log(`\n=== stage 8 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const open = async (viewport, test = {}) => {
+    const { timezoneId, ...tflags } = test;
+    const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, hasTouch: true, isMobile: true, ...(timezoneId ? { timezoneId } : {}) });
+    await ctx.addInitScript((t) => { window.__BD_TEST = { noTutorial: true, ...t }; }, tflags);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(url);
+    await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(500);
+    return { ctx, page, errors };
+  };
+  let { ctx, page, errors } = await open({ width: 390, height: 844 });
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+  const shot = async (name, p = page) => { if (takeShots) { await sleep(400); await p.evaluate(() => { const u = __BD.ui(); u.tweens.killTweensOf(u.toastBox); u.toastBox.setVisible(false); }); await sleep(60); await p.screenshot({ path: join(ROOT, 'screens', name) }); console.log(`      saved screens/${name}`); } };
+  const ctl = async (meta) => { for (let i = 0; i < 15; i++) { const c = await ev((m) => __BD.controls().find((c) => c.meta === m && c.enabled), meta); if (c) return c; await sleep(150); } return null; };
+  const click = async (meta) => { await frames(2); const c = await ctl(meta); if (!c) throw new Error(`control not found: ${meta}`); await page.mouse.click(c.x, c.y); await frames(4); await sleep(300); };
+  const tapGame = async (x, y) => { const p = await ev(([x, y]) => __BD.gameToPage(x, y), [x, y]); await page.mouse.click(p.x, p.y); await frames(4); await sleep(300); };
+  const waitTrue = async (fn, arg, n = 30) => { for (let i = 0; i < n; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
+  const tab = async (id) => { const p = await ev((id) => __BD.tabToPage(id), id); await page.mouse.click(p.x, p.y); await frames(4); await sleep(350); };
+  const modalHas = (re) => waitTrue((src) => !!__BD.ui().modal?.list.some((o) => o.text && new RegExp(src).test(o.text)), re.source);
+  // text objects (visible, in the UI scene) whose bounds overlap each other inside a region
+  const overlaps = (y0, y1) => ev(([y0, y1]) => {
+    const ui = __BD.ui(), out = [], vis = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active || p.alpha === 0) return false; return true; };
+    const walk = (o) => { if (o.type === 'Text' && o.text && vis(o)) out.push(o); (o.list ?? []).forEach(walk); };
+    ui.children.list.forEach(walk);
+    const bs = out.map((t) => ({ t: t.text, b: t.getBounds() })).filter((x) => x.b.y >= y0 && x.b.bottom <= y1);
+    const bad = [];
+    for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
+      const a = bs[i].b, b = bs[j].b;
+      if (a.x < b.right - 1 && b.x < a.right - 1 && a.y < b.bottom - 1 && b.y < a.bottom - 1) bad.push(`${bs[i].t}|${bs[j].t}`);
+    }
+    return bad;
+  }, [y0, y1]);
+
+
+  // seconds to the next local midnight in a time zone, computed in Node (independent of the game code)
+  const toMidnight = (tz) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(new Date()).map((x) => [x.type, x.value])); return 86400 - ((+p.hour % 24) * 3600 + +p.minute * 60 + +p.second); };
+  // real hunts: a strong Alpha squad attacks low-level creatures and the world ticks until it reports back
+  const hunts = (n, minLevel = 1) => ev(([n, minLevel]) => {
+    const st = __BD.store, out = [];
+    st.state.hunt.stamina = 200;
+    for (let k = 0; k < n; k++) {
+      st.state.troops.sentinel = Math.max(st.state.troops.sentinel, 60); st.state.troops.bearer = Math.max(st.state.troops.bearer, 60); st.state.troops.voyager = Math.max(st.state.troops.voyager, 60);
+      st.saveFormation('alpha', [{ type: 'sentinel', count: 20 }, { type: 'bearer', count: 20 }, { type: 'voyager', count: 20 }]);
+      st.refillSquad('alpha', { silent: true });
+      const t = st.creatures().filter((e) => e.level >= minLevel && e.level <= Math.max(4, minLevel) && !e.busy && !e.elite).sort((a, b) => a.level - b.level)[0];
+      const seq = st.state.hunt.reportSeq;
+      const r = st.attack('alpha', t.id);
+      for (let i = 0; i < 90 && st.state.hunt.reportSeq === seq; i++) st.tick(1);
+      for (let i = 0; i < 90 && st.squadMarch('alpha'); i++) st.tick(1);
+      out.push({ ok: r.ok, win: st.state.hunt.reports[0]?.win, lv: t.level });
+    }
+    return out;
+  }, [n, minLevel]);
+  const mission = (id) => ev((id) => __BD.store.missionList().find((t) => t.id === id), id);
+
+  try {
+    await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(600);
+    // ---------------------------------------------------------------- A. Daily Missions
+    const m0 = await ev(() => { const st = __BD.store, s = st.state; return { v: s.version, day: s.missions.day, today: st.dayIndex(), tasks: st.missionList().map((t) => [t.id, t.goal, t.pts]), chests: st.missionChests().map((c) => `${c.at}:${c.tier}`), vis: __BD.ui().rightBtns.missions.visible, done: s.tutorial.done }; });
+    check('new game: save v10 with today\'s missions (local day)', m0.v === 10 && m0.day === m0.today, JSON.stringify(m0));
+    check('7 daily tasks worth 110 points in total', m0.tasks.length === 7 && m0.tasks.reduce((a, t) => a + t[2], 0) === 110, JSON.stringify(m0.tasks));
+    check('activity chests at 20/40/60/80/100: bronze, bronze, silver, silver, gold', m0.chests.join(',') === '20:bronze,40:bronze,60:silver,80:silver,100:gold', m0.chests.join(','));
+    check('Missions stay hidden until the tutorial is done', !m0.vis && !m0.done, JSON.stringify({ vis: m0.vis, done: m0.done }));
+    await ev(() => __BD.store.skipTutorial()); await sleep(400);
+    check('…then the Missions button appears on the right edge (clipboard icon)', await waitTrue(() => { const b = __BD.ui().rightBtns.missions; return b.visible && b.labelText.text === 'Missions' && b.list.some((o) => o.texture?.key === 'hud-missions'); }));
+
+    // tasks count from real actions
+    await ev(() => __BD.store.claimDaily());
+    check('task: claiming the daily reward counts', (await mission('daily')).done);
+    await ev(() => { __BD.store.state.resources.energy = 100000; __BD.store.upgrade('barracks'); });
+    check('task: starting a building upgrade counts', (await mission('build')).done);
+    const alt = await ev(() => { const st = __BD.store; const name = st.missionList().find((t) => t.id === 'research').name; st.state.leaders.jax = { stars: 1 }; st.state.resources.shards = 5000; const r = st.starUpLeader('jax'); return { name, ok: r.ok }; });
+    check('task 5 before the Archive: "Raise a leader star or gear level" (a star-up counts)', alt.name === 'Raise a leader star or gear level' && alt.ok && (await mission('research')).done, JSON.stringify(alt));
+    const tr = await ev(() => { const st = __BD.store; st.train('sentinel', 10); st.train('bearer', 10); st.train('voyager', 10); const atStart = st.state.missions.progress.train ?? 0; for (let i = 0; i < 400 && st.queuedUnits(); i++) st.tick(5); return { atStart, after: st.state.missions.progress.train ?? 0 }; });
+    check('task: 30 troops counted when training completes', tr.atStart === 0 && tr.after === 30, JSON.stringify(tr));
+    const h1 = await hunts(1);
+    check('task: a hunt won at your top level (or 1 below) counts', h1[0].ok && h1[0].win && (await mission('push')).done, JSON.stringify(h1));
+    const h8 = await hunts(7);
+    check('task: 8 creatures defeated in real hunts', h8.every((h) => h.ok && h.win) && (await mission('kills')).done, JSON.stringify(h8));
+    const hl = await ev(() => { const st = __BD.store; st.state.infirmary.wounded.sentinel.reserve += 10; const r = st.heal('sentinel', 10); for (let i = 0; i < 600 && st.state.infirmary.queue.length; i++) st.tick(5); return { ok: r.ok, p: st.state.missions.progress.heal ?? 0 }; });
+    check('task: healing 10 wounded troops counts', hl.ok && hl.p >= 10 && (await mission('heal')).done, JSON.stringify(hl));
+    check('finished tasks toast "Mission complete"', await ev(() => __BD.ui().toastLog.some((t) => /^Mission complete: /.test(t))));
+    const rdy = await ev(() => ({ n: __BD.store.missionsReady(), badge: __BD.ui().rightBtns.missions.badgeText.text }));
+    check('Missions badge counts tasks ready to claim', rdy.n === 7 && await waitTrue(() => __BD.ui().rightBtns.missions.badgeText.text === '7'), JSON.stringify(rdy));
+
+    // claim through the UI
+    await click('q-missions');
+    check('Missions button opens the Daily Missions screen', await waitTrue(() => !!__BD.ui().modal?.isMissions) && await modalHas(/^Resets in /));
+    await click('mission-daily');
+    check('claiming a task banks its points (+10)', (await ev(() => __BD.store.missionPoints())) === 10);
+    await click('mission-kills');
+    const e0 = await ev(() => ({ e: __BD.store.state.resources.energy, L: __BD.store.state.beacon.level }));
+    await click('chest-20');
+    check('20-point bronze chest pays Energy 300 × Beacon level', await ev((e0) => Math.round(__BD.store.state.resources.energy - e0.e) >= 300 * e0.L && __BD.store.state.missions.chests.includes(20), e0));
+    const c0 = await ev(() => __BD.store.state.resources.cores);
+    await click('missions-all');
+    const all = await ev(() => ({ pts: __BD.store.missionPoints(), chests: __BD.store.state.missions.chests.slice().sort((a, b) => a - b), cores: __BD.store.state.resources.cores, ready: __BD.store.missionsReady() }));
+    check('Claim all: every task claimed (110 points) and every chest opened', all.pts === 110 && all.chests.join(',') === '20,40,60,80,100' && all.ready === 0, JSON.stringify(all));
+    check('the 100-point gold chest is the only Core: exactly +1', all.cores - c0 === 1, `${c0} -> ${all.cores}`);
+    check('opened chests show their open art', await ev(() => { const keys = []; const w = (o) => { if (o.texture) keys.push(o.texture.key); (o.list ?? []).forEach(w); }; w(__BD.ui().modal); return ['chest-bronze-open', 'chest-silver-open', 'chest-gold-open'].every((k) => keys.includes(k)); }));
+    await ev(() => __BD.ui().closeModal(true));
+
+    // a fresh screenshot state: some progress, one chest waiting
+    // --- local midnight reset with auto-pay
+    const roll = await ev(() => {
+      const st = __BD.store, real = Date.now;
+      st.state.missions = { day: st.dayIndex(), progress: { daily: 1, kills: 8, train: 30 }, claimed: ['daily'], chests: [] };
+      const e = st.state.resources.energy, a = st.state.resources.alloy, L = st.state.beacon.level, day = st.state.missions.day;
+      const ms = st.missionsResetIn() * 1000;
+      st.clock = () => real() + ms + 2000;   // 2 s past local midnight
+      for (let i = 0; i < 3; i++) st.tick(0.5);
+      return { day0: day, day: st.state.missions.day, prog: st.state.missions.progress, dE: Math.round(st.state.resources.energy - e), dA: Math.round(st.state.resources.alloy - a), L, paid: st.missionsReport?.paid };
+    });
+    check('missions reset at local midnight (new day, progress cleared)', roll.day === roll.day0 + 1 && Object.keys(roll.prog).length === 0, JSON.stringify(roll));
+    check('…unclaimed work is paid, not lost (10+20+15 = 45 pts: bronze 20 + 40 chests)', roll.paid && roll.paid.energy === 300 * roll.L && roll.paid.alloy === 40 * roll.L && roll.paid.stamina === 10 && roll.dA === 40 * roll.L, JSON.stringify(roll));
+    check('…with a "new day" toast', await waitTrue(() => __BD.ui().toastLog.some((t) => /Daily Missions reset/.test(t) && /Unclaimed rewards paid/.test(t))));
+    const back = await ev(() => {
+      const st = __BD.store, real = Date.now, day = st.state.missions.day;
+      st.state.missions.progress.kills = 3;
+      st.clock = () => real() - 3 * 864e5; // clock set back 3 days
+      st.missionsRoll(); st.tick(1.1);
+      return { same: st.state.missions.day === day, kills: st.state.missions.progress.kills };
+    });
+    check('setting the clock back never resets missions again', back.same && back.kills === 3, JSON.stringify(back));
+    await ev(() => { __BD.store.clock = () => Date.now(); __BD.store.state.missions = { day: __BD.store.dayIndex(), progress: {}, claimed: [], chests: [] }; __BD.store.save(); });
+
+    // --- offline actions count toward the day you come back
+    const off = await ev(() => { const st = __BD.store; st.state.resources.energy = 100000; st.train('voyager', 12); st.save(); st.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.lastSaved = Date.now() - 3600e3; localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); return st.state.missions.progress.train ?? 0; });
+    await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(500);
+    check('offline: training that finished while away counts toward today', off === 0 && (await ev(() => __BD.store.state.missions.progress.train)) === 12 && (await ev(() => __BD.store.state.missions.day === __BD.store.dayIndex())));
+
+    // --- save v9 -> v10
+    await ev(() => { __BD.store.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 9; delete raw.missions; delete raw.events; delete raw.hints; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
+    await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(500);
+    const mig = await ev(() => { const s = __BD.store.state; return { v: s.version, day: s.missions.day === __BD.store.dayIndex(), p: Object.keys(s.missions.progress).length, ev: s.events && typeof s.events.marks === 'number', bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v9') || '{}').version, lv: s.buildings.barracks.level, cores: s.resources.cores }; });
+    check('v9 save migrates to v10: missions start fresh today, events added, backup kept', mig.v === 10 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
+
+    // --- screenshot: missions in progress
+    await ev(() => { const st = __BD.store; st.state.missions.progress = { daily: 1, kills: 5, train: 30, build: 1, heal: 4 }; st.state.missions.claimed = ['daily', 'train']; st.state.missions.chests = [20]; st.save(); });
+    await click('q-missions'); await sleep(300);
+    await shot('stage8-missions.png');
+    await ev(() => __BD.ui().closeModal(true));
+    check('stage 8 missions: no console errors', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+
+    // --- time zones (Denver + Auckland): reset countdown = time to local midnight; DST day counted once
+    for (const tz of ['America/Denver', 'Pacific/Auckland']) {
+      ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { timezoneId: tz }));
+      const r = await page.evaluate(() => ({ left: __BD.store.missionsResetIn(), day: __BD.store.state.missions.day, today: __BD.store.dayIndex() }));
+      const exp = toMidnight(tz);
+      check(`${tz}: missions reset at local midnight (in ${Math.round(exp / 60)} min)`, Math.abs(r.left - exp) < 5 && r.day === r.today, JSON.stringify({ r, exp }));
+      if (tz === 'America/Denver') {
+        const dst = await page.evaluate(() => {
+          const st = __BD.store, at = (y, mo, d, h, mi) => new Date(y, mo, d, h, mi).getTime(), days = [];
+          st.clock = () => at(2026, 9, 31, 22, 0); st.state.missions = { day: st.dayIndex(), progress: {}, claimed: [], chests: [] };
+          for (const t of [at(2026, 10, 1, 0, 30), at(2026, 10, 1, 1, 30), at(2026, 10, 1, 23, 30), at(2026, 10, 2, 0, 10)]) { st.clock = () => t; st.missionsRoll(); days.push(st.state.missions.day); }
+          st.clock = () => Date.now();
+          return days;
+        });
+        check('DST end (Nov 1, a 25-hour day in Denver): one reset that day, the next at midnight Nov 2', dst[0] === dst[1] && dst[1] === dst[2] && dst[3] === dst[2] + 1, JSON.stringify(dst));
+      }
+      await ctx.close();
+    }
+
+    // --- one-time pointer on the Missions button after the tutorial
+    ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { hints: true }));
+    await page.evaluate(() => __BD.store.skipTutorial());
+    check('after the tutorial, a one-time pointer pulses on the Missions button', await page.evaluate(async () => { for (let i = 0; i < 20; i++) { if (__BD.ui().hintTarget === 'missions' && __BD.ui().hintG.visible) return true; await new Promise((r) => setTimeout(r, 100)); } return false; }));
+    { const c = await page.evaluate(() => __BD.controls().find((c) => c.meta === 'q-missions')); await page.mouse.click(c.x, c.y); await sleep(500); }
+    { const h = await page.evaluate(() => ({ st: __BD.store.state.hints, ls: JSON.parse(localStorage.getItem('brokenDawn.save.v1')).hints, t: __BD.ui().hintTarget, m: !!__BD.ui().modal?.isMissions }));
+      check('…tapping it opens Missions and clears the pointer for good (saved)', h.st.missions === true && h.ls.missions === true && h.t === null && h.m, JSON.stringify(h)); }
+    await ctx.close();
+  } catch (e) {
+    check('stage 8 suite ran without exceptions', false, e.message);
+  }
+  await browser.close();
+}
+
 const srv = await serveDist();
 try {
   if (!process.env.ONLY || process.env.ONLY === '1') {
@@ -2188,6 +2372,8 @@ try {
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '6')) await runStage6(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
   if (!process.env.ONLY || process.env.ONLY === '7') await runStage7(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '7')) await runStage7(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+  if (!process.env.ONLY || process.env.ONLY === '8') await runStage8(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
+  if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '8')) await runStage8(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

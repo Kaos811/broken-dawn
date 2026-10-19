@@ -352,7 +352,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 9; // v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 10; // v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -518,3 +518,26 @@ export const AUDIO = { music: 0.7, sfx: 0.9, muted: false, haptics: true, crossf
 export const PERF = { idleMs: 8000, idleFps: 30 };
 // First-time tutorial: number of steps and the completion reward.
 export const TUTORIAL = { steps: 8, reward: { energy: 500, cores: 2 } };
+
+// ---- Stage 8: Daily Missions --------------------------------------------------------------------
+// Reset at the player's local midnight. Tasks are counted from real game actions (offline ones too) and
+// claimed for activity points; points open the chests. Sum of points is 110, so one task can be skipped.
+export const MISSIONS = {
+  tasks: [
+    { id: 'daily', name: 'Claim the daily reward', goal: 1, pts: 10 },
+    { id: 'kills', name: 'Defeat 8 creatures', goal: 8, pts: 20 },
+    { id: 'train', name: 'Train or promote 30 troops', goal: 30, pts: 15 },
+    { id: 'build', name: 'Start a building upgrade', goal: 1, pts: 15 },
+    { id: 'research', name: 'Start a research', alt: 'Raise a leader star or gear level', goal: 1, pts: 15 },
+    { id: 'heal', name: 'Heal 10 wounded troops', goal: 10, pts: 15 },
+    { id: 'push', name: 'Win a hunt at top level (or 1 below)', goal: 1, pts: 20 },
+  ],
+  // Activity chests. L = Beacon level. Only the 100-point chest pays a Beacon Core (1 a day).
+  chests: [
+    { at: 20, tier: 'bronze', reward: (L) => ({ energy: 300 * L }) },
+    { at: 40, tier: 'bronze', reward: (L) => ({ alloy: 40 * L, stamina: 10 }) },
+    { at: 60, tier: 'silver', reward: () => ({ shards: 60 }) },
+    { at: 80, tier: 'silver', reward: (L) => ({ energy: 600 * L, stamina: 20 }) },
+    { at: 100, tier: 'gold', reward: () => ({ cores: 1, shards: 100 }) },
+  ],
+};

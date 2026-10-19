@@ -16,6 +16,8 @@ import { LocalWorldService } from '../world/worldService.js';
 import { createWorld, sanitizeWorld, dist, marchSeconds, LOCAL_OWNER } from '../world/worldState.js';
 import { squadArmy } from '../world/armies.js';
 import { combatPower, resolveBattle, odds } from '../world/battle.js';
+import { defaultMissions, sanitizeMissions, missionMethods } from '../systems/missions.js';
+import { defaultEvents, sanitizeEvents, eventMethods } from '../systems/events.js';
 
 // Line: { type, count, full } -- `count` = healthy troops in the line now, `full` = the count the formation
 // was saved with (casualties lower `count`; healing and Refill bring it back up to `full`).
@@ -62,6 +64,9 @@ function defaultState() {
     research: emptyResearch(),                 // stage 4: Archive research levels + the one running project
     settings: defaultSettings(),               // stage 5: audio volumes, mute, haptics
     tutorial: { done: false, step: 0, skipped: false }, // stage 5: first-time guided tutorial
+    missions: defaultMissions(),               // stage 8: daily missions (local day, progress, claims, chests)
+    events: defaultEvents(),                   // stage 8: event progress by id, Rift Marks, Exchange purchases
+    hints: { missions: false, events: false }, // stage 8: one-time pointers already shown
     lastSaved: Date.now(),
   };
 }
@@ -178,6 +183,11 @@ export function migrate(raw) {
     }
     raw.buildings = out;
     raw.version = 9;
+  }
+  // v9 -> v10: daily missions + events. Nothing changes; today's missions start fresh (nothing back-dated).
+  if (num(raw.version, 1) < 10) {
+    raw = { ...raw, missions: undefined, events: undefined, hints: undefined };
+    raw.version = 10;
   }
   return raw;
 }
@@ -319,6 +329,10 @@ function sanitize(raw) {
   const tu = raw.tutorial ?? {};
   const step = Math.min(TUTORIAL.steps, int(tu.step));
   s.tutorial = { done: tu.done === true || step >= TUTORIAL.steps, step, skipped: tu.skipped === true, rewarded: tu.rewarded === true };
+  // Stage 8: missions + events
+  s.missions = sanitizeMissions(raw.missions);
+  s.events = sanitizeEvents(raw.events);
+  s.hints = { missions: raw.hints?.missions === true, events: raw.hints?.events === true };
   return s;
 }
 
@@ -358,6 +372,8 @@ class Store extends Emitter {
       try { localStorage.setItem(`${SAVE_KEY}.backup-v${this.migratedFrom}`, JSON.stringify(raw)); } catch { /* ignore */ }
     }
     this.state = sanitize(raw);
+    this.missionsReport = null;
+    this.missionsRoll(); // a new local day since the last session: reset (and auto-pay) before offline progress
     if (raw) this.applyOffline();
     this.save();
     return this.state;
@@ -393,6 +409,7 @@ class Store extends Emitter {
   reset() {
     try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
     this.state = defaultState();
+    this.missionsRoll();
     this.save();
     this.emit('reset');
     this.emit('change');
@@ -450,6 +467,8 @@ class Store extends Emitter {
   // Called every frame with seconds elapsed.
   tick(dt) {
     const s = this.state;
+    this.rollAcc = (this.rollAcc ?? 0) + dt;
+    if (this.rollAcc >= 1) { this.rollAcc = 0; this.missionsRoll(); this.eventsTick?.(); }
     s.resources.energy += this.energyRate * dt;
     s.resources.shards += this.shardRate * dt;
     s.resources.alloy += this.alloyRate * dt;
@@ -523,6 +542,7 @@ class Store extends Emitter {
     this.state.resources.energy -= info.cost;
     if (id === BEACON.id) this.state.beacon.charge = 0; // the full charge is spent to start the upgrade
     this.state.construction.push({ id, toLevel: info.level + 1, cost: info.cost, total: info.seconds, progress: 0 });
+    this.track('upgradeStart');
     this.save();
     this.emit('upgradeStart', id);
     this.emit('change');
@@ -567,6 +587,7 @@ class Store extends Emitter {
       } else this.state.buildings[j.id].level = j.toLevel;
       this.state.construction.splice(this.state.construction.indexOf(j), 1);
       done.push({ id: j.id, level: j.toLevel });
+      this.track('upgradeDone', 1, { id: j.id, level: j.toLevel });
       this.emit('upgrade', j.id, { before, after: this.power.total });
       for (const id of unlocks) this.emit('unlocked', id);
     }
@@ -777,7 +798,7 @@ class Store extends Emitter {
       const n = Math.min(l.count, Math.floor(avail / ut + 1e-9));
       l.count -= n;
       l.progress = l.count > 0 ? Math.max(0, avail - n * ut) : 0;
-      if (n > 0) { this.state.troops[l.unit] += n; done[l.unit] = (done[l.unit] ?? 0) + n; }
+      if (n > 0) { this.state.troops[l.unit] += n; done[l.unit] = (done[l.unit] ?? 0) + n; this.track('train', n, { unit: l.unit, tier: tierOf(l.unit) }); }
       if (l.count === 0) l.from = null;
     }
     return done;
@@ -820,6 +841,7 @@ class Store extends Emitter {
     const r = this.state.resources;
     r.energy -= info.cost.energy; r.alloy -= info.cost.alloy; r.shards -= info.cost.shards;
     this.state.research.job = { id, toLevel: info.toLevel, cost: info.cost, total: info.seconds, progress: 0 };
+    this.track('researchStart');
     this.save(); this.emit('researchStart', id); this.emit('change');
     return { ok: true, seconds: info.seconds, cost: info.cost, toLevel: info.toLevel };
   }
@@ -842,6 +864,7 @@ class Store extends Emitter {
     const before = this.power.total;
     this.state.research.levels[j.id] = j.toLevel;
     this.state.research.job = null;
+    this.track('researchDone', 1, { id: j.id, level: j.toLevel });
     this.emit('research', j.id, j.toLevel, { before, after: this.power.total });
     this.save(); this.emit('change');
     return [{ id: j.id, level: j.toLevel }];
@@ -1005,6 +1028,7 @@ class Store extends Emitter {
     if (!info.can) return { ok: false, reason: 'Already claimed today. Come back tomorrow.' };
     this.state.daily = { lastDay: this.dayIndex(), streak: info.streak };
     this.grantCores(info.reward, 'daily');
+    this.track('daily');
     this.state.hunt.stamina = Math.min(STAMINA.overCap, this.state.hunt.stamina + STAMINA.dailyBonus); // +20 stamina too
     this.save(); this.emit('change');
     return { ok: true, cores: info.reward, streak: info.streak, bonus: info.reward > CORES.daily.base, stamina: STAMINA.dailyBonus };
@@ -1059,6 +1083,7 @@ class Store extends Emitter {
     if (!info.can) return { ok: false, reason: info.reason };
     this.state.resources.shards -= info.cost;
     this.state.leaders[lid].stars += 1;
+    this.track('shardUp');
     this.save(); this.emit('squad', this.leaderSquad(lid)); this.emit('change');
     return { ok: true, stars: this.state.leaders[lid].stars, cost: info.cost };
   }
@@ -1079,6 +1104,7 @@ class Store extends Emitter {
     if (!info.can) return { ok: false, reason: info.reason };
     this.state.resources.shards -= info.cost;
     this.state.gearLevels[gid] = info.level + 1;
+    this.track('shardUp');
     this.save(); this.emit('change');
     return { ok: true, level: info.level + 1, cost: info.cost };
   }
@@ -1211,6 +1237,8 @@ class Store extends Emitter {
       healed[b.type] = (healed[b.type] ?? 0) + 1;
       if (b.count <= 0) q.shift();
     }
+    const nh = Object.values(healed).reduce((a, v) => a + v, 0);
+    if (nh) this.track('heal', nh);
     return healed;
   }
 
@@ -1407,6 +1435,7 @@ class Store extends Emitter {
     if (win && target.kind === 'creature') {
       Object.assign(loot, this.killRewards(target));
       this.state.resources.energy += loot.energy; this.state.resources.alloy += loot.alloy; this.state.resources.shards += loot.shards;
+      this.track('kill', 1, { level: target.level, elite: !!CREATURES[target.type]?.elite, push: target.level >= Math.max(1, h.bestKill - 1) });
       const fk = this.firstKillCores(target.level);
       if (fk > 0) { h.firstKills.push(target.level); loot.cores = this.grantCores(fk, 'battle'); firstKill = true; }
       h.bestKill = Math.max(h.bestKill, target.level);
@@ -1449,4 +1478,5 @@ class Store extends Emitter {
   }
 }
 
+Object.assign(Store.prototype, missionMethods, eventMethods);
 export const store = new Store();
