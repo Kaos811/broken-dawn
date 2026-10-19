@@ -1,12 +1,13 @@
-import { PALETTE, TROOP_CLASSES, TROOP_IDS, CLASS_IDS, TIERS, MAX_TIER, SQUADS, TROOPS, LEADERS, GEAR, GEAR_IDS, RARITY, unitOf, classOf, tierOf } from '../../config.js';
+import { GACHA, PALETTE, TROOP_CLASSES, TROOP_IDS, CLASS_IDS, TIERS, MAX_TIER, SQUADS, TROOPS, LEADERS, GEAR, GEAR_IDS, RARITY, unitOf, classOf, tierOf } from '../../config.js';
 import { store } from '../../state/store.js';
 import { text, button, fmt } from '../widgets.js';
 import { gearTexture } from '../../art/portraits.js';
-import { header, tabRow, card, portrait, tapZone, fmtBuff, fmtGearBuff, STAT_NAMES } from './common.js';
+import { header, tabRow, card, portrait, tapZone, fmtBuff, fmtGearBuff, STAT_NAMES, sectionHeader, tile } from './common.js';
+import { SKIN, glyph, drawCard, lerpC } from '../skin.js';
 
 export function renderSquads(ui, c, a, api, st) {
   const cc = store.state.buildings.commandCenter.level;
-  header(ui, c, a, 'SQUADS', `Command Center Lv ${cc}`);
+  header(ui, c, a, 'SQUADS', `Command Center Lv ${cc}`, PALETTE.gold, { art: 'art-commandCenter' });
   const tabs = TROOPS.squadIds.map((id) => ({
     id, label: SQUADS[id].name, locked: !store.squadUnlocked(id),
     sub: store.squadUnlocked(id) ? `Power ${fmt(store.squadPower(id))}` : `CC Lv ${SQUADS[id].unlockCC}`,
@@ -21,10 +22,10 @@ export function renderSquads(ui, c, a, api, st) {
 }
 
 function renderLocked(ui, c, a, api, id, y0) {
-  card(ui, c, 16, y0, 688, 300, { accent: PALETTE.metalEdge });
+  card(ui, c, 16, y0, 688, 300, { state: 'locked' });
   const g = ui.add.graphics();
-  g.lineStyle(6, 0x6c788a, 1).strokeRoundedRect(330, y0 + 50, 60, 54, 10);
-  g.beginPath(); g.arc(360, y0 + 50, 20, Math.PI, 0); g.strokePath();
+  g.fillStyle(0x0b0e13, 1).fillCircle(360, y0 + 76, 46).lineStyle(3, 0x6b7280, 1).strokeCircle(360, y0 + 76, 46);
+  glyph(g, 'lock', 360, y0 + 80, 26, 0xc9ced8);
   c.add(g);
   c.add(text(ui, 360, y0 + 130, `${SQUADS[id].name} Squad is locked`, 30, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0.5, 0));
   c.add(text(ui, 360, y0 + 176, `Upgrade the Command Center to Lv ${SQUADS[id].unlockCC} to unlock it.`, 21, PALETTE.textDim).setOrigin(0.5, 0));
@@ -35,21 +36,22 @@ function renderDetails(ui, c, a, api, st, y0) {
   const id = st.squadId;
   const sq = store.state.squads[id];
   // --- summary
-  card(ui, c, 16, y0, 688, 196, { accent: PALETTE.gold });
+  card(ui, c, 16, y0, 688, 196, { stroke: 0x8a6a3a, accent: PALETTE.gold });
+  const sg = ui.add.graphics(); glyph(sg, 'star', 30, y0 + 22, 8, SKIN.gold); glyph(sg, 'atk', 244, y0 + 22, 8, SKIN.cyan); c.add(sg);
   // Two different numbers, labelled so they can't be confused: Squad Power feeds Base Power;
   // Combat Power (HP/ATK/DEF with leader, gear, research) is what decides World hunts.
-  c.add(text(ui, 36, y0 + 14, 'SQUAD POWER · BASE', 16, PALETTE.textDim, { letterSpacing: 2 }));
-  c.add(text(ui, 36, y0 + 36, fmt(store.squadPower(id)), 48, PALETTE.textGold, { fontStyle: 'bold' }));
+  c.add(text(ui, 44, y0 + 14, 'SQUAD POWER · BASE', 16, '#e8c27a', { fontStyle: 'bold', letterSpacing: 2 }));
+  c.add(text(ui, 36, y0 + 36, fmt(store.squadPower(id)), 48, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 }));
   c.add(text(ui, 36, y0 + 92, `${store.squadSoldiers(id)} soldiers + ${sq.level} × ${TROOPS.powerPerSquadLevel}`, 16, PALETTE.textDim));
-  c.add(text(ui, 250, y0 + 14, 'COMBAT POWER · HUNTS', 16, PALETTE.textDim, { letterSpacing: 2 }));
-  c.add(text(ui, 250, y0 + 36, fmt(store.squadCombatPower(id)), 48, PALETTE.textCyan, { fontStyle: 'bold' }));
+  c.add(text(ui, 258, y0 + 14, 'COMBAT POWER · HUNTS', 16, '#8ff8f2', { fontStyle: 'bold', letterSpacing: 2 }));
+  c.add(text(ui, 250, y0 + 36, fmt(store.squadCombatPower(id)), 48, PALETTE.textCyan, { fontStyle: 'bold', stroke: '#05282c', strokeThickness: 4 }));
   c.add(text(ui, 250, y0 + 92, 'decides World battles', 16, PALETTE.textDim));
   const stats = store.squadStats(id);
   c.add(text(ui, 36, y0 + 132, `HP ${fmt(stats.hp)}   ATK ${fmt(stats.atk)}   DEF ${fmt(stats.def)}`, 21, PALETTE.textCyan));
   c.add(text(ui, 684, y0 + 14, `Lv ${sq.level}`, 34, PALETTE.text, { fontStyle: 'bold' }).setOrigin(1, 0));
   c.add(text(ui, 684, y0 + 56, `cap Lv ${store.state.buildings.commandCenter.level} (CC level)`, 17, PALETTE.textDim).setOrigin(1, 0));
   const info = store.levelUpInfo(id);
-  const lvl = button(ui, 560, y0 + 112, 268, 58, `Level Up`, () => {
+  const lvl = button(ui, 560, y0 + 112, 268, 62, `Level Up`, () => {
     const r = store.levelUpSquad(id);
     if (!r.ok) api.toast(r.reason); else api.toast(`${SQUADS[id].name} reached Lv ${store.state.squads[id].level}  (+${TROOPS.powerPerSquadLevel} power)`);
   }, { style: 'gold', size: 24 });
@@ -65,15 +67,13 @@ function renderDetails(ui, c, a, api, st, y0) {
 
   // --- leader + gear
   const y1 = y0 + 208;
-  card(ui, c, 16, y1, 688, 176);
+  card(ui, c, 16, y1, 688, 176, { stroke: 0x8a6a3a });
   const slot = (x, label, key, name, sub, color, onTap, zone) => {
-    c.add(text(ui, x, y1 + 10, label, 16, PALETTE.textDim, { letterSpacing: 2 }));
-    if (key) {
-      const img = ui.add.image(x, y1 + 34, key).setOrigin(0, 0); img.setScale(key.startsWith('leader') ? 0.46 : 0.8); c.add(img);
-      const g = ui.add.graphics(); g.lineStyle(2, color, 1).strokeRect(x, y1 + 34, img.width * img.scaleX, img.height * img.scaleY); c.add(g);
-    } else {
-      const g = ui.add.graphics(); g.lineStyle(2, PALETTE.metalEdge, 0.8).strokeRect(x, y1 + 34, 92, 96);
-      g.lineStyle(3, 0x56606f, 1).lineBetween(x + 46, y1 + 66, x + 46, y1 + 98).lineBetween(x + 30, y1 + 82, x + 62, y1 + 82); c.add(g);
+    c.add(text(ui, x, y1 + 10, label, 16, '#e8c27a', { fontStyle: 'bold', letterSpacing: 2 }));
+    if (key) tile(ui, c, key, x, y1 + 34, 92, 116, { rim: color, fit: key.startsWith('leader') ? 'width' : 'width', imgH: 116 });
+    else {
+      const t = tile(ui, c, null, x, y1 + 34, 92, 116, { rim: SKIN.steel });
+      t.fg.lineStyle(3, 0x56606f, 1).lineBetween(x + 46, y1 + 74, x + 46, y1 + 110).lineBetween(x + 28, y1 + 92, x + 64, y1 + 92);
     }
     c.add(text(ui, x + 104, y1 + 40, name, 20, key ? PALETTE.text : PALETTE.textDim, { fontStyle: 'bold', wordWrap: { width: 116 } }));
     c.add(text(ui, x + 104, y1 + 92, sub, 15, PALETTE.textCyan, { wordWrap: { width: 116 } }));
@@ -92,15 +92,15 @@ function renderDetails(ui, c, a, api, st, y0) {
   // --- formation
   const y2 = y1 + 188;
   const fh = 276;
-  card(ui, c, 16, y2, 688, fh);
-  c.add(text(ui, 36, y2 + 14, 'FORMATION', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
+  card(ui, c, 16, y2, 688, fh, { stroke: 0x8a6a3a });
+  sectionHeader(ui, c, 32, y2 + 14, 'FORMATION', { w: 656 });
   sq.lines.forEach((l, i) => {
     const ly = y2 + 50 + i * 74;
-    const g = ui.add.graphics(); g.fillStyle(0x0b0e13, 1).fillRect(32, ly, 656, 66); g.lineStyle(1, PALETTE.metalEdge, 0.6).strokeRect(32, ly, 656, 66); c.add(g);
+    const g = ui.add.graphics(); drawCard(g, 32, ly, 656, 66, { state: l.type ? 'normal' : 'locked', cut: 8 }); c.add(g);
     c.add(text(ui, 46, ly + 20, SQUADS.lineNames[i].toUpperCase(), 18, PALETTE.textDim, { letterSpacing: 2 }));
     if (l.type) {
       const d = TROOP_CLASSES[l.type];
-      const img = ui.add.image(170, ly + 4, `portrait-${l.type}`).setOrigin(0, 0).setScale(0.24); c.add(img);
+      tile(ui, c, `portrait-${l.type}`, 168, ly + 5, 48, 56, { rim: TROOP_CLASSES[l.type].color, imgH: 56 });
       const short = l.full > l.count;
       c.add(text(ui, 230, ly + 8, `${d.plural}${d.tier > 1 ? ` (${TIERS[d.tier].label})` : ''}  ×${l.count}${short ? ` / ${l.full}` : ''}`, 24, short ? '#ff8a95' : d.colorHex, { fontStyle: 'bold' }));
       c.add(text(ui, 230, ly + 38, short ? `${d.role}  ·  ${l.full - l.count} missing (wounded / fallen)` : d.role, 16, PALETTE.textDim));
@@ -136,14 +136,14 @@ function renderEdit(ui, c, a, api, st, y0) {
   const e = st.edit, id = e.squadId;
   const draftUse = (t, skip = -1) => e.lines.reduce((n, l, i) => n + (i !== skip && l.type === t ? l.count : 0), 0);
   const maxFor = (i, t) => Math.max(0, store.availableFor(t, id) - draftUse(t, i));
-  c.add(text(ui, 24, y0 + 2, `EDIT FORMATION · ${SQUADS[id].name.toUpperCase()}`, 22, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
+  sectionHeader(ui, c, 20, y0 + 2, `EDIT FORMATION · ${SQUADS[id].name.toUpperCase()}`, { w: 680, size: 20 });
   const shown = TROOP_IDS.filter((t) => tierOf(t) === 1 || store.state.troops[t] > 0);
   c.add(text(ui, 24, y0 + 32, 'Available:  ' + shown.map((t) => `${TROOP_CLASSES[t].plural} ${store.availableFor(t, id) - draftUse(t)}`).join('  '), shown.length > 4 ? 16 : 19, PALETTE.textCyan, { wordWrap: { width: 680 } }));
   const LH = 168;
   e.lines.forEach((l, i) => {
     const ly = y0 + 64 + i * (LH + 8);
-    card(ui, c, 16, ly, 688, LH, { accent: l.type ? TROOP_CLASSES[l.type].color : null });
-    c.add(text(ui, 32, ly + 12, `${SQUADS.lineNames[i].toUpperCase()} LINE`, 18, PALETTE.textDim, { letterSpacing: 2 }));
+    card(ui, c, 16, ly, 688, LH, { stroke: 0x8a6a3a, accent: l.type ? TROOP_CLASSES[l.type].color : null });
+    c.add(text(ui, 32, ly + 12, `${SQUADS.lineNames[i].toUpperCase()} LINE`, 18, '#e8c27a', { fontStyle: 'bold', letterSpacing: 2 }));
     // class chips (a class chip picks that class at T1, or keeps the line's tier if it's the same class)
     const opts = [{ t: null, label: 'None' }, ...CLASS_IDS.map((t) => ({ t, label: TROOP_CLASSES[t].plural }))];
     const setType = (t) => { const m = maxFor(i, t); l.type = t; l.count = Math.min(m, l.count > 0 ? l.count : 10); };
@@ -163,7 +163,7 @@ function renderEdit(ui, c, a, api, st, y0) {
       for (let k = 1; k <= MAX_TIER; k++) {
         const u = unitOf(cls, k);
         const has = store.availableFor(u, id) > 0 || l.type === u;
-        const tb = button(ui, 444 + (k - 1) * 82, ly + 24, 74, 36, TIERS[k].label, () => { setType(u); api.rerender(); }, { style: l.type === u ? 'gold' : 'ghost', size: 17 });
+        const tb = button(ui, 444 + (k - 1) * 82, ly + 24, 74, 40, TIERS[k].label, () => { setType(u); api.rerender(); }, { style: l.type === u ? 'gold' : 'ghost', size: 17 });
         tb.setEnabled(has && (store.tierUnlocked(k) || store.state.troops[u] > 0));
         tb.chip = `line${i}-${u}`;
         c.add(tb);
@@ -183,9 +183,9 @@ function renderEdit(ui, c, a, api, st, y0) {
   });
   // leader row
   const yl = y0 + 64 + 3 * (LH + 8);
-  card(ui, c, 16, yl, 688, 80);
+  card(ui, c, 16, yl, 688, 80, { stroke: 0x8a6a3a });
   const L = e.leader ? LEADERS[e.leader] : null;
-  c.add(text(ui, 32, yl + 12, 'LEADER (optional)', 16, PALETTE.textDim, { letterSpacing: 2 }));
+  c.add(text(ui, 32, yl + 12, 'LEADER (optional)', 16, '#e8c27a', { fontStyle: 'bold', letterSpacing: 2 }));
   c.add(text(ui, 32, yl + 38, L ? `${L.name} · ${fmtBuff(L.buff, store.leaderMultiplier(L.id))}` : 'None', 22, L ? RARITY[L.rarity].hex : PALETTE.textDim, { fontStyle: 'bold' }));
   c.add(button(ui, 616, yl + 40, 160, 56, 'Change', () => leaderPicker(ui, api, id, (lid) => { e.leader = lid; api.rerender(); }, e.leader), { style: 'cyan', size: 22 }));
   // actions
@@ -199,6 +199,7 @@ function renderEdit(ui, c, a, api, st, y0) {
 }
 
 // Leader picker overlay. onPick(leaderId|null). `current` = currently selected leader.
+const GACHA_MAX_STARS = GACHA.maxStars;
 export function leaderPicker(ui, api, squadId, onPick, current) {
   const owned = Object.keys(LEADERS).filter((lid) => store.state.leaders[lid]);
   const rows = Math.ceil((owned.length + 1) / 4);
@@ -214,10 +215,12 @@ export function leaderPicker(ui, api, squadId, onPick, current) {
         // leaders already leading a different squad are locked (no stealing between squads)
         const where = lid ? store.leaderSquad(lid) : null;
         const locked = !!where && where !== squadId;
-        card(ui, c, x, y, w, 226, { stroke: sel ? PALETTE.gold : locked ? PALETTE.metalEdge : lid ? RARITY[LEADERS[lid].rarity].color : PALETTE.metalEdge, cut: 8 });
+        card(ui, c, x, y, w, 226, { state: sel ? 'selected' : locked ? 'locked' : 'normal', stroke: sel ? null : lid && !locked ? lerpC(RARITY[LEADERS[lid].rarity].color, 0x000000, 0.25) : null, cut: 8 });
         if (lid) {
           const L = LEADERS[lid];
-          const img = ui.add.image(x + 8, y + 8, `leader-${lid}`).setOrigin(0, 0).setScale(0.65); c.add(img);
+          const own = store.state.leaders[lid];
+          const tl = tile(ui, c, `leader-${lid}`, x + 8, y + 8, w - 16, 152, { rim: RARITY[L.rarity].color, stars: own?.stars ?? 0, maxStars: GACHA_MAX_STARS, dim: false, imgH: 152 });
+          const img = tl.img;
           const name = text(ui, x + w / 2, y + 166, L.name, 20, locked ? '#6b7280' : RARITY[L.rarity].hex, { fontStyle: 'bold' }).setOrigin(0.5, 0); c.add(name);
           if (locked) {
             img.setTint(0x555b66).setAlpha(0.45);
@@ -250,10 +253,10 @@ export function gearPicker(ui, api, squadId, slot) {
         const y = r.y + 84 + k * 104, x = r.x + 24, w = r.w - 48;
         const free = gid ? store.gearFree(gid, squadId) : 1;
         const sel = sq[slot] === gid;
-        card(ui, c, x, y, w, 94, { stroke: sel ? PALETTE.gold : gid ? RARITY[GEAR[gid].rarity].color : PALETTE.metalEdge, cut: 8 });
+        card(ui, c, x, y, w, 94, { state: sel ? 'selected' : 'normal', stroke: sel ? null : gid ? lerpC(RARITY[GEAR[gid].rarity].color, 0x000000, 0.2) : null, cut: 8 });
         if (gid) {
           const G = GEAR[gid];
-          c.add(ui.add.image(x + 10, y + 7, gearTexture(gid)).setOrigin(0, 0).setScale(0.67));
+          tile(ui, c, gearTexture(gid), x + 10, y + 7, 80, 80, { rim: RARITY[G.rarity].color });
           c.add(text(ui, x + 104, y + 12, G.name, 23, RARITY[G.rarity].hex, { fontStyle: 'bold' }));
           c.add(text(ui, x + 104, y + 50, `${RARITY[G.rarity].name} · ${fmtGearBuff(G)}`, 18, PALETTE.textDim));
           c.add(text(ui, x + w - 16, y + 34, free > 0 ? `${free} free` : 'all equipped', 18, free > 0 ? PALETTE.textCyan : '#ff8a95').setOrigin(1, 0));

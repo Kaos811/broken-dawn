@@ -317,8 +317,10 @@ export default class UIScene extends Phaser.Scene {
     const x = Phaser.Math.Clamp(ax - w / 2, 10, W - w - 10), y = SAFE.top + 180;
     const g = this.tipBg; g.clear();
     g.fillStyle(0x000000, 0.4).fillRoundedRect(4, 6, w, h, 14);
-    g.fillStyle(0x0b0e13, 0.97).fillRoundedRect(0, 0, w, h, 14);
-    g.lineStyle(2, PALETTE.gold, 0.85).strokeRoundedRect(0, 0, w, h, 14);
+    g.fillStyle(SKIN.goldDk, 1).fillRoundedRect(-2, -2, w + 4, h + 4, 15);
+    g.fillGradientStyle(0x1b222c, 0x1b222c, 0x07090d, 0x07090d, 0.98, 0.98, 0.98, 0.98).fillRoundedRect(0, 0, w, h, 14);
+    g.lineStyle(2, PALETTE.gold, 0.95).strokeRoundedRect(0, 0, w, h, 14);
+    g.lineStyle(1, SKIN.goldHi, 0.2).strokeRoundedRect(5, 5, w - 10, h - 10, 10);
     g.fillStyle(0x0b0e13, 1).fillTriangle(ax - x - 12, 1, ax - x + 12, 1, ax - x, -12);
     g.lineStyle(2, PALETTE.gold, 0.85).lineBetween(ax - x - 12, 0, ax - x, -12).lineBetween(ax - x, -12, ax - x + 12, 0);
     this.tipBox.setPosition(x, y).setVisible(true).setAlpha(0);
@@ -824,7 +826,7 @@ export default class UIScene extends Phaser.Scene {
     this.closeModal(true);
     if (tab) { this.activeTab = tab; this.drawNav(); }
     const c = this.add.container(0, 0).setDepth(100);
-    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.66).setInteractive();
+    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x020305, 0.72).setInteractive();
     const w = W - 48, x = 24;
     h = Math.min(h, H - 80);
     const y = Math.max(40, (H - h) / 2);
@@ -832,7 +834,15 @@ export default class UIScene extends Phaser.Scene {
     panelBg(g, x, y, w, h);
     const block = this.add.rectangle(x + w / 2, y + h / 2, w, h, 0, 0.001).setInteractive();
     c.add([dim, g, block]);
-    if (title) c.add(text(this, x + 28, y + 24, title, 32, PALETTE.textGold, { fontStyle: 'bold' }));
+    if (title) {
+      const tt = text(this, x + 30, y + 22, title, 32, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
+      if (tt.width > w - 120) tt.setScale((w - 120) / tt.width);
+      c.add(tt);
+      const rg = this.add.graphics(); c.add(rg);
+      const ry = y + 70;
+      for (let k = 0; k < 5; k++) rg.lineStyle(2, SKIN.gold, 0.7 - k * 0.13).lineBetween(x + 28 + k * (w - 56) / 5, ry, x + 28 + (k + 1) * (w - 56) / 5, ry);
+      diamond(rg, x + 28, ry, 5);
+    }
     c.add(button(this, x + w - 40, y + 40, 56, 56, '✕', () => this.closeModal(true), { style: 'ghost', size: 26 }));
     const rect = { x, y, w, h };
     build(c, rect, () => this.closeModal(true));
@@ -854,7 +864,11 @@ export default class UIScene extends Phaser.Scene {
     const rays = this.add.image(W / 2, H / 2 - 40, 'glow').setBlendMode('ADD').setScale(4).setAlpha(0.35);
     c.add(rays);
     const best = results.reduce((b, r) => Math.max(b, ['common', 'rare', 'epic', 'legendary'].indexOf(r.rarity)), 0);
-    c.add(text(this, W / 2, 150, results.length > 1 ? 'RECRUITMENT  ·  x10' : 'RECRUITMENT', 32, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 4 }).setOrigin(0.5));
+    const bannerImg = this.add.image(W / 2, 150, 'banner-beacon-call').setAlpha(0.35); bannerImg.setDisplaySize(W, W * 320 / 720); c.add(bannerImg);
+    const rg = this.add.graphics(); c.add(rg);
+    for (let k = 0; k < 5; k++) rg.lineStyle(2, SKIN.gold, 0.8 - k * 0.15).lineBetween(W / 2 - 200 - (k + 1) * 30, 186, W / 2 - 200 - k * 30, 186).lineBetween(W / 2 + 200 + k * 30, 186, W / 2 + 200 + (k + 1) * 30, 186);
+    diamond(rg, W / 2 - 200, 186, 6); diamond(rg, W / 2 + 200, 186, 6);
+    c.add(text(this, W / 2, 150, results.length > 1 ? 'RECRUITMENT  ·  x10' : 'RECRUITMENT', 34, '#ffd27f', { fontStyle: 'bold', letterSpacing: 4, stroke: '#2e1e06', strokeThickness: 6 }).setOrigin(0.5));
     const single = results.length === 1;
     const CW = single ? 300 : 128, CH = single ? 445 : 190, cols = single ? 1 : 5;
     const rowsN = Math.ceil(results.length / cols);
@@ -870,9 +884,11 @@ export default class UIScene extends Phaser.Scene {
       const back = this.add.image(0, 0, 'card-back').setDisplaySize(CW, CH);
       const front = this.add.container(0, 0).setVisible(false);
       const fg = this.add.graphics();
-      fg.fillStyle(0x0d1117, 1).fillRect(-CW / 2, -CH / 2, CW, CH);
-      fg.fillStyle(R.color, 0.18).fillRect(-CW / 2, CH / 2 - CH * 0.28, CW, CH * 0.28);
+      fg.fillStyle(lerpC(R.color, 0x000000, 0.45), 1).fillRect(-CW / 2 - 3, -CH / 2 - 3, CW + 6, CH + 6);
+      fg.fillGradientStyle(0x1b222c, 0x1b222c, 0x07090d, 0x07090d, 1, 1, 1, 1).fillRect(-CW / 2, -CH / 2, CW, CH);
+      fg.fillGradientStyle(R.color, R.color, R.color, R.color, 0, 0, 0.35, 0.35).fillRect(-CW / 2, CH / 2 - CH * 0.32, CW, CH * 0.32);
       fg.lineStyle(single ? 5 : 3, R.color, 1).strokeRect(-CW / 2, -CH / 2, CW, CH);
+      fg.lineStyle(1, 0xffffff, 0.25).strokeRect(-CW / 2 + 5, -CH / 2 + 5, CW - 10, CH - 10);
       const key = r.kind === 'leader' ? `leader-${r.id}` : gearTexture(r.id);
       const art = this.add.image(0, -CH * 0.1, key);
       art.setScale(r.kind === 'leader' ? (CW - 12) / 200 : (CW * 0.8) / 120);
@@ -946,22 +962,34 @@ export default class UIScene extends Phaser.Scene {
 
   openPowerBreakdown() {
     const s = store.state, p = store.power, tp = store.troopPower;
-    const lines = [
-      `Base Power ${fmt(p.total)} = Building ${fmt(p.building)} + Troop ${fmt(p.troop)}`,
-      '',
-      'BUILDING POWER',
-      `  Beacon Relay  Lv ${s.beacon.level}:  +${buildingPower(BEACON.id, s.beacon.level)}`,
+    const bRows = [
+      { icon: 'art-beacon', label: `Beacon Relay  Lv ${s.beacon.level}`, a: `+${buildingPower(BEACON.id, s.beacon.level)}` },
       ...Object.keys(BUILDINGS).map((id) => (BUILDINGS[id].unlockBeacon && s.beacon.level < BUILDINGS[id].unlockBeacon
-        ? `  ${BUILDINGS[id].name}:  unlocks at Beacon Lv ${BUILDINGS[id].unlockBeacon}`
-        : `  ${BUILDINGS[id].name}  Lv ${s.buildings[id].level}:  +${buildingPower(id, s.buildings[id].level)}`)),
-      '',
-      'TROOP POWER  (T1 1 · T2 2 · T3 4 per soldier, +10 per squad level above 1)',
-      ...TROOP_IDS.filter((t) => TROOP_CLASSES[t].tier === 1 || s.troops[t] > 0).map((t) => `  ${TROOP_CLASSES[t].plural}: ${s.troops[t]}  →  +${s.troops[t] * TROOP_CLASSES[t].power * TROOPS.powerPerSoldier}`),
-      `  Squad levels:  +${tp.levels}`,
+        ? { icon: `art-${id}`, label: BUILDINGS[id].name, a: `unlocks at Beacon Lv ${BUILDINGS[id].unlockBeacon}` }
+        : { icon: `art-${id}`, label: `${BUILDINGS[id].name}  Lv ${s.buildings[id].level}`, a: `+${buildingPower(id, s.buildings[id].level)}` })),
     ];
+    const tRows = [
+      ...TROOP_IDS.filter((t) => TROOP_CLASSES[t].tier === 1 || s.troops[t] > 0).map((t) => ({ icon: `portrait-${t}`, label: `${TROOP_CLASSES[t].plural}: ${s.troops[t]}`, a: `+${s.troops[t] * TROOP_CLASSES[t].power * TROOPS.powerPerSoldier}` })),
+      { glyph: 'squad', label: 'Squad levels', a: `+${tp.levels}` },
+    ];
+    const RH = 50, h = 250 + (bRows.length + tRows.length) * RH + 150;
     this.openOverlay({
-      title: 'Base Power', h: 760,
-      build: (c, r) => c.add(text(this, r.x + 28, r.y + 90, lines.join('\n'), 23, PALETTE.text, { lineSpacing: 8 })),
+      title: 'Base Power', h,
+      build: (c, r) => {
+        const x0 = r.x + 28, w0 = r.w - 56;
+        const pi = this.add.image(x0 + 26, r.y + 116, 'hud-power'); pi.setScale(52 / Math.max(pi.width, pi.height)); c.add(pi);
+        c.add(text(this, x0 + 64, r.y + 92, fmt(p.total), 40, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 }));
+        c.add(text(this, x0 + 66, r.y + 140, `Base Power ${fmt(p.total)} = Building ${fmt(p.building)} + Troop ${fmt(p.troop)}`, 17, PALETTE.textDim));
+        let y = r.y + 180;
+        sectionHeader(this, c, x0, y, 'BUILDING POWER', { w: w0, right: `+${fmt(p.building)}` });
+        y += 34;
+        for (const row of bRows) { statLine(this, c, x0, y, w0, RH - 6, { icon: row.icon, label: row.label, a: row.a, size: 19 }); y += RH; }
+        y += 10;
+        sectionHeader(this, c, x0, y, 'TROOP POWER', { w: w0, right: `+${fmt(p.troop)}` });
+        c.add(text(this, x0, y + 26, '(T1 1 · T2 2 · T3 4 per soldier, +10 per squad level above 1)', 15, PALETTE.textDim));
+        y += 52;
+        for (const row of tRows) { statLine(this, c, x0, y, w0, RH - 6, { icon: row.icon ?? null, glyphKind: row.glyph, label: row.label, a: row.a, size: 19 }); y += RH; }
+      },
     });
   }
 
@@ -977,14 +1005,16 @@ export default class UIScene extends Phaser.Scene {
         c.add(text(this, x0, r.y + 76, `You have ${fmt(store.state.resources.cores)} Cores. Cores are earned only, never bought.`, 18, PALETTE.textDim));
         // daily
         const di = store.dailyInfo();
-        c.add(text(this, x0, r.y + 112, 'DAILY LOGIN', 20, C.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+        sectionHeader(this, c, x0, r.y + 108, 'DAILY LOGIN', { w: r.w - 56, color: C.hex, rule: C.color, size: 19 });
         const shown = di.claimed ? di.streak : di.streak - 1; // days already banked in this cycle
         const inCycle = shown <= 0 ? 0 : ((shown - 1) % D.streakEvery) + 1;
         for (let k = 0; k < D.streakEvery; k++) {
           const cx = x0 + 22 + k * 52, cy = r.y + 166;
           const done = k < inCycle, bonus = k === D.streakEvery - 1;
+          g.fillStyle(0x000000, 0.45).fillCircle(cx + 1, cy + 3, 21);
           g.fillStyle(done ? C.color : 0x141922, 1).fillCircle(cx, cy, 20);
-          g.lineStyle(2, bonus ? PALETTE.gold : C.color, 1).strokeCircle(cx, cy, 20);
+          if (done) g.fillStyle(0xffffff, 0.25).fillEllipse(cx, cy - 8, 24, 10);
+          g.lineStyle(2.5, bonus ? PALETTE.gold : (done ? 0xffd0dc : lerpC(C.color, 0x000000, 0.3)), 1).strokeCircle(cx, cy, 20);
           c.add(text(this, cx, cy - 10, bonus ? `+${D.base + D.streakBonus}` : `${k + 1}`, 16, done ? '#ffffff' : (bonus ? PALETTE.textGold : PALETTE.textDim), { fontStyle: 'bold' }).setOrigin(0.5, 0));
         }
         c.add(text(this, x0, r.y + 196, di.claimed ? `Claimed today · ${di.streak}-day streak · come back tomorrow` : `Day ${di.streak} of your streak: +${di.reward}${di.reward > D.base ? ' (streak bonus!)' : ''}`, 17, PALETTE.text));
@@ -992,21 +1022,20 @@ export default class UIScene extends Phaser.Scene {
         bd.setEnabled(di.can); bd.chip = 'daily'; c.add(bd);
         // beacon levels
         const br = store.beaconRewards(), open = br.filter((b) => !b.claimed);
-        c.add(text(this, x0, r.y + 244, 'BEACON LEVELS', 20, C.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+        sectionHeader(this, c, x0, r.y + 240, 'BEACON LEVELS', { w: r.w - 260, color: C.hex, rule: C.color, size: 19 });
         c.add(text(this, x0, r.y + 274, `+${C.beaconLevel} Cores for each Beacon level reached, once each.\nBeacon Lv ${store.state.beacon.level}: ${br.length - open.length}/${br.length} claimed${open.length ? `, ${open.length} ready` : ''}. Next: Lv ${store.state.beacon.level + 1}.`, 17, PALETTE.text, { lineSpacing: 5 }));
         const bb = button(this, xr - 90, r.y + 262, 180, 56, open.length ? `Lv ${open[0].level} · +${C.beaconLevel}` : 'None ready', () => claimed(store.claimBeaconLevel(open[0].level)), { style: 'gold', size: 20 });
         bb.setEnabled(open.length > 0); bb.chip = open.length ? `beacon-${open[0].level}` : 'beacon-none'; c.add(bb);
         // milestones
-        c.add(text(this, x0, r.y + 340, 'FIRST-TIME MILESTONES', 20, C.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+        sectionHeader(this, c, x0, r.y + 336, 'FIRST-TIME MILESTONES', { w: r.w - 56, color: C.hex, rule: C.color, size: 19 });
         store.milestones().forEach((m, i) => {
           const y = r.y + 376 + i * 66;
-          g.fillStyle(0x12171f, 1).fillRect(x0, y, r.w - 56, 58);
-          g.lineStyle(1, m.claimed ? 0x2e3540 : (m.done ? C.color : PALETTE.metalEdge), 1).strokeRect(x0, y, r.w - 56, 58);
+          drawCard(g, x0, y, r.w - 56, 58, { state: m.claimed ? 'done' : m.done ? 'ready' : 'normal', cut: 8 });
           c.add(text(this, x0 + 14, y + 6, `${m.claimed ? '✓ ' : ''}${m.name}`, 19, m.claimed ? PALETTE.textDim : PALETTE.text, { fontStyle: 'bold' }));
           c.add(text(this, x0 + 14, y + 32, m.desc, 15, PALETTE.textDim));
           if (m.claimed) c.add(text(this, xr - 16, y + 18, `+${m.cores} claimed`, 17, PALETTE.textDim).setOrigin(1, 0));
           else {
-            const b = button(this, xr - 84, y + 29, 150, 44, m.done ? `Claim +${m.cores}` : `+${m.cores}`, () => claimed(store.claimMilestone(m.id)), { style: m.done ? 'gold' : 'ghost', size: 19 });
+            const b = button(this, xr - 84, y + 29, 150, 46, m.done ? `Claim +${m.cores}` : `+${m.cores}`, () => claimed(store.claimMilestone(m.id)), { style: m.done ? 'gold' : 'ghost', size: 19 });
             b.setEnabled(m.done); b.chip = `ms-${m.id}`; c.add(b);
           }
         });
@@ -1277,16 +1306,18 @@ export default class UIScene extends Phaser.Scene {
   openModal({ title, body, buttons, tab }) {
     this.closeModal();
     const c = this.add.container(0, 0).setDepth(100);
-    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.62).setInteractive();
-    const w = 600, h = 400, x = (W - w) / 2, y = (H - h) / 2 - 40;
+    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x020305, 0.7).setInteractive();
+    const w = 620, h = 420, x = (W - w) / 2, y = (H - h) / 2 - 40;
     const g = this.add.graphics();
     panelBg(g, x, y, w, h);
-    const t = text(this, x + 32, y + 32, title, 36, PALETTE.textGold, { fontStyle: 'bold' });
-    const b = text(this, x + 32, y + 96, body, 24, PALETTE.text, { wordWrap: { width: w - 64 }, lineSpacing: 6 });
+    for (let k = 0; k < 5; k++) g.lineStyle(2, SKIN.gold, 0.7 - k * 0.13).lineBetween(x + 30 + k * (w - 60) / 5, y + 86, x + 30 + (k + 1) * (w - 60) / 5, y + 86);
+    diamond(g, x + 30, y + 86, 5);
+    const t = text(this, x + 32, y + 30, title, 36, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
+    const b = text(this, x + 32, y + 106, body, 23, PALETTE.text, { wordWrap: { width: w - 64 }, lineSpacing: 6 });
     c.add([dim, g, t, b]);
     const bw = (w - 64 - (buttons.length - 1) * 20) / buttons.length;
     buttons.forEach((btn, i) => {
-      c.add(button(this, x + 32 + bw / 2 + i * (bw + 20), y + h - 64, bw, 74, btn.label, () => {
+      c.add(button(this, x + 32 + bw / 2 + i * (bw + 20), y + h - 66, bw, 80, btn.label, () => {
         if (!btn.keepOpen) this.closeModal();
         btn.onClick?.();
       }, { style: btn.style ?? 'ghost', size: 26 }));
@@ -1310,7 +1341,7 @@ export default class UIScene extends Phaser.Scene {
         const x0 = r.x + 32, xr = r.x + r.w - 32;
         const g = this.add.graphics(); c.add(g);
         const S = () => store.state.settings;
-        c.add(text(this, x0, r.y + 92, 'AUDIO', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
+        sectionHeader(this, c, x0, r.y + 92, 'AUDIO', { w: r.w - 64 });
         const rows = [['music', 'Music', 'synth score: base · world · battle'], ['sfx', 'Effects', 'taps, builds, battles, rewards']];
         const vals = {}, bars = {};
         rows.forEach(([key, name, sub], i) => {
@@ -1328,15 +1359,15 @@ export default class UIScene extends Phaser.Scene {
         c.add([mute, hap]);
         c.add(text(this, x0, r.y + 444, 'Sound starts after your first tap (browser rule) and pauses when the game is hidden. Haptics need a phone that supports vibration.', 15, PALETTE.textDim, { wordWrap: { width: r.w - 64 } }));
         // tutorial
-        c.add(text(this, x0, r.y + 520, 'TUTORIAL', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
+        sectionHeader(this, c, x0, r.y + 520, 'TUTORIAL', { w: r.w - 64 });
         const tuS = text(this, x0, r.y + 556, '', 19, PALETTE.text); c.add(tuS);
         const rep = button(this, xr - 150, r.y + 566, 300, 64, 'Replay Tutorial', () => {
           store.replayTutorial(); close(); this.closeScreen(); this.hideWorld();
           this.toast('Tutorial restarted. Follow the gold pointer.', 2200);
         }, { style: 'gold', size: 22 }); rep.chip = 'replay-tutorial'; c.add(rep);
         // game
-        c.add(text(this, x0, r.y + 650, 'GAME', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
-        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.6 (stage 6: painted base + new HUD)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
+        sectionHeader(this, c, x0, r.y + 650, 'GAME', { w: r.w - 64 });
+        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.9 (stage 9: painted menus)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
         const rs = button(this, r.x + r.w / 2, r.y + 836, 300, 64, 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
         this.refreshSettings = () => {
           if (!c.active) { this.refreshSettings = null; return; }
@@ -1345,9 +1376,7 @@ export default class UIScene extends Phaser.Scene {
           for (const key of ['music', 'sfx']) {
             const b = bars[key], v = s[key];
             vals[key].setText(`${Math.round(v * 100)}%`).setColor(s.muted ? '#5d6878' : PALETTE.textCyan);
-            g.fillStyle(0x05070a, 1).fillRect(b.x, b.y, b.w, 12);
-            g.fillStyle(s.muted ? 0x3a414c : (key === 'music' ? PALETTE.gold : PALETTE.cyan), 1).fillRect(b.x, b.y, b.w * v, 12);
-            g.lineStyle(1.5, PALETTE.metalEdge, 1).strokeRect(b.x, b.y, b.w, 12);
+            drawBar(g, b.x, b.y, b.w, 16, v, { color: s.muted ? 0x3a414c : (key === 'music' ? PALETTE.gold : SKIN.teal) });
           }
           mute.setLabel(s.muted ? '🔇 Sound: Muted' : '🔊 Sound: On').setStyle(s.muted ? 'danger' : 'cyan');
           hap.setLabel(s.haptics ? '📳 Haptics: On' : '📴 Haptics: Off').setStyle(s.haptics ? 'cyan' : 'ghost');
@@ -1382,7 +1411,7 @@ export default class UIScene extends Phaser.Scene {
     this.toastText.setText(msg);
     audio.play('toast', { gap: 250 });
     const w = Math.min(W - 60, this.toastText.width + 48), h = this.toastText.height + 30;
-    this.toastBg.clear().fillStyle(0x0b0e13, 0.94).fillRect(-w / 2, -h / 2, w, h).lineStyle(2, PALETTE.gold, 0.8).strokeRect(-w / 2, -h / 2, w, h);
+    this.toastBg.clear(); drawFrame(this.toastBg, -w / 2, -h / 2, w, h, { cut: 10, studs: false, alpha: 0.95 });
     // lift above the panel if it's open
     this.toastBox.y = this.panel.visible ? this.panelRect.y - h / 2 - 12 : H - NAV_H - HERO_RISE - 52;
     this.children.bringToTop(this.toastBox);

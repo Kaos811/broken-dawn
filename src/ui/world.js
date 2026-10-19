@@ -4,6 +4,8 @@ import Phaser from 'phaser';
 import { GAME_WIDTH as W, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, fmt, fmtClock, panelBg } from './widgets.js';
+import { drawBar, drawCard } from './skin.js';
+import { sectionHeader } from './kit.js';
 import { tapZone } from './screens/common.js';
 import { ringOfLevel } from '../world/worldState.js';
 import { audio } from '../audio/audio.js';
@@ -68,16 +70,14 @@ export function createWorldHud(ui, TOP_H, H) {
     stSub.setText(h.stamina >= SMAX ? `Full  ·  ${STAMINA.perAttack} per attack` : `+1 in ${fmtClock(nxt)}  ·  +${store.staminaRegenPerHour()}/h`);
     stBar.clear();
     const bx = 200, bw = 200, byy = sy + 46;
-    stBar.fillStyle(0x05070a, 1).fillRect(bx, byy, bw, 18);
-    stBar.fillStyle(h.stamina >= STAMINA.perAttack ? 0x4dff9a : 0xff4d5e, 1).fillRect(bx + 2, byy + 2, (bw - 4) * Math.min(1, h.stamina / SMAX), 14);
-    if (h.stamina > SMAX) stBar.fillStyle(PALETTE.gold, 1).fillRect(bx + 2, byy + 2, (bw - 4) * Math.min(1, (h.stamina - SMAX) / SMAX), 4);
-    stBar.lineStyle(1.5, PALETTE.metalEdge, 1).strokeRect(bx, byy, bw, 18);
+    drawBar(stBar, bx, byy, bw, 18, Math.min(1, h.stamina / SMAX), { color: h.stamina >= STAMINA.perAttack ? 0x4dff9a : 0xff4d5e });
+    if (h.stamina > SMAX) stBar.fillStyle(PALETTE.gold, 1).fillRect(bx + 3, byy + 3, (bw - 6) * Math.min(1, (h.stamina - SMAX) / SMAX), 4);
     auto.setLabel(h.auto ? 'AUTO: ON' : 'AUTO: OFF').setStyle(h.auto ? 'gold' : 'ghost');
     rep.setLabel(h.reports.length ? `Reports (${h.reports.length})` : 'Reports');
     for (const ch of hud.chips) {
       const status = store.squadStatus(ch.id), m = store.squadMarch(ch.id);
       const col = { home: PALETTE.cyan, marching: PALETTE.cyan, returning: PALETTE.gold, locked: 0x3b4452, empty: 0xff4d5e }[status];
-      ch.cg.clear().fillStyle(status === 'marching' ? 0x0f2a30 : 0x12171f, 1).fillRect(ch.x, by + 6, chipW, bh - 12).lineStyle(2, col, status === 'locked' ? 0.5 : 0.9).strokeRect(ch.x, by + 6, chipW, bh - 12);
+      ch.cg.clear(); drawCard(ch.cg, ch.x, by + 6, chipW, bh - 12, { state: status === 'locked' ? 'locked' : status === 'marching' ? 'progress' : 'normal', color: col, cut: 8 });
       if (status === 'locked') { ch.st.setText(`Locked`).setColor('#5d6878'); ch.sub.setText(`CC Lv ${SQUADS[ch.id].unlockCC}`); continue; }
       if (m) {
         const t = m.phase === 'out' ? m.travel - m.t : m.back - m.t;
@@ -203,8 +203,9 @@ export function openReport(ui, report) {
       const x0 = r.x + 32, cx = r.x + r.w / 2;
       const g = ui.add.graphics(); c.add(g);
       const col = report.win ? PALETTE.gold : 0xff4d5e;
-      g.fillStyle(col, 0.12).fillRect(r.x + 2, r.y + 2, r.w - 4, 120);
-      c.add(text(ui, cx, r.y + 22, report.win ? 'VICTORY' : 'DEFEAT', 52, report.win ? PALETTE.textGold : '#ff6f7b', { fontStyle: 'bold', letterSpacing: 6 }).setOrigin(0.5, 0));
+      g.fillGradientStyle(col, col, col, col, 0.28, 0.28, 0, 0).fillRect(r.x + 6, r.y + 6, r.w - 12, 130);
+      for (let k = 0; k < 5; k++) g.lineStyle(2, col, 0.8 - k * 0.15).lineBetween(cx - 60 - (k + 1) * 50, r.y + 52, cx - 60 - k * 50, r.y + 52).lineBetween(cx + 60 + k * 50, r.y + 52, cx + 60 + (k + 1) * 50, r.y + 52);
+      c.add(text(ui, cx, r.y + 22, report.win ? 'VICTORY' : 'DEFEAT', 52, report.win ? '#ffd27f' : '#ff6f7b', { fontStyle: 'bold', letterSpacing: 6, stroke: report.win ? '#2e1e06' : '#2a0508', strokeThickness: 6 }).setOrigin(0.5, 0));
       c.add(text(ui, cx, r.y + 86, `${sqName(report.squadId)} vs Lv ${report.target.level} ${T.name}  ·  ${report.rounds} rounds${report.auto ? '  ·  Auto' : ''}${report.offline ? '  ·  while away' : ''}`, 18, PALETTE.textDim).setOrigin(0.5, 0));
       c.add(ui.add.image(r.x + 90, r.y + 210, `cr-${report.target.type}`).setScale(0.9));
       c.add(text(ui, r.x + 170, r.y + 150, 'COMBAT POWER', 16, PALETTE.textDim, { letterSpacing: 2 }));
@@ -212,7 +213,7 @@ export function openReport(ui, report) {
       c.add(text(ui, r.x + 170, r.y + 218, `${ago(report.at)}`, 16, PALETTE.textDim));
       // loot
       let y = r.y + 290;
-      c.add(text(ui, x0, y, 'REWARDS', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
+      sectionHeader(ui, c, x0, y, 'REWARDS', { w: r.w - 64 });
       const L = report.loot;
       const lootT = text(ui, x0, y + 32, '', 21, report.win ? PALETTE.text : PALETTE.textDim); c.add(lootT);
       if (report.win) {
@@ -230,7 +231,7 @@ export function openReport(ui, report) {
       // casualties
       y += 118;
       const cs = report.casualties;
-      c.add(text(ui, x0, y, 'CASUALTIES', 20, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 2 }));
+      sectionHeader(ui, c, x0, y, 'CASUALTIES', { w: r.w - 64, color: '#ff9a8a', rule: 0xff6f7b });
       const sent = report.attacker.lines.reduce((n, l) => n + (l.count || 0), 0);
       c.add(text(ui, r.x + r.w - 32, y + 2, `${cs.total ?? 0} of ${sent} sent (${sent ? Math.round(((cs.total ?? 0) / sent) * 100) : 0}%)`, 17, PALETTE.textDim).setOrigin(1, 0));
       const types = [...new Set([...Object.keys(cs.wounded ?? {}), ...Object.keys(cs.dead ?? {})])].filter((t) => (cs.wounded?.[t] ?? 0) + (cs.dead?.[t] ?? 0) > 0);
@@ -266,7 +267,7 @@ export function openReports(ui) {
       if (!list.length) c.add(text(ui, r.x + 28, r.y + 120, 'No battles yet. Tap a creature on the map to attack it.', 20, PALETTE.textDim));
       list.forEach((rep, i) => {
         const y = r.y + 112 + i * 74, x = r.x + 24, w = r.w - 48;
-        const g = ui.add.graphics(); g.fillStyle(0x12171f, 1).fillRect(x, y, w, 66).lineStyle(2, rep.win ? PALETTE.gold : 0xff4d5e, 0.7).strokeRect(x, y, w, 66); c.add(g);
+        const g = ui.add.graphics(); drawCard(g, x, y, w, 66, { state: rep.win ? 'ready' : 'normal', accent: rep.win ? PALETTE.gold : 0xff4d5e, cut: 8 }); c.add(g);
         c.add(ui.add.image(x + 36, y + 33, `cr-${rep.target.type}`).setScale(0.45));
         c.add(text(ui, x + 76, y + 8, `${rep.win ? 'Victory' : 'Defeat'} · ${sqName(rep.squadId)} vs Lv ${rep.target.level} ${CREATURES[rep.target.type].short}`, 20, rep.win ? PALETTE.textGold : '#ff8a95', { fontStyle: 'bold' }));
         const lootTxt = rep.win ? `+${fmt(rep.loot.energy)} E  +${fmt(rep.loot.alloy)} A  +${fmt(rep.loot.shards)} S${rep.loot.cores ? `  +${rep.loot.cores} Core` : ''}` : 'no loot';
@@ -287,7 +288,7 @@ export function playReplay(ui, report) {
   ui.replay = c;
   c.add(ui.add.rectangle(W / 2, H / 2, W, H, 0x020305, 0.94).setInteractive());
   const T = CREATURES[report.target.type];
-  c.add(text(ui, W / 2, 60, 'BATTLE REPLAY', 30, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 4 }).setOrigin(0.5));
+  c.add(text(ui, W / 2, 60, 'BATTLE REPLAY', 30, '#ffd27f', { fontStyle: 'bold', letterSpacing: 4, stroke: '#2e1e06', strokeThickness: 5 }).setOrigin(0.5));
   c.add(text(ui, W / 2, 100, `${sqName(report.squadId)} vs Lv ${report.target.level} ${T.name}`, 20, PALETTE.textDim).setOrigin(0.5));
   const roundT = text(ui, W / 2, H / 2 - 18, 'Round 1', 26, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0.5);
   c.add(roundT);
@@ -328,9 +329,7 @@ export function playReplay(ui, report) {
     r.count.setText(`×${alive}`).setColor(alive ? PALETTE.text : '#5d6878');
     const frac = r.max ? r.pool / r.max : 0;
     r.g.clear();
-    r.g.fillStyle(0x05070a, 1).fillRect(40, r.y + 38, W - 80, 14);
-    r.g.fillStyle(r.color, 1).fillRect(42, r.y + 40, (W - 84) * frac, 10);
-    r.g.lineStyle(1.5, PALETTE.metalEdge, 1).strokeRect(40, r.y + 38, W - 80, 14);
+    drawBar(r.g, 40, r.y + 38, W - 80, 14, frac, { color: r.color });
     const shown = Math.ceil(r.icons.length * (alive / Math.max(1, r.l.count)));
     r.icons.forEach((img, j) => img.setAlpha(j < shown ? 1 : 0.18));
   };

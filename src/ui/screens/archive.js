@@ -2,6 +2,7 @@
 import { PALETTE, RESEARCH, RESEARCH_IDS, RESEARCH_BRANCHES, BUILDINGS } from '../../config.js';
 import { store } from '../../state/store.js';
 import { text, button, fmt, fmtClock } from '../widgets.js';
+import { drawBar, diamond } from '../skin.js';
 import { header, card, tabRow } from './common.js';
 import { researchEffectText } from '../../systems/research.js';
 
@@ -47,9 +48,7 @@ export function renderArchive(ui, c, a, api, st) {
     pSub.setText(`${R.desc}  ·  paid ${costText(j.cost)}`);
     pTime.setText(`${fmtClock(j.total - j.progress)} left`);
     const bx = 36, by = py + ph - 26, bw = 480;
-    pBar.fillStyle(0x05070a, 1).fillRect(bx, by, bw, 12);
-    pBar.fillStyle(0xb07cff, 1).fillRect(bx, by, bw * Math.min(1, j.progress / j.total), 12);
-    pBar.lineStyle(2, 0xb07cff, 0.8).strokeRect(bx, by, bw, 12);
+    drawBar(pBar, bx, by - 2, bw, 16, Math.min(1, j.progress / j.total), { color: 0xb07cff });
   });
 
   // ---- branch tabs
@@ -98,8 +97,8 @@ export function renderArchive(ui, c, a, api, st) {
       n.lvT.setText(n.R.maxLevel === 1 ? (L ? 'DONE' : '') : `Lv ${L}/${max}`).setColor(L >= max ? B.hex : PALETTE.textDim);
       n.pips.clear();
       if (n.R.maxLevel !== 1) for (let k = 0; k < max; k++) {
-        n.pips.fillStyle(k < L ? B.color : 0x232a35, 1).fillRect(372 + k * 16, n.y + 18, 12, 12);
-        if (running && k === L) n.pips.lineStyle(2, 0xffffff, 1).strokeRect(372 + k * 16, n.y + 18, 12, 12);
+        diamond(n.pips, 378 + k * 16, n.y + 24, 6, k < L ? B.color : 0x232a35);
+        if (running && k === L) n.pips.lineStyle(2, 0xffffff, 1).strokeCircle(378 + k * 16, n.y + 24, 8);
       }
       const reqs = n.R.req ? [n.R.req.barracks ? `Barracks Lv ${n.R.req.barracks}` : null, n.R.req.archive ? `Archive Lv ${n.R.req.archive}` : null, n.R.req.research ? RESEARCH[n.R.req.research].name : null].filter(Boolean).join(' · ') : '';
       if (n.R.effect === 'tier') n.eff.setText(`${n.R.desc}`).setWordWrapWidth(420).setFontSize(17);

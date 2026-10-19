@@ -3,6 +3,8 @@
 import { GAME_WIDTH as W, PALETTE, MISSIONS, EVENTS } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, fmt, fmtDuration } from './widgets.js';
+import { SKIN, drawBar, drawCard } from './skin.js';
+import { sectionHeader } from './kit.js';
 import { audio } from '../audio/audio.js';
 import { TOP_H } from './layout.js';
 
@@ -134,12 +136,10 @@ export function openMissions(ui) {
       const list = store.missionList();
       list.forEach((t, i) => {
         const y = ty + 86 + i * 92, w = r.w - 56;
-        g.fillStyle(0x12171f, 1).fillRect(x0, y, w, 82);
-        g.lineStyle(1, t.claimed ? 0x2e3540 : (t.done ? PALETTE.gold : PALETTE.metalEdge), 1).strokeRect(x0, y, w, 82);
+        drawCard(g, x0, y, w, 82, { state: t.claimed ? 'done' : t.done ? 'ready' : 'normal', cut: 8 });
         c.add(text(ui, x0 + 14, y + 8, `${t.claimed ? '✓ ' : ''}${t.name}`, 19, t.claimed ? PALETTE.textDim : PALETTE.text, { fontStyle: 'bold', wordWrap: { width: w - 220 } }));
         const bw = 260, by = y + 56;
-        g.fillStyle(0x05070a, 1).fillRect(x0 + 14, by, bw, 12);
-        g.fillStyle(t.done ? PALETTE.gold : PALETTE.cyan, 1).fillRect(x0 + 14, by, bw * (t.progress / t.goal), 12);
+        drawBar(g, x0 + 14, by, bw, 12, t.progress / t.goal, { color: t.done ? PALETTE.gold : SKIN.teal });
         c.add(text(ui, x0 + 24 + bw, by - 5, `${t.progress}/${t.goal}`, 16, PALETTE.textDim));
         c.add(text(ui, xr - 196, y + 30, `+${t.pts}`, 20, PALETTE.textCyan ?? '#5ff3ff', { fontStyle: 'bold' }).setOrigin(0.5));
         if (t.claimed) c.add(text(ui, xr - 74, y + 30, 'Claimed', 17, PALETTE.textDim).setOrigin(0.5));
@@ -189,7 +189,7 @@ export function openEvents(ui) {
       const bw = r.w - 56, bh = Math.round(bw / 3);
       const ban = ui.add.image(x0, r.y + 84, info.def.banner).setOrigin(0, 0); ban.setDisplaySize(bw, bh);
       c.add([ban, g]);
-      g.lineStyle(2, info.def.color, 0.9).strokeRect(x0, r.y + 84, bw, bh);
+      g.lineStyle(4, SKIN.goldDk, 1).strokeRect(x0 - 2, r.y + 82, bw + 4, bh + 4).lineStyle(2, SKIN.gold, 1).strokeRect(x0, r.y + 84, bw, bh);
       c.add(text(ui, x0 + 22, r.y + 100, live ? 'LIVE EVENT' : 'NEXT EVENT', 16, info.def.hex, { fontStyle: 'bold', letterSpacing: 3 }));
       c.add(text(ui, x0 + 22, r.y + 124, info.def.name, 38, '#ffffff', { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 5 }));
       const cd = text(ui, x0 + 22, r.y + 174, '', 20, PALETTE.textGold, { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }); c.add(cd);
@@ -203,18 +203,16 @@ export function openEvents(ui) {
       c.add(text(ui, x0, y, live ? `Your points: ${fmt(info.points)}` : 'Your points: -', 24, PALETTE.text, { fontStyle: 'bold' }));
       c.add(text(ui, x0, y + 34, `+1 Rift Mark per ${EVENTS.marksPer} points  ·  ${fmtLocal(info.start)} – ${fmtLocal(info.end)} (your time)`, 15, PALETTE.textDim));
       y += 70;
-      c.add(text(ui, x0, y, 'HOW TO SCORE', 17, info.def.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+      sectionHeader(ui, c, x0, y, 'HOW TO SCORE', { w: r.w - 56, color: info.def.hex, rule: info.def.color, size: 17 });
       info.def.how.forEach((h, k) => c.add(text(ui, x0 + 4, y + 28 + k * 26, `•  ${h}`, 17, PALETTE.text)));
       y += 28 + info.def.how.length * 26 + 14;
-      c.add(text(ui, x0, y, 'MILESTONES', 17, info.def.hex, { fontStyle: 'bold', letterSpacing: 2 }));
+      sectionHeader(ui, c, x0, y, 'MILESTONES', { w: r.w - 56, color: info.def.hex, rule: info.def.color, size: 17 });
       y += 30;
       const top = info.def.milestones[info.def.milestones.length - 1];
       info.milestones.forEach((m) => {
         const ry = y + m.i * 70, w = r.w - 56;
-        g.fillStyle(0x12171f, 1).fillRect(x0, ry, w, 62);
-        g.lineStyle(1, m.claimed ? 0x2e3540 : (m.reached ? PALETTE.gold : PALETTE.metalEdge), 1).strokeRect(x0, ry, w, 62);
-        g.fillStyle(0x05070a, 1).fillRect(x0, ry + 58, w, 4);
-        g.fillStyle(info.def.color, 1).fillRect(x0, ry + 58, w * Math.min(1, (live ? info.points : 0) / m.at), 4);
+        drawCard(g, x0, ry, w, 62, { state: m.claimed ? 'done' : m.reached ? 'ready' : 'normal', cut: 8 });
+        g.fillStyle(info.def.color, 0.9).fillRect(x0 + 8, ry + 56, (w - 16) * Math.min(1, (live ? info.points : 0) / m.at), 3);
         c.add(text(ui, x0 + 14, ry + 6, `${m.claimed ? '✓ ' : ''}${fmt(m.at)} pts`, 20, m.claimed ? PALETTE.textDim : PALETTE.text, { fontStyle: 'bold' }));
         c.add(text(ui, x0 + 14, ry + 32, fmtBundle(m.reward), 15, m.reward.cores ? '#ff9ab3' : PALETTE.textDim));
         if (m.claimed) c.add(text(ui, xr - 74, ry + 22, 'Claimed', 17, PALETTE.textDim).setOrigin(0.5, 0));
@@ -260,8 +258,7 @@ export function openExchange(ui) {
       c.tick();
       store.shopItems().forEach((it, k) => {
         const y = r.y + 210 + k * 110, w = r.w - 56;
-        g.fillStyle(0x12171f, 1).fillRect(x0, y, w, 98);
-        g.lineStyle(1, it.id === 'core' ? 0xff4f7b : PALETTE.metalEdge, 1).strokeRect(x0, y, w, 98);
+        drawCard(g, x0, y, w, 98, { accent: it.id === 'core' ? 0xff4f7b : null, cut: 8 });
         const icon = { energy: 'hud-energy', alloy: 'hud-alloy', stamina: 'hud-stamina', gear: 'hud-shards', core: 'hud-core' }[it.id];
         const im = ui.add.image(x0 + 48, y + 49, icon); im.setScale(60 / Math.max(im.width, im.height)); c.add(im);
         c.add(text(ui, x0 + 92, y + 12, it.name, 21, it.id === 'core' ? '#ff9ab3' : PALETTE.text, { fontStyle: 'bold' }));
