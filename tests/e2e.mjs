@@ -2238,7 +2238,7 @@ async function runStage9c(url, label) {
       const u = __BD.ui(); u.openScreen('troops'); await new Promise((r) => setTimeout(r, 400));
       const texts = []; const walk = (o) => { if (o.text !== undefined && o.visible) texts.push({ t: o.text, y: o.getBounds().centerY }); (o.list ?? []).forEach(walk); }; walk(u.screen.container);
       const find = (re) => texts.find((x) => re.test(x.t));
-      const bear = find(/^Bearers$/), voy = find(/^Voyagers$/), tr = find(/^Training \d+\/\d+ Bearers$/);
+      const bear = find(/^Bearers$/), voy = find(/^Voyagers$/), tr = bear && voy && texts.find((x) => /^Training \d+\/\d+ /.test(x.t) && x.y > bear.y && x.y < voy.y);
       return { section: texts.some((x) => /TRAINING LANES/.test(x.t)), chip: find(/^Lanes \d\/3$/)?.t, inCard: !!(tr && bear && voy && tr.y > bear.y && tr.y < voy.y), timers: texts.filter((x) => /^next \d+:\d\d  ·  all \d+:\d\d$/.test(x.t)).length };
     });
     check('Barracks: no separate Training Lanes section; each card shows its lane inline (count, bar, timers, ✕) and the header chip counts busy lanes', !lane.section && /^Lanes [1-3]\/3$/.test(lane.chip ?? '') && lane.inCard && lane.timers >= 1, JSON.stringify(lane));
