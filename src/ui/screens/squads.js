@@ -149,7 +149,7 @@ function renderEdit(ui, c, a, api, st, y0) {
     const setType = (t) => { const m = maxFor(i, t); l.type = t; l.count = Math.min(m, l.count > 0 ? l.count : 10); };
     opts.forEach((o, k) => {
       const on = o.t === null ? !l.type : classOf(l.type) === o.t;
-      const b = button(ui, 32 + 82 + k * 164, ly + 64, 156, 50, o.label, () => {
+      const b = button(ui, 32 + 82 + k * 164, ly + 70, 156, 50, o.label, () => {
         if (o.t === null) { l.type = null; l.count = 0; }
         else if (classOf(l.type) !== o.t) setType(o.t);
         api.rerender();
@@ -163,14 +163,14 @@ function renderEdit(ui, c, a, api, st, y0) {
       for (let k = 1; k <= MAX_TIER; k++) {
         const u = unitOf(cls, k);
         const has = store.availableFor(u, id) > 0 || l.type === u;
-        const tb = button(ui, 444 + (k - 1) * 82, ly + 24, 74, 40, TIERS[k].label, () => { setType(u); api.rerender(); }, { style: l.type === u ? 'gold' : 'ghost', size: 17 });
+        const tb = button(ui, 444 + (k - 1) * 82, ly + 24, 74, 36, TIERS[k].label, () => { setType(u); api.rerender(); }, { style: l.type === u ? 'gold' : 'ghost', size: 17 });
         tb.setEnabled(has && (store.tierUnlocked(k) || store.state.troops[u] > 0));
         tb.chip = `line${i}-${u}`;
         c.add(tb);
       }
     }
     // count stepper
-    const cy = ly + 128;
+    const cy = ly + 134;
     if (l.type) {
       const m = maxFor(i, l.type);
       const set = (n) => { l.count = Math.max(0, Math.min(m, n)); api.rerender(); };

@@ -26,6 +26,6 @@ export const LAYOUT_SCREENS = [
   ['armory gear', "u.openScreen('armory', { armoryTab: 'gear' });"],
   ...['economy', 'military', 'healing', 'world'].map((t) => [`archive ${t}`, `if (__BD.store.state.beacon.level >= 3) u.openScreen('archive', { archiveBranch: '${t}' });`]),
   ['reveal x1', "u.playReveal([{ kind: 'leader', id: 'kael', rarity: 'legendary', result: 'new' }]);"],
-  ['reveal x10', "u.playReveal(['kael', 'lyra', 'jax', 'seren', 'vex', 'orin', 'nova', 'rook', 'dax', 'mira'].map((id) => ({ kind: 'leader', id, rarity: 'rare', result: 'dup', shards: 10 })));"],
+  ['reveal x10', "u.playReveal(['kael', 'lyra', 'jax', 'seren', 'vex', 'orin', 'nova', 'rook', 'dax', 'mira'].map((id) => ({ kind: 'leader', id, rarity: 'rare', result: 'shards', refund: 10 })));"],
   ['reset modal', "u.openModal({ title: 'Reset all progress?', body: 'This permanently erases your base, troops, squads, leaders, gear and all resources. This can\\u2019t be undone.', buttons: [{ label: 'Cancel' }, { label: 'Reset', style: 'danger' }] });"],
 ];

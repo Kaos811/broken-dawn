@@ -62,7 +62,8 @@ export function renderArchive(ui, c, a, api, st) {
   const B = RESEARCH_BRANCHES.find((b) => b.id === branch);
   const ids = RESEARCH_IDS.filter((id) => RESEARCH[id].branch === branch);
   const ny0 = ty + 88, avail = a.y + a.h - ny0 - 10;
-  const NH = Math.min(150, Math.floor(avail / ids.length) - 10), GAP = 10;
+  // fixed row height: on short phones the list scrolls instead of squeezing lines on top of each other
+  const NH = Math.max(128, Math.min(150, Math.floor(avail / ids.length) - 10)), GAP = 10;
   const spine = ui.add.graphics();
   c.add(spine);
   const nodes = ids.map((id, i) => {
@@ -103,9 +104,9 @@ export function renderArchive(ui, c, a, api, st) {
       const reqs = n.R.req ? [n.R.req.barracks ? `Barracks Lv ${n.R.req.barracks}` : null, n.R.req.archive ? `Archive Lv ${n.R.req.archive}` : null, n.R.req.research ? RESEARCH[n.R.req.research].name : null].filter(Boolean).join(' · ') : '';
       if (n.R.effect === 'tier') n.eff.setText(`${n.R.desc}`).setWordWrapWidth(420).setFontSize(17);
       else n.eff.setText(L >= max ? `${n.R.desc}  ${researchEffectText(n.id, L)}  (max)` : `${n.R.desc}  ${researchEffectText(n.id, L)} → ${researchEffectText(n.id, L + 1)}`).setFontSize(18).setWordWrapWidth(430);
-      n.cost.setText(L >= max ? 'Fully researched' : `${costText(info.cost)}  ·  ${fmtClock(info.seconds)}`).setY(n.y + 72).setWordWrapWidth(440);
+      n.cost.setText(L >= max ? 'Fully researched' : `${costText(info.cost)}  ·  ${fmtClock(info.seconds)}`).setY(Math.max(n.y + 70, n.eff.y + n.eff.height + 4)).setWordWrapWidth(440);
       const showWhy = !info.can && L < max && !running && !/^Archive busy/.test(info.reason ?? '');
-      n.why.setText(showWhy ? info.reason : (reqs && L < max ? `Requires ${reqs}` : '')).setColor(showWhy ? '#ff8a93' : PALETTE.textDim).setY(n.y + NH - 26);
+      n.why.setText(showWhy ? info.reason : (reqs && L < max ? `Requires ${reqs}` : '')).setColor(showWhy ? '#ff8a93' : PALETTE.textDim).setY(n.cost.y + n.cost.height + 3).setWordWrapWidth(440);
       n.b.setEnabled(info.can).setLabel(running ? 'Running' : L >= max ? 'Done' : n.R.maxLevel === 1 ? 'Research' : `Lv ${L + 1}`);
     }
   });

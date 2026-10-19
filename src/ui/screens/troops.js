@@ -52,13 +52,13 @@ export function renderTroops(ui, c, a, api, st) {
   const sub = header(ui, c, a, 'BARRACKS', '', PALETTE.gold, { art: 'art-barracks' });
   // lanes are one per class: each card shows its own; the header chip counts the busy ones
   const chipG = ui.add.graphics(); c.add(chipG);
-  const chipT = text(ui, 0, a.y + 66, '', 16, PALETTE.textCyan, { fontStyle: 'bold' }).setOrigin(1, 0.5); c.add(chipT);
+  const chipT = text(ui, 0, a.y + 75, '', 16, PALETTE.textCyan, { fontStyle: 'bold' }).setOrigin(1, 0.5); c.add(chipT);
   api.dyn(() => {
     sub.setText(`Lv ${lv}  ·  Speed x${(BARRACKS.trainSpeed(lv) * store.mods.train).toFixed(2)}  ·  ${store.laneCapacity()}/lane`);
     const active = store.activeLanes().length;
     chipT.setText(`Lanes ${active}/${CLASS_IDS.length}`).setColor(active ? PALETTE.textCyan : PALETTE.textDim).setX(a.x + a.w - 30);
-    chipG.clear().fillStyle(0x07090d, 0.9).fillRoundedRect(chipT.x - chipT.width - 12, a.y + 54, chipT.width + 24, 24, 12)
-      .lineStyle(1.5, active ? SKIN.teal : 0x3b4452, 1).strokeRoundedRect(chipT.x - chipT.width - 12, a.y + 54, chipT.width + 24, 24, 12);
+    chipG.clear().fillStyle(0x07090d, 0.9).fillRoundedRect(chipT.x - chipT.width - 12, a.y + 63, chipT.width + 24, 24, 12)
+      .lineStyle(1.5, active ? SKIN.teal : 0x3b4452, 1).strokeRoundedRect(chipT.x - chipT.width - 12, a.y + 63, chipT.width + 24, 24, 12);
   });
   st.tierSel ??= {};
 

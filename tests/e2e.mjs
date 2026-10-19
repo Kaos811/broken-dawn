@@ -4,6 +4,7 @@
 import { chromium } from 'playwright-core';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -2171,6 +2172,80 @@ async function runStage7(url, label, takeShots) {
   await browser.close();
 }
 
+// Stage 9c: every screen / panel / modal / tab fits at phone sizes incl. Safari's toolbars (short
+// viewports): text and controls inside the safe area and their panel, tall content scrolls inside
+// its own masked area, tap targets don't overlap. Toolbar show/hide resizes must not reload.
+async function runStage9c(url, label) {
+  console.log(`\n=== stage 9c · ${label}: ${url}`);
+  const { LAYOUT_SCREENS } = await import('./layout-screens.js');
+  const midsave = readFileSync(join(ROOT, 'tools', 'midsave.js'), 'utf8');
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const SIZES = [[390, 844], [360, 740], [375, 667], [430, 932], [390, 664], [375, 560]];
+  try {
+    for (const [w, h] of SIZES) for (const save of (w === 375 && h === 560 ? ['mid', 'late', 'early'] : ['mid'])) {
+      const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; });
+      const page = await ctx.newPage();
+      const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+      const ev = (fn, arg) => page.evaluate(fn, arg);
+      await page.goto(url); await page.waitForFunction(() => window.__BD?.ui()?.panel);
+      await ev(midsave); await ev((k) => window[`__${k}Save`](), save);
+      await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(800);
+      const issues = [];
+      for (const [name, code] of LAYOUT_SCREENS) {
+        await ev(() => { const u = __BD.ui(); u.reveal?.destroy(); u.reveal = null; u.closeModal(true); u.closeScreen(); u.closePanel(true); });
+        await sleep(120);
+        const r = await ev(`(async (u) => { ${code} })(__BD.ui())`);
+        if (r?.tap) await page.mouse.click(r.tap.x, r.tap.y);
+        await sleep(name.startsWith('reveal') ? 3200 : name === 'more' ? 450 : 350);
+        if (name.startsWith('reveal')) { const b = await ev(() => __BD.controls().find((c) => c.label === 'Reveal All')); if (b) { await page.mouse.click(b.x, b.y); await sleep(2200); } }
+        (await ev(() => __BD.layoutIssues())).forEach((x) => issues.push(`${name}: ${x}`));
+      }
+      check(`layout ${w}x${h} (${save} save): every screen, panel, modal and tab fits (safe area, panel, no tap overlap)`, issues.length === 0, issues.slice(0, 8).join(' | '));
+      if (save === 'mid') {
+        // tall screens scroll inside their own area and the end is reachable
+        const sc = await ev(async () => {
+          const u = __BD.ui(); u.closeModal(true); u.openScreen('troops'); await new Promise((r) => setTimeout(r, 300));
+          const s = u.scroller; const a = u.area;
+          if (!s) return { scroll: false, fits: u.screen.container.getBounds().bottom <= a.y + a.h + 2 };
+          s.set(1e6); await new Promise((r) => setTimeout(r, 100));
+          const max = __BD.controls().filter((c) => c.meta === 'voyager' && c.label.startsWith('Max'));
+          const g = __BD.gameToPage(0, a.y + a.h);
+          return { scroll: true, masked: !!s.body.mask, end: max.length === 1 && max[0].y < g.y, navClear: s.view.bottom <= a.y + a.h + 1 };
+        });
+        check(`layout ${w}x${h}: Barracks fits above the nav or scrolls in its own masked area to the end`, sc.scroll ? sc.masked && sc.end && sc.navClear : sc.fits, JSON.stringify(sc));
+      }
+      check(`layout ${w}x${h} (${save}): no page errors`, errors.length === 0, errors.slice(0, 2).join(' | '));
+      if (w === 390 && h === 844) {
+        // Safari toolbars: the visible height shrinks / grows by ~150 px while playing; no reload
+        await ev(() => { window.__noReload = 1; __BD.ui().openScreen('troops'); });
+        await page.setViewportSize({ width: 390, height: 690 }); await sleep(1200);
+        await page.setViewportSize({ width: 390, height: 760 }); await sleep(1200);
+        const st = await ev(() => ({ kept: window.__noReload === 1, screen: __BD.ui().screen?.id, issues: __BD.layoutIssues() }));
+        check('Safari toolbar show/hide (844 → 690 → 760 px) resizes without reloading; Barracks still fits', st.kept && st.screen === 'troops' && st.issues.length === 0, JSON.stringify(st).slice(0, 200));
+      }
+      await ctx.close();
+    }
+    // Barracks: the training lanes live inside each troop card (no separate section)
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; });
+    const page = await ctx.newPage();
+    const ev = (fn, arg) => page.evaluate(fn, arg);
+    await page.goto(url); await page.waitForFunction(() => window.__BD?.ui()?.panel);
+    await ev(midsave); await ev(() => window.__midSave()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(600);
+    const lane = await ev(async () => {
+      const st = __BD.store; st.state.resources.energy = 1e6; st.train('bearer', 5);
+      const u = __BD.ui(); u.openScreen('troops'); await new Promise((r) => setTimeout(r, 400));
+      const texts = []; const walk = (o) => { if (o.text !== undefined && o.visible) texts.push({ t: o.text, y: o.getBounds().centerY }); (o.list ?? []).forEach(walk); }; walk(u.screen.container);
+      const find = (re) => texts.find((x) => re.test(x.t));
+      const bear = find(/^Bearers$/), voy = find(/^Voyagers$/), tr = find(/^Training \d+\/\d+ Bearers$/);
+      return { section: texts.some((x) => /TRAINING LANES/.test(x.t)), chip: find(/^Lanes \d\/3$/)?.t, inCard: !!(tr && bear && voy && tr.y > bear.y && tr.y < voy.y), timers: texts.filter((x) => /^next \d+:\d\d  ·  all \d+:\d\d$/.test(x.t)).length };
+    });
+    check('Barracks: no separate Training Lanes section; each card shows its lane inline (count, bar, timers, ✕) and the header chip counts busy lanes', !lane.section && /^Lanes [1-3]\/3$/.test(lane.chip ?? '') && lane.inCard && lane.timers >= 1, JSON.stringify(lane));
+    await ctx.close();
+  } finally { await browser.close(); }
+}
+
 async function runStage8(url, label, takeShots) {
   console.log(`\n=== stage 8 · ${label}: ${url}`);
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -2518,6 +2593,7 @@ try {
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '7')) await runStage7(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
   if (!process.env.ONLY || process.env.ONLY === '8') await runStage8(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '8')) await runStage8(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+  if (!process.env.ONLY || process.env.ONLY === '9c') await runStage9c(`http://localhost:${srv.address().port}/`, 'dist/ build');
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
