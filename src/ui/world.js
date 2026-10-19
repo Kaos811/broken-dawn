@@ -8,7 +8,7 @@ import { tapZone } from './screens/common.js';
 import { ringOfLevel } from '../world/worldState.js';
 import { audio } from '../audio/audio.js';
 
-const NAV_H = 130;
+import { NAV_H, HERO_RISE, SAFE } from './layout.js';
 const sqName = (id) => SQUADS[id].name;
 const ago = (t) => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
 const classLabel = (t, n) => (n === 1 ? TROOP_CLASSES[t].name : TROOP_CLASSES[t].plural);
@@ -38,7 +38,7 @@ export function createWorldHud(ui, TOP_H, H) {
   c.add([g, block, stLabel, stVal, stSub, stBar, auto, rep]);
 
   // --- bottom squad bar
-  const by = H - NAV_H - 124, bh = 114;
+  const by = H - NAV_H - HERO_RISE - 120, bh = 114;
   hud.barRect = new Phaser.Geom.Rectangle(16, by, W - 32, bh);
   const bg = ui.add.graphics();
   panelBg(bg, 16, by, W - 32, bh, { accent: PALETTE.cyan, fill: 0x0d1117 });
@@ -393,7 +393,7 @@ export function playReplay(ui, report) {
     gp.evs.forEach((ev) => apply(ev, true));
     ui.time.delayedCall(base / speed, step);
   };
-  const by = H - 90;
+  const by = H - 90 - SAFE.bottom;
   const sp = button(ui, 130, by, 200, 70, 'Speed 1x', () => { speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; sp.setLabel(`Speed ${speed}x`); }, { style: 'cyan', size: 24 });
   const skip = button(ui, 360, by, 200, 70, 'Skip', () => { if (!done) finish(); else { ui.closeReplay(); openReport(ui, report); } }, { style: 'gold', size: 24 });
   const cl = button(ui, 590, by, 200, 70, 'Close', () => ui.closeReplay(), { style: 'ghost', size: 24 });

@@ -7,7 +7,7 @@ import { store } from '../state/store.js';
 import { text, button, panelBg, fmt } from '../ui/widgets.js';
 import { audio } from '../audio/audio.js';
 
-const TAB_Y = (ui) => ui.scale.height - 65;
+import { TOP_H, NAV_H, HERO_RISE } from '../ui/layout.js';
 
 // helpers to locate things on screen (game coordinates)
 function findButton(ui, pred) {
@@ -22,7 +22,7 @@ function findButton(ui, pred) {
   return hit;
 }
 const label = (o) => o.labelText?.text ?? '';
-function tab(ui, id) { const t = ui.tabs.find((x) => x.id === id); return { x: t.cx, y: TAB_Y(ui), r: 60 }; }
+function tab(ui, id) { const t = ui.tabs.find((x) => x.id === id); return { x: t.cx, y: t.cy, r: t.hero ? 78 : 56 }; }
 function buildingPos(ui, id) {
   const base = ui.scene.get('Base');
   if (ui.worldMode || ui.screen || !base?.sprites) return null;
@@ -32,14 +32,14 @@ function buildingPos(ui, id) {
   const r = Math.max(50, img.displayWidth * base.cameras.main.zoom * 0.35);
   const H = ui.scale.height;
   // stay clear of the HUD side columns (queue / quick buttons, ~100 px wide each) and the bottom panel
-  const clear = p.y > 360 && p.y < H - 520 && p.x > 150 && p.x < W - 150;
+  const clear = p.y > TOP_H + 174 && p.y < H - NAV_H - 388 && p.x > 150 && p.x < W - 150;
   if (clear) { base._tutPan = null; return { x: p.x, y: p.y, r }; }
   // off-screen or under the HUD/panel: glide the camera over to it first, then point
   const cam = base.cameras.main;
   if (cam.panEffect.isRunning) return null;
   if (base._tutPan !== id) { base._tutPan = id; base.focus(id, 450); return null; }
   // already glided once (the map edge can stop the camera short): point if it's at least tappable
-  return p.y > 220 && p.y < H - 140 && p.x > 130 && p.x < W - 130 ? { x: p.x, y: p.y, r } : null;
+  return p.y > TOP_H + 34 && p.y < H - NAV_H - 8 && p.x > 130 && p.x < W - 130 ? { x: p.x, y: p.y, r } : null;
 }
 const goBase = (ui) => (ui.worldMode || ui.screen ? tab(ui, 'base') : null);
 const readyTroops = () => TROOP_IDS.reduce((n, t) => n + store.readyCount(t), 0);
@@ -107,7 +107,7 @@ export const STEPS = [
         const e = store.world.get(id);
         if (!e || e.level > maxL || e.busy) continue;
         const p = ws.worldToScreen(s.img.x, s.img.y - 20);
-        if (p.y < 260 || p.y > ui.scale.height - 300 || p.x < 30 || p.x > W - 30) continue;
+        if (p.y < TOP_H + 74 || p.y > ui.scale.height - NAV_H - 170 || p.x < 30 || p.x > W - 30) continue;
         const d = (p.x - W / 2) ** 2 + (p.y - ui.scale.height / 2) ** 2;
         if (!best || d < best.d) best = { x: p.x, y: p.y, r: 46, d };
       }
@@ -188,7 +188,7 @@ export class Tutorial {
 
   placeCard(target) {
     const H = this.ui.scale.height;
-    const topY = 196, botY = H - 130 - this.cardH - 14;
+    const topY = TOP_H + 10, botY = H - NAV_H - HERO_RISE - this.cardH - 10;
     // keep the card away from the pointer target and from the building panel
     let y = topY;
     if (target && target.y < H * 0.5) y = botY;

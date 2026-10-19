@@ -10,6 +10,7 @@ import { creatureArmy, squadArmy } from './world/armies.js';
 import { createWorld, ringLevel, dist } from './world/worldState.js';
 import { audio } from './audio/audio.js';
 import * as gridMath from './systems/grid.js';
+import * as layout from './ui/layout.js';
 import { BUILDINGS, BEACON, MAP } from './config.js';
 
 store.load();
@@ -68,7 +69,8 @@ window.__BD = {
   },
   tabToPage(id) {
     const ui = game.scene.getScene('UI'); const t = ui.tabs.find((x) => x.id === id);
-    return this.gameToPage(t.cx, GAME_HEIGHT - 65);
+    if (!t) throw new Error(`no nav tab "${id}" (Settings lives in the More sheet)`);
+    return this.gameToPage(t.cx, t.cy);
   },
   // Base grid math for tests: footprint centres / tile centres -> page px (stage 6 map)
   grid: { ...gridMath, BUILDINGS, BEACON, MAP },
@@ -105,6 +107,7 @@ window.__BD = {
   audio,
   audioState: () => audio.state(),
   tutorial: () => game.scene.getScene('UI')?.tutorial?.stateForTest(),
+  layout: () => ({ ...layout }),
   perf: () => ({ capped: !!game.scene.getScene('UI')?.idleCapped, limitRate: game.loop._limitRate, fps: Math.round(game.loop.actualFps), layoutH: GAME_HEIGHT }),
   gameToPage(gx, gy) {
     const r = game.canvas.getBoundingClientRect();

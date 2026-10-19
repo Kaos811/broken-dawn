@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { TOP_H, NAV_H } from '../ui/layout.js';
 import { MAP, PALETTE, BEACON, BUILDINGS, BUILDING_IDS } from '../config.js';
 import { store } from '../state/store.js';
 import { isoToWorld, worldToIso, isPlatformTile, footprintAnchor, BEACON_CENTER, GROUND, TILE_RANGE } from '../systems/grid.js';
@@ -7,7 +8,7 @@ import { SPRITE, DECO_KEYS } from '../art/baseArt.js';
 const LONG_PRESS_MS = 420;
 const TAP_SLOP = 10;       // px (screen) before a press becomes a pan/drag
 const EDGE_PAN = 80;       // px from screen edge that auto-pans while dragging a building
-const HUD_TOP = 186;       // UI top bar height (keep in sync with UIScene TOP_H)
+const HUD_TOP = TOP_H;     // UI top bar height (incl. safe-area inset)
 const BAKE = 0.5;          // terrain is baked at half resolution (soft painterly ground, saves GPU memory)
 const FONT = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
 
@@ -802,7 +803,7 @@ export default class BaseScene extends Phaser.Scene {
     const g = this.gesture;
     if (g?.mode === 'drag' && g.lastScreen) {
       const cam = this.cameras.main, s = g.lastScreen;
-      const top = HUD_TOP + 20, bottom = cam.height - 150;
+      const top = HUD_TOP + 20, bottom = cam.height - NAV_H - 20;
       let vx = 0, vy = 0;
       if (s.x < EDGE_PAN) vx = -1; else if (s.x > cam.width - EDGE_PAN) vx = 1;
       if (s.y < top + EDGE_PAN && s.y > 0) vy = -1; else if (s.y > bottom - EDGE_PAN) vy = 1;
