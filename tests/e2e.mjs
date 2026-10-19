@@ -2109,7 +2109,9 @@ async function runStage7(url, label, takeShots) {
     const badge = (id) => ev((id) => __BD.ui().tabs.find((t) => t.id === id).badgeText.text, id);
     await tab('base');
     await ev(() => { __BD.store.state.resources.cores = 3; });
-    check('Armory badge: Cores for recruits (3 Cores -> 3)', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'armory').badgeText.text === '3'));
+    check("Armory badge: '!' when Cores buy a recruit (3 Cores -> !)", await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'armory').badgeText.text === '!'));
+    await ev(() => { __BD.store.state.resources.cores = 1; });
+    check("Armory badge: '!' with exactly one recruit's worth (1 Core)", await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'armory').badgeText.text === '!'));
     await ev(() => { __BD.store.state.resources.cores = 0; });
     check('Armory badge clears with no Cores', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'armory').badgeText.text === ''));
     check('More badge counts rewards ready to claim', await waitTrue(() => { const n = __BD.store.rewardsReady(); return n > 0 && __BD.ui().tabs.find((t) => t.id === 'more').badgeText.text === String(n); }));

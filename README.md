@@ -371,7 +371,7 @@ Built from the approved mockup and adapted for portrait phones.
   emblem lights up instead.
 - **Red badges:**
   - Troops: troops trained or healed since you last looked.
-  - Armory: the number of recruits your Cores can buy.
+  - Armory: **!** when your Cores can buy at least one recruit.
   - More: rewards ready to claim.
   - Base (on the emblem): a building waiting to be placed.
 - **More** opens a sheet with Settings, Rewards, Power, Leaders, Research and Events (coming soon). Research and Events

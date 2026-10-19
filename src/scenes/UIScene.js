@@ -590,7 +590,7 @@ export default class UIScene extends Phaser.Scene {
     }
   }
 
-  // red notification badges: Troops (new troops trained / healed since your last visit), Armory (Cores for a
+  // red notification badges: Troops (new troops trained / healed since your last visit), Armory ('!' when Cores buy a
   // recruit), More (rewards to claim), Base emblem (a new building waiting to be placed)
   navBadgeValues() {
     const n = (v) => (v > 99 ? '99+' : v > 0 ? String(v) : '');
@@ -598,7 +598,7 @@ export default class UIScene extends Phaser.Scene {
     return {
       base: this.activeTab !== 'base' && store.pendingPlacements().length ? '!' : '',
       troops: n(this.navNew.troops),
-      armory: n(pulls),
+      armory: pulls >= 1 ? '!' : '', // can afford at least one recruit
       squads: '',
       world: '',
       more: n(store.rewardsReady()),
