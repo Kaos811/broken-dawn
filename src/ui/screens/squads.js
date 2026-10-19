@@ -141,7 +141,7 @@ function renderEdit(ui, c, a, api, st, y0) {
   // one line: shrink to fit (late game has 9 types with five-digit counts)
   const avail = text(ui, 24, y0 + 32, 'Available:  ' + shown.map((t) => `${TROOP_CLASSES[t].plural} ${fmt(store.availableFor(t, id) - draftUse(t))}`).join('  '), shown.length > 4 ? 16 : 19, PALETTE.textCyan);
   if (avail.width > 676) avail.setScale(Math.max(0.55, 676 / avail.width));
-  if (avail.width * avail.scaleX > 676) avail.setWordWrapWidth(676 / avail.scaleX);
+  if (avail.width * avail.scaleX > 676 + 1) avail.setWordWrapWidth(676 / avail.scaleX);
   c.add(avail);
   const LH = 168;
   e.lines.forEach((l, i) => {

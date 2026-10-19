@@ -2193,7 +2193,7 @@ async function runStage9c(url, label) {
       await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(800);
       const issues = [];
       for (const [name, code] of LAYOUT_SCREENS) {
-        await ev(() => { const u = __BD.ui(); u.reveal?.destroy(); u.reveal = null; u.closeModal(true); u.closeScreen(); u.closePanel(true); });
+        await ev(() => { const u = __BD.ui(); u.reveal?.destroy(); u.reveal = null; u.closeModal(true); u.closeScreen(); u.closePanel(true); if (u.worldMode) { u.scene.get('World').select?.(null); u.hideWorld(); } });
         await sleep(120);
         const r = await ev(`(async (u) => { ${code} })(__BD.ui())`);
         if (r?.tap) await page.mouse.click(r.tap.x, r.tap.y);

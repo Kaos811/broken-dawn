@@ -150,7 +150,7 @@ export function renderTroops(ui, c, a, api, st) {
         laneT.setText('');
         drawBar(laneG, rx + 10, ly + 32, bw, 12, 0, { color: SKIN.teal });
       }
-      if (laneL.width + (laneT.text ? laneT.width + 16 : 0) > bw) laneL.setScale(Math.max(0.6, (bw - (laneT.text ? laneT.width + 16 : 0)) / (laneL.width / laneL.scaleX)));
+      { const room = bw - (laneT.text ? laneT.width + 16 : 0); laneL.setScale(laneL.width > room ? Math.max(0.6, room / laneL.width) : 1); }
       xb.setEnabled(l.count > 0);
       const m = store.maxTrainable(t);
       b1.setEnabled(store.trainInfo(t, 1).can);

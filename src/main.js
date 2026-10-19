@@ -169,6 +169,11 @@ window.__BD = {
     else {
       if (ui.screen) { const a = ui.area; check(ui.screen.container, { x: a.x, y: a.y, w: a.w, h: a.h }, `screen ${ui.screen.id}`); }
       if (ui.panel?.visible) { const r = ui.panelRect; check(ui.panel, { x: r.x, y: r.y, w: r.width, h: r.height }, 'building panel'); }
+      if (ui.worldMode && ui.worldHud) {
+        const top = layout.TOP_H, bot = H - layout.NAV_H - layout.HERO_RISE;
+        check(ui.worldHud.c, { x: 0, y: top, w: Wd, h: bot - top }, 'world hud');
+        if (ui.worldHud.sheet) { const r = ui.worldHud.sheetRect; check(ui.worldHud.sheet, { x: r.x, y: r.y, w: r.width, h: r.height }, 'creature sheet'); }
+      }
     }
     return [...new Set(out)];
   },

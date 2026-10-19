@@ -15,7 +15,7 @@ import { RARITY, LEADERS, GEAR, CORES, INFIRMARY, STAMINA, CREATURES, SQUADS as 
 import { renderInfirmary } from '../ui/screens/infirmary.js';
 import { renderArchive } from '../ui/screens/archive.js';
 import { RESEARCH } from '../config.js';
-import { createWorldHud, openReport } from '../ui/world.js';
+import { createWorldHud, openReport, openReports } from '../ui/world.js';
 import { createRightColumn, refreshRightColumn, openMissions, openEvents, openExchange } from '../ui/stage8.js';
 import { audio } from '../audio/audio.js';
 import { Tutorial } from '../tutorial/tutorial.js';
@@ -131,6 +131,8 @@ export default class UIScene extends Phaser.Scene {
   openMissions() { return openMissions(this); }
   openEvents() { return openEvents(this); }
   openExchange() { return openExchange(this); }
+  openReportsList() { return openReports(this); }
+  openReportOf(r) { return openReport(this, r); }
 
   // Lets BaseScene know a screen point belongs to the UI.
   blocksPointer(x, y) {
@@ -1485,7 +1487,7 @@ export default class UIScene extends Phaser.Scene {
     this.troopText.setText(`${fmt(tot)}${q ? ` (+${fmt(q)})` : ''}`);
     // long numbers (1.2M, 184.4K (+1,234)) shrink to stay inside their capsule
     const [en, al, sh, tr] = this.capsuleSlots();
-    const fitW = (t, max) => { const w0 = t.width / (t.scaleX || 1); t.setScale(w0 > max ? max / w0 : 1); };
+    const fitW = (t, max) => { const w0 = t.width; /* Text.width is unscaled */ t.setScale(w0 > max ? max / w0 : 1); };
     fitW(this.energyText, en[1] - 42 - this.rateText.width - 20);
     fitW(this.alloyText, al[1] - 48 - 12);
     fitW(this.shardText, sh[1] - 42 - 12);
