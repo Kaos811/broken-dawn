@@ -541,3 +541,45 @@ export const MISSIONS = {
     { at: 100, tier: 'gold', reward: () => ({ cores: 1, shards: 100 }) },
   ],
 };
+
+// ---- Stage 8: Events -----------------------------------------------------------------------------
+// A fixed weekly calendar in UTC, so every player sees the same windows (shown in local time). The
+// LocalEventService builds the schedule from it; a server-driven service can replace it later.
+export const EVENTS = {
+  calendar: [
+    { type: 'beaconSurge', day: 0, hours: 72 }, // Mon 00:00 -> Thu 00:00 UTC
+    { type: 'riftHunt', day: 4, hours: 72 },    // Fri 00:00 -> Mon 00:00 UTC
+  ],
+  types: {
+    beaconSurge: {
+      name: 'Beacon Surge', slug: 'beacon-surge', banner: 'banner-beacon-surge', color: 0xffc94a, hex: '#ffd76a',
+      blurb: 'Build and research to power up the base.',
+      how: ['Building upgrade finished: 100 × new level', 'Research level finished: 80 × new level', 'Troop trained: 2 × its tier'],
+      milestones: [500, 1500, 3000, 6000, 10000],
+    },
+    riftHunt: {
+      name: 'Rift Hunt', slug: 'rift-hunt', banner: 'banner-rift-hunt', color: 0xb58cff, hex: '#c9a8ff',
+      blurb: 'Creatures pour out of the Rift. Hunt them down.',
+      how: ['Creature defeated: 10 × its level', 'Elites (Dusk Wyrms) score double', 'Offline Auto-hunts count too'],
+      milestones: [300, 1000, 2000, 3500, 5000],
+    },
+  },
+  // Milestone rewards (same shape for every event). L = Beacon level. 2 Beacon Cores per event at most.
+  milestoneRewards: (L) => [
+    { energy: 400 * L, alloy: 50 * L },
+    { shards: 80 },
+    { stamina: 30, marks: 10 },
+    { cores: 1, energy: 1000 * L },
+    { cores: 1, shards: 150, marks: 20 },
+  ],
+  marksPer: 50,       // 1 Rift Mark per 50 event points
+  keepDays: 21,       // settled event records are dropped after this
+  // Rift Exchange: open all week, limits refresh Monday 00:00 UTC.
+  shop: [
+    { id: 'energy', name: 'Energy crate', price: 20, limit: 5, reward: (L) => ({ energy: 2000 * L }) },
+    { id: 'alloy', name: 'Alloy crate', price: 25, limit: 5, reward: (L) => ({ alloy: 250 * L }) },
+    { id: 'stamina', name: 'Stamina cell', price: 30, limit: 3, reward: () => ({ stamina: 50 }) },
+    { id: 'gear', name: 'Gear upgrade crate', price: 40, limit: 3, reward: () => ({ shards: 200 }) },
+    { id: 'core', name: 'Beacon Core', price: 200, limit: 1, reward: () => ({ cores: 1 }) },
+  ],
+};

@@ -13,7 +13,7 @@ import { renderInfirmary } from '../ui/screens/infirmary.js';
 import { renderArchive } from '../ui/screens/archive.js';
 import { RESEARCH } from '../config.js';
 import { createWorldHud, openReport } from '../ui/world.js';
-import { createRightColumn, refreshRightColumn, openMissions } from '../ui/stage8.js';
+import { createRightColumn, refreshRightColumn, openMissions, openEvents, openExchange } from '../ui/stage8.js';
 import { audio } from '../audio/audio.js';
 import { Tutorial } from '../tutorial/tutorial.js';
 import { PERF, AUDIO, TUTORIAL } from '../config.js';
@@ -125,6 +125,8 @@ export default class UIScene extends Phaser.Scene {
   }
 
   openMissions() { return openMissions(this); }
+  openEvents() { return openEvents(this); }
+  openExchange() { return openExchange(this); }
 
   // Lets BaseScene know a screen point belongs to the UI.
   blocksPointer(x, y) {
@@ -652,7 +654,7 @@ export default class UIScene extends Phaser.Scene {
       { id: 'profile', label: 'Power', icon: 'hud-power', go: () => this.openPowerBreakdown() },
       { id: 'leaders', label: 'Leaders', icon: 'nav-troops', go: () => this.openScreen('armory', { armoryTab: 'leaders' }) },
       { id: 'research', label: 'Research', icon: 'more-research', go: () => { this.closeModal(); this.onQueue('research'); } },
-      { id: 'events', label: 'Events', icon: 'more-events', soon: true, go: () => this.toast('Events are coming soon, Commander.') },
+      { id: 'events', label: 'Events', icon: 'more-events', badge: () => store.eventsReady(), go: () => openEvents(this) },
     ];
     const c = this.add.container(0, 0).setDepth(100);
     const bottom = H - NAV_H - HERO_RISE - 10;

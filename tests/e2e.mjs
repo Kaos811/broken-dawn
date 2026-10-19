@@ -5,6 +5,7 @@ import { chromium } from 'playwright-core';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const CHROME = process.env.CHROME_PATH || '/usr/bin/google-chrome';
@@ -2347,6 +2348,127 @@ async function runStage8(url, label, takeShots) {
     { const c = await page.evaluate(() => __BD.controls().find((c) => c.meta === 'q-missions')); await page.mouse.click(c.x, c.y); await sleep(500); }
     { const h = await page.evaluate(() => ({ st: __BD.store.state.hints, ls: JSON.parse(localStorage.getItem('brokenDawn.save.v1')).hints, t: __BD.ui().hintTarget, m: !!__BD.ui().modal?.isMissions }));
       check('…tapping it opens Missions and clears the pointer for good (saved)', h.st.missions === true && h.ls.missions === true && h.t === null && h.m, JSON.stringify(h)); }
+    await ctx.close();
+
+    // ---------------------------------------------------------------- B. Events
+    ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { timezoneId: 'America/Denver' }));
+    const pev = (fn, arg) => page.evaluate(fn, arg);
+    const U = (y, mo, d, h = 0) => Date.UTC(y, mo, d, h);
+    const sched = await pev((T) => {
+      const sv = __BD.store.eventService, a = (t) => { const e = sv.active(t); return e && { id: e.id, type: e.type, start: e.start, end: e.end }; };
+      return { mon: a(T.mon), thu: a(T.thu), thuNext: sv.next(T.thu), sun: a(T.sun), w1: sv.weekId(T.jan1), w53: sv.weekId(T.jan1b) };
+    }, { mon: U(2026, 9, 19, 0), thu: U(2026, 9, 22, 12), sun: U(2026, 9, 25, 23), jan1: U(2026, 0, 1), jan1b: U(2027, 0, 1) });
+    check('schedule: Beacon Surge runs Mon 00:00 → Thu 00:00 UTC (72 h), id beacon-surge-2026-W43', sched.mon?.id === 'beacon-surge-2026-W43' && sched.mon.start === U(2026, 9, 19) && sched.mon.end === U(2026, 9, 22), JSON.stringify(sched.mon));
+    check('schedule: Thursday is a rest day; Rift Hunt starts Fri 00:00 UTC', sched.thu === null && sched.thuNext.id === 'rift-hunt-2026-W43' && sched.thuNext.start === U(2026, 9, 23), JSON.stringify(sched.thuNext));
+    check('schedule: Rift Hunt runs to Mon 00:00 UTC (72 h)', sched.sun?.id === 'rift-hunt-2026-W43' && sched.sun.end === U(2026, 9, 26), JSON.stringify(sched.sun));
+    check('ISO week ids across the year boundary (2026-W01, 2026-W53)', sched.w1 === '2026-W01' && sched.w53 === '2026-W53', `${sched.w1} ${sched.w53}`);
+    {
+      const c2 = await browser.newContext({ timezoneId: 'Pacific/Auckland' }); const p2 = await c2.newPage();
+      await p2.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; }); await p2.goto(url); await p2.waitForFunction(() => window.__BD?.ui()?.panel);
+      const nz = await p2.evaluate((t) => { const e = __BD.store.eventService.active(t); return e && { id: e.id, start: e.start, end: e.end }; }, U(2026, 9, 19, 0));
+      check('same event windows in every time zone (Auckland sees the same instance)', nz?.id === sched.mon.id && nz.start === sched.mon.start && nz.end === sched.mon.end, JSON.stringify(nz));
+      await c2.close();
+    }
+    // --- Beacon Surge scoring from real completions
+    const surge = await pev((t) => {
+      const st = __BD.store; st.clock = () => t; st.skipTutorial(); st.eventsTick();
+      st.state.resources.energy = 1e6;
+      const lv0 = st.state.buildings.barracks.level; st.upgrade('barracks'); for (let i = 0; i < 200 && st.state.construction.length; i++) st.tick(1);
+      st.state.research.job = { id: 'energyYield', toLevel: 1, cost: { energy: 0, alloy: 0, shards: 0 }, total: 5, progress: 0 }; st.tick(6);
+      st.train('sentinel', 10); for (let i = 0; i < 300 && st.queuedUnits(); i++) st.tick(5);
+      const live = st.liveEvent(), info = st.eventInfo(live);
+      return { id: live?.id, pts: info.points, exp: 100 * (lv0 + 1) + 80 * 1 + 2 * 10, marks: st.state.events.marks, paid: info.marksPaid };
+    }, U(2026, 9, 20, 12));
+    check('Beacon Surge: building upgrade 100 × level + research 80 × level + 2 per T1 troop', surge.id === 'beacon-surge-2026-W43' && surge.pts === surge.exp, JSON.stringify(surge));
+    check('Rift Marks paid as points accrue (1 per 50)', surge.marks === Math.floor(surge.pts / 50) && surge.paid === surge.marks, JSON.stringify(surge));
+    check('Beacon Surge ignores hunts', await pev(() => { const st = __BD.store, p = st.eventInfo(st.liveEvent()).points; st.track('kill', 1, { level: 9 }); return st.eventInfo(st.liveEvent()).points === p; }));
+    // milestones through the UI
+    await pev(() => { const st = __BD.store; st.state.events.byId[st.liveEvent().id].points = 1600; __BD.ui().openEvents(); });
+    await sleep(400);
+    const evUi = await pev(() => { const u = __BD.ui(), keys = [], w = (o) => { if (o.texture) keys.push(o.texture.key); (o.list ?? []).forEach(w); }; w(u.modal); return { ev: !!u.modal?.isEvents, keys, badge: __BD.store.eventsReady(), btn: u.rightBtns.event.labelText.text, tbadge: u.rightBtns.event.badgeText.text }; });
+    check('Events hub shows the live event with its banner', evUi.ev && evUi.keys.includes('banner-beacon-surge') && await (async () => { for (let i = 0; i < 20; i++) { if (await pev(() => __BD.ui().modal?.list.some((o) => /^Ends in /.test(o.text ?? '')))) return true; await sleep(100); } return false; })(), JSON.stringify(evUi.keys));
+    check('Event button names the live event and badges ready milestones (2 at 1,600 pts)', evUi.btn === 'Beacon Surge' && evUi.badge === 2 && evUi.tbadge === '2', JSON.stringify(evUi));
+    const r0 = await pev(() => ({ e: __BD.store.state.resources.energy, a: __BD.store.state.resources.alloy, L: __BD.store.state.beacon.level }));
+    { const c = await page.evaluate(() => __BD.controls().find((c) => c.meta === 'ev-ms-0' && c.enabled)); await page.mouse.click(c.x, c.y); await sleep(500); }
+    check('milestone 1 claimed from the hub: Energy 400 × L + Alloy 50 × L', await pev((r0) => { const r = __BD.store.state.resources; return Math.round(r.alloy - r0.a) === 50 * r0.L && r.energy - r0.e >= 400 * r0.L - 1; }, r0));
+    check('milestone 4 (6,000) stays locked at 1,600 points', await pev(() => { const c = __BD.controls().find((c) => c.meta === 'ev-ms-3'); return c && !c.enabled; }) && (await pev(() => __BD.store.claimEventMilestone(__BD.store.liveEvent().id, 3))).ok === false);
+    await shot('stage8-events.png', page);
+    const maxCores = await pev(() => { const st = __BD.store, id = st.liveEvent().id, c0 = st.state.resources.cores; st.state.events.byId[id].points = 10000; for (let i = 0; i < 5; i++) st.claimEventMilestone(id, i); return { dc: st.state.resources.cores - c0, claimed: st.state.events.byId[id].claimed.length }; });
+    check('one event pays at most 2 Beacon Cores (milestones 4 and 5)', maxCores.dc === 2 && maxCores.claimed === 5, JSON.stringify(maxCores));
+    await pev(() => __BD.ui().closeModal(true));
+    // --- rest day + Rift Hunt
+    const rest = await pev((t) => { const st = __BD.store; st.clock = () => t; st.eventsTick(); return { live: st.liveEvent(), next: st.nextEvent()?.id }; }, U(2026, 9, 22, 12));
+    check('Thursday: no live event, the button counts down to Rift Hunt', rest.live === null && rest.next === 'rift-hunt-2026-W43' && await (async () => { for (let i = 0; i < 20; i++) { const b = await pev(() => [__BD.ui().rightBtns.event.labelText.text, __BD.ui().rightBtns.event.timer.text]); if (b[0] === 'Event' && /^in /.test(b[1])) return true; await sleep(100); } return false; })());
+    check('Beacon Surge ended: its unclaimed rewards were settled', await pev(() => Object.values(__BD.store.state.events.byId).every((r) => r.type !== 'beaconSurge' || r.settled)));
+    await pev(() => { const u = __BD.ui(); if (u.modal?.isEventSummary) u.closeModal(); __BD.store.eventSummaries = []; });
+    await pev((t) => { __BD.store.clock = () => t; __BD.store.eventsTick(); }, U(2026, 9, 24, 12));
+    const hunted = await hunts(3);
+    const rh = await pev(() => { const st = __BD.store, info = st.eventInfo(st.liveEvent()), reps = st.state.hunt.reports.slice(0, 3); return { id: info.id, pts: info.points, exp: reps.reduce((a, r) => a + (r.win ? 10 * r.target.level : 0), 0) }; });
+    check('Rift Hunt: each creature defeated scores 10 × its level', rh.id === 'rift-hunt-2026-W43' && rh.pts === rh.exp && rh.pts > 0 && hunted.every((h) => h.win), JSON.stringify({ rh, hunted }));
+    check('…elites (Dusk Wyrms) score double; builds don\'t count in Rift Hunt', await pev(() => { const st = __BD.store, id = st.liveEvent().id, p = st.state.events.byId[id].points; st.track('kill', 1, { level: 5, elite: true }); const p2 = st.state.events.byId[id].points; st.track('upgradeDone', 1, { id: 'barracks', level: 4 }); return p2 - p === 100 && st.state.events.byId[id].points === p2; }));
+    // --- event ends while away: auto-pay + summary popup
+    const end = await pev((t) => {
+      const st = __BD.store, id = st.liveEvent().id; st.state.events.byId[id].points = 2100; st.state.events.byId[id].claimed = [];
+      const r = { ...st.state.resources }, stam = st.state.hunt.stamina, mk = st.state.events.marks;
+      st.clock = () => t; st.eventsTick();
+      const rec = st.state.events.byId[id];
+      return { settled: rec.settled, claimed: rec.claimed.length, dS: Math.round(st.state.resources.shards - r.shards), dSt: st.state.hunt.stamina - stam, dM: st.state.events.marks - mk, after: st.claimEventMilestone(id, 3) };
+    }, U(2026, 9, 26, 1));
+    check('when an event ends, reached milestones are paid automatically (3 of 5 at 2,100 pts)', end.settled && end.claimed === 3 && end.dS === 80 && end.dSt >= 0 && end.dM === 10, JSON.stringify(end));
+    check('…with a summary popup', await waitTrue(() => !!__BD.ui().modal?.isEventSummary && __BD.ui().modal.list.some((o) => /Rift Hunt ended/.test(o.text ?? ''))));
+    check('…and nothing more can be claimed from it', end.after.ok === false);
+    await pev(() => __BD.ui().closeModal());
+    const cb = await pev((t) => { const st = __BD.store; st.clock = () => t; st.eventsTick(); return st.liveEvent()?.id ?? null; }, U(2026, 9, 24, 12));
+    check('setting the clock back does not reopen an ended event (time stays at the latest seen: next Beacon Surge)', cb === 'beacon-surge-2026-W44', String(cb));
+    // --- Rift Exchange
+    const shop = await pev((t) => {
+      const st = __BD.store; st.clock = () => t; st.state.events.maxSeen = t; st.eventsTick();
+      st.state.events.marks = 400; const c0 = st.state.resources.cores;
+      const a = st.buyShopItem('core'), b = st.buyShopItem('core');
+      const e = []; for (let i = 0; i < 6; i++) e.push(st.buyShopItem('energy').ok);
+      return { a: a.ok, b: b.reason, dc: st.state.resources.cores - c0, marks: st.state.events.marks, e, wk: st.state.events.shop.week };
+    }, U(2026, 9, 27, 12));
+    check('Exchange: 1 Beacon Core for 200 Marks, limit 1 a week', shop.a && shop.dc === 1 && shop.b === 'Sold out this week', JSON.stringify(shop));
+    check('Exchange: Energy crates limit 5 a week, Marks spent (400 − 200 − 5×20 = 100)', shop.e.filter(Boolean).length === 5 && !shop.e[5] && shop.marks === 100 && shop.wk === '2026-W44', JSON.stringify(shop));
+    await pev(() => __BD.ui().openExchange()); await sleep(400);
+    check('Exchange screen lists 5 items with Mark prices; sold-out items disabled', await pev(() => { const c = __BD.controls().filter((c) => /^shop-/.test(c.meta)); return c.length === 5 && !c.find((x) => x.meta === 'shop-core').enabled && c.find((x) => x.meta === 'shop-alloy').enabled; }));
+    await shot('stage8-exchange.png', page);
+    await pev(() => __BD.ui().closeModal(true));
+    const wk = await pev((t) => { const st = __BD.store; st.clock = () => t; st.eventsTick(); st.state.events.marks = 250; return { week: st.state.events.shop.week, core: st.buyShopItem('core').ok }; }, U(2026, 10, 2, 1));
+    check('Exchange stock refreshes Monday 00:00 UTC (the Core is back)', wk.week === '2026-W45' && wk.core, JSON.stringify(wk));
+    // --- Core ceiling for a fully active week (from the tuning)
+    const ceiling = await pev(() => 0);
+    const cfg = await import(pathToFileURL(join(ROOT, 'src/config.js')).href).catch(() => null);
+    if (cfg) {
+      const D = cfg.CORES.daily, weekDaily = 7 * D.base + D.streakBonus;
+      const missions = 7 * cfg.MISSIONS.chests.reduce((a, c) => a + (c.reward(1).cores ?? 0), 0);
+      const events = 2 * cfg.EVENTS.milestoneRewards(1).reduce((a, r) => a + (r.cores ?? 0), 0);
+      const shopC = cfg.EVENTS.shop.filter((x) => x.reward(1).cores).reduce((a, x) => a + x.limit * x.reward(1).cores, 0);
+      check(`Core ceiling per active week: daily ${weekDaily} + missions ${missions} + events ${events} + Exchange ${shopC} = 22`, weekDaily + missions + events + shopC === 22 && weekDaily === 10 && missions === 7 && events === 4 && shopC === 1);
+    } else check('Core ceiling check could import config', false);
+    void ceiling;
+    // --- More tile + base buttons + world HUD
+    await pev((t) => { const st = __BD.store; st.clock = () => t; st.state.events.maxSeen = 0; st.eventsTick(); st.state.events.byId = {}; st.track('kill', 1, { level: 6 }); st.track('kill', 1, { level: 8 }); }, U(2026, 10, 7, 12));
+    await pev(() => __BD.ui().openMore()); await sleep(300);
+    check('More sheet: Events is live (no "coming soon") and opens the hub', !(await pev(() => __BD.ui().modal.list.some((o) => o.text === 'coming soon'))) && await (async () => { const c = await page.evaluate(() => __BD.controls().find((c) => c.meta === 'more-events')); await page.mouse.click(c.x, c.y); await sleep(500); return pev(() => !!__BD.ui().modal?.isEvents); })());
+    await pev(() => __BD.ui().closeModal(true)); await sleep(300);
+    const base = await pev(() => { const u = __BD.ui(), m = u.rightBtns.missions, e = u.rightBtns.event; return { m: m.visible, e: e.visible, lab: e.labelText.text, tm: e.timer.text, icon: e.list.some((o) => o.texture?.key === 'more-events'), ex: m.x, ey: e.y - m.y }; });
+    check('base: Missions + live-event buttons on the right edge (Events star medallion, countdown)', base.m && base.e && base.lab === 'Rift Hunt' && /^\dd \d+h$|^\d+h \d+m$/.test(base.tm) && base.icon, JSON.stringify(base));
+    const L8 = await pev(() => __BD.layout());
+    check('base HUD text has no overlaps with the right column showing', (await (async () => { const H = await pev(() => __BD.ui().scale.height); return pev(([y0, y1]) => { const ui = __BD.ui(), out = [], vis = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active || p.alpha === 0) return false; return true; }; const w = (o) => { if (o.type === 'Text' && o.text && vis(o)) out.push({ t: o.text, b: o.getBounds() }); (o.list ?? []).forEach(w); }; ui.children.list.forEach(w); const bad = []; for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) { const a = out[i].b, b = out[j].b; if (a.x < b.right - 1 && b.x < a.right - 1 && a.y < b.bottom - 1 && b.y < a.bottom - 1) bad.push(`${out[i].t}|${out[j].t}`); } return bad; }, [L8.TOP_H, H - L8.NAV_H]); })()).length === 0);
+    await shot('stage8-base-buttons.png', page);
+    await tab('world');
+    check('World HUD uses the painted Stamina orb (no drawn bolt)', await pev(() => __BD.ui().worldHud.stIcon?.texture.key === 'hud-stamina' && __BD.ui().worldHud.stIcon.visible));
+    await shot('stage8-world-stamina.png', page);
+    await tab('base');
+    check('stage 8 events: no console errors', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+    // --- one-time pointer on the Event button (first live event, after the Missions pointer)
+    ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { hints: true }));
+    const eh = await page.evaluate(async (t) => { const st = __BD.store; st.clock = () => t; st.skipTutorial(); st.state.hints.missions = true; for (let i = 0; i < 20; i++) { if (__BD.ui().hintTarget === 'event') return true; await new Promise((r) => setTimeout(r, 100)); } return __BD.ui().hintTarget; }, U(2026, 10, 7, 12));
+    check('first live event: a one-time pointer on the Event button', eh === true, String(eh));
+    { const c = await page.evaluate(() => __BD.controls().find((c) => c.meta === 'q-event')); await page.mouse.click(c.x, c.y); await sleep(500); }
+    check('…tapping it opens the Events hub and clears the pointer', await page.evaluate(() => __BD.store.state.hints.events === true && !!__BD.ui().modal?.isEvents && __BD.ui().hintTarget === null));
     await ctx.close();
   } catch (e) {
     check('stage 8 suite ran without exceptions', false, e.message);

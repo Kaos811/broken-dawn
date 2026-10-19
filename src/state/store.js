@@ -18,6 +18,7 @@ import { squadArmy } from '../world/armies.js';
 import { combatPower, resolveBattle, odds } from '../world/battle.js';
 import { defaultMissions, sanitizeMissions, missionMethods } from '../systems/missions.js';
 import { defaultEvents, sanitizeEvents, eventMethods } from '../systems/events.js';
+import { LocalEventService } from '../events/eventService.js';
 
 // Line: { type, count, full } -- `count` = healthy troops in the line now, `full` = the count the formation
 // was saved with (casualties lower `count`; healing and Refill bring it back up to `full`).
@@ -357,6 +358,8 @@ class Store extends Emitter {
     this.rng = Math.random;
     this.clock = () => Date.now(); // overridable in tests (daily rewards)
     // All world access goes through this service (swap for a remote one for PvP; see README).
+    // Event schedule (stage 8): local weekly calendar today; swap for a server-driven service later.
+    this.eventService = new LocalEventService();
     this.world = new LocalWorldService(() => this.state.world, (w) => { this.state.world = w; });
     this.simulating = false;
   }
@@ -375,6 +378,8 @@ class Store extends Emitter {
     this.missionsReport = null;
     this.missionsRoll(); // a new local day since the last session: reset (and auto-pay) before offline progress
     if (raw) this.applyOffline();
+    this.eventSummaries = [];
+    this.eventsTick(); // settle events that ended while away (auto-pay) + refresh the Exchange week
     this.save();
     return this.state;
   }

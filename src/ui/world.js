@@ -23,7 +23,8 @@ export function createWorldHud(ui, TOP_H, H) {
   const g = ui.add.graphics();
   panelBg(g, 16, sy, W - 32, sh, { accent: 0x4dff9a, fill: 0x0d1117 });
   const block = ui.add.rectangle(W / 2, sy + sh / 2, W - 32, sh, 0, 0.001).setInteractive();
-  g.fillStyle(0x4dff9a, 1).fillPoints([{ x: 44, y: sy + 16 }, { x: 32, y: sy + 44 }, { x: 42, y: sy + 44 }, { x: 36, y: sy + 70 }, { x: 54, y: sy + 36 }, { x: 44, y: sy + 36 }, { x: 52, y: sy + 16 }], true);
+  const stIcon = ui.add.image(40, sy + sh / 2, 'hud-stamina'); stIcon.setScale(48 / stIcon.width); // stage 8: painted Stamina orb
+  hud.stIcon = stIcon;
   const stLabel = text(ui, 66, sy + 10, 'STAMINA', 15, PALETTE.textDim, { letterSpacing: 2 });
   const stVal = text(ui, 66, sy + 28, '', 28, PALETTE.text, { fontStyle: 'bold' });
   const stSub = text(ui, 200, sy + 14, '', 16, '#8fffc1');
@@ -35,7 +36,7 @@ export function createWorldHud(ui, TOP_H, H) {
   auto.chip = 'auto';
   const rep = button(ui, 640, sy + sh / 2, 112, 58, 'Reports', () => openReports(ui), { style: 'cyan', size: 19 });
   rep.chip = 'reports';
-  c.add([g, block, stLabel, stVal, stSub, stBar, auto, rep]);
+  c.add([g, block, stIcon, stLabel, stVal, stSub, stBar, auto, rep]);
 
   // --- bottom squad bar
   const by = H - NAV_H - HERO_RISE - 120, bh = 114;
