@@ -12,10 +12,24 @@ import hudAlloy from './ui/hud-alloy.webp';
 import hudShards from './ui/hud-shards.webp';
 import hudCore from './ui/hud-core.webp';
 import hudPower from './ui/hud-power.webp';
+// Stage 8: missions, events, Rift Exchange (artwork/process_stage8.py)
+import hudMissions from './ui/hud-missions.webp';
+import riftMark from './ui/rift-mark.webp';
+import exchange from './ui/exchange.webp';
+import hudStamina from './ui/hud-stamina.webp';
+import chestBronze from './ui/chest-bronze.webp';
+import chestSilver from './ui/chest-silver.webp';
+import chestGold from './ui/chest-gold.webp';
+import chestBronzeOpen from './ui/chest-bronze-open.webp';
+import chestSilverOpen from './ui/chest-silver-open.webp';
+import chestGoldOpen from './ui/chest-gold-open.webp';
+import bannerBeaconSurge from './ui/banner-beacon-surge.webp';
+import bannerRiftHunt from './ui/banner-rift-hunt.webp';
 
 export const UI_ART_URLS = {
   'nav-world': navWorld, 'nav-troops': navTroops, 'nav-armory': navArmory,
   'nav-squads': navSquads, 'nav-more': navMore,
   'hud-base-emblem': hudBaseEmblem, 'more-research': moreResearch, 'more-events': moreEvents, 'hud-energy': hudEnergy, 'hud-alloy': hudAlloy, 'hud-shards': hudShards,
   'hud-core': hudCore, 'hud-power': hudPower,
+  'hud-missions': hudMissions, 'rift-mark': riftMark, 'exchange': exchange, 'hud-stamina': hudStamina, 'chest-bronze': chestBronze, 'chest-silver': chestSilver, 'chest-gold': chestGold, 'chest-bronze-open': chestBronzeOpen, 'chest-silver-open': chestSilverOpen, 'chest-gold-open': chestGoldOpen, 'banner-beacon-surge': bannerBeaconSurge, 'banner-rift-hunt': bannerRiftHunt,
 };
