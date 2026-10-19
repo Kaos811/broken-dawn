@@ -2470,6 +2470,28 @@ async function runStage8(url, label, takeShots) {
     { const c = await page.evaluate(() => __BD.controls().find((c) => c.meta === 'q-event')); await page.mouse.click(c.x, c.y); await sleep(500); }
     check('…tapping it opens the Events hub and clears the pointer', await page.evaluate(() => __BD.store.state.hints.events === true && !!__BD.ui().modal?.isEvents && __BD.ui().hintTarget === null));
     await ctx.close();
+
+    // ---------------------------------------------------------------- C. Balance: a fully active week
+    ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { timezoneId: 'America/Denver' }));
+    const week = await page.evaluate((t0) => {
+      const st = __BD.store, by = {};
+      st.on('cores', (n, src) => { by[src] = (by[src] ?? 0) + n; });
+      st.skipTutorial();
+      const marks = [];
+      for (let d = 0; d < 7; d++) {
+        const t = t0 + d * 864e5; st.clock = () => t; st.missionsRoll(); st.eventsTick();
+        st.claimDaily();
+        for (const T of st.missionList()) st.state.missions.progress[T.id] = T.goal; // every task done
+        st.claimAllMissions();
+        const live = st.liveEvent();
+        if (live) { const rec = st.eventRecord(live, true); if (rec.points < 10000) rec.points = 10000; for (let i = 0; i < 5; i++) st.claimEventMilestone(live.id, i); }
+        st.state.events.marks += 300; marks.push(st.buyShopItem('core').ok);
+      }
+      return { by, total: Object.values(by).reduce((a, b) => a + b, 0), marks };
+    }, Date.UTC(2026, 10, 2, 18)); // Mon Nov 2, 11:00 MST
+    check('balance: a fully active week earns 22 Beacon Cores (daily 10, missions 7, events 4, Exchange 1)', week.total === 22 && week.by.daily === 10 && week.by.missions === 7 && week.by.event === 4 && week.by.exchange === 1, JSON.stringify(week));
+    check('…the Exchange Core is limited to one a week', week.marks.filter(Boolean).length === 1, JSON.stringify(week.marks));
+    await ctx.close();
   } catch (e) {
     check('stage 8 suite ran without exceptions', false, e.message);
   }

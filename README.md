@@ -383,6 +383,99 @@ Built from the approved mockup and adapted for portrait phones.
   sheets by `artwork/process_ui.py` (outside the repo). The HUD and nav chrome is drawn once and baked into
   textures.
 
+## Stage 8 (v0.7.0): Daily Missions & Events
+
+Built from the approved plan (`docs/stage8-plan.md`). Save **v10**: v9 saves migrate automatically (today's
+missions start fresh, nothing back-dated, backup `brokenDawn.save.v1.backup-v9`).
+
+### Daily Missions
+- **Missions** button (clipboard) on the right edge, after the tutorial. It shows activity points (`35/100`) and a
+  red badge for tasks and chests ready to claim. A one-time pointer shows it to you right after the tutorial.
+- 7 tasks, counted from real actions (offline ones count toward the day you come back):
+
+  | Task | Points |
+  |------|--------|
+  | Claim the daily reward | 10 |
+  | Defeat 8 creatures (offline Auto-hunts count) | 20 |
+  | Train or promote 30 troops (counted when they finish) | 15 |
+  | Start a building upgrade | 15 |
+  | Start a research (before the Archive: raise a leader star or gear level) | 15 |
+  | Heal 10 wounded troops | 15 |
+  | Win a hunt at your top level (or 1 below) | 20 |
+
+- Claim a task to bank its points. **Activity chests** (L = Beacon level):
+  - 20 (bronze): Energy 300×L
+  - 40 (bronze): Alloy 40×L + Stamina 10
+  - 60 (silver): Shards 60
+  - 80 (silver): Energy 600×L + Stamina 20
+  - 100 (gold): **1 Beacon Core** + Shards 100
+- Each task has a **Go** button that jumps to where it's done.
+- **Reset at local midnight.** If midnight passes while playing, missions reset with a toast. Finished tasks and
+  reached chests that weren't claimed are **paid automatically**. Missions reset only when the day number goes up,
+  so setting the clock back never resets twice. A DST change shifts midnight but never counts a day twice.
+
+### Events
+- `src/events/eventService.js`: `LocalEventService` turns a fixed **weekly UTC calendar** into event instances
+  (`beacon-surge-2026-W43`), so every player sees the same windows, shown in local time. A server-driven service can
+  replace it (same `active / next / weekId / weekEnds / report` interface) for PvP and online leaderboards.
+- **Beacon Surge**, Mon 00:00 to Thu 00:00 UTC:
+  - Building upgrade finished: 100 × new level.
+  - Research level finished: 80 × new level.
+  - Troop trained: 2 × its tier.
+  - Milestones at 500 / 1,500 / 3,000 / 6,000 / 10,000.
+- **Rift Hunt**, Fri 00:00 to Mon 00:00 UTC:
+  - Creature defeated: 10 × its level (elites ×2, offline Auto-hunts count).
+  - Milestones at 300 / 1,000 / 2,000 / 3,500 / 5,000.
+- **Thursday** is a rest day: the Event button counts down to the next event.
+- **Milestone rewards** (every event):
+  - Energy 400×L + Alloy 50×L
+  - Shards 80
+  - Stamina 30 + 10 Marks
+  - **1 Core** + Energy 1,000×L
+  - **1 Core** + Shards 150 + 20 Marks
+- **Rift Marks:** +1 per 50 event points, paid as you score.
+- **When an event ends:** reached but unclaimed milestones are paid automatically, with a summary popup.
+- **Clock safety:** event time is the latest clock reading the save has seen, so setting the clock back can't
+  reopen an ended event.
+- **Where it shows:**
+  - The right-edge **Event** button: the Events star medallion, the live event's name, a countdown, and a badge for
+    milestones ready to claim. It gets a one-time pointer the first time an event is live.
+  - **More → Events** (no longer "coming soon") opens the **Events hub**: banner, countdown, points and Marks, how
+    to score, the milestone track, the next event (local time), and the Exchange.
+- **Rift Exchange** (open all week, limits refresh Monday 00:00 UTC):
+
+  | Item | Price | Limit/week | Reward |
+  |------|-------|-----------|--------|
+  | Energy crate | 20 | 5 | 2,000×L Energy |
+  | Alloy crate | 25 | 5 | 250×L Alloy |
+  | Stamina cell | 30 | 3 | +50 Stamina |
+  | Gear upgrade crate | 40 | 3 | 200 Shards |
+  | Beacon Core | 200 | 1 | 1 Core |
+
+### Balance (Beacon Cores stay scarce)
+- **A fully active week = 22 Cores:**
+  - Daily login: 10.
+  - Missions: 7 (only the 100-point chest pays one).
+  - Events: 4 (2 per event, milestones 4 and 5).
+  - Exchange: 1.
+
+  This was ~10 before stage 8. The stage 8 test plays a simulated week and checks every Core source.
+- A casual player who fills half the chests and reaches event milestone 3 gets ~10–12. Gacha pity is unchanged.
+- **Rift Marks:** an active hunter earns ~150 a week from Rift Hunt alone. Heavy builders can earn more in Beacon
+  Surge (100 × level per upgrade adds up). Extra Marks only buy resource crates (weekly limits): the Core stays
+  capped at 1 a week.
+- Every number is in `src/config.js` (`MISSIONS`, `EVENTS`). Every Core still goes through `grantCores(n, source)`
+  (sources `missions`, `event`, `exchange`).
+
+### Art
+- Painted icons, keyed off green by `tools/process_stage8.py`:
+  - Missions clipboard
+  - Rift Mark coin
+  - Exchange stall
+  - Stamina orb (now also in the World HUD instead of the drawn bolt)
+  - Bronze, silver and gold chests, each closed and open
+  - Two event banners, cropped to 3:1 and darkened on the left for the title
+
 ## Code layout
 
 ```
@@ -408,11 +501,15 @@ src/
   scenes/UIScene.js    HUD, bottom nav, info panel, move banner, screens, overlays, gacha reveal, toasts, game tick
   ui/world.js          World HUD (stamina, Auto, Reports, squad chips), creature sheet, report card, replay player
   art/creatures.js     procedural creature / world-base / march textures
+  ui/stage8.js         Missions + Event buttons (right edge), Daily Missions screen, Events hub, Rift Exchange, event summaries, one-time pointers
+  systems/missions.js  daily missions (store mixin): track() hook, local-midnight roll-over + auto-pay, chests, grantBundle
+  systems/events.js    events (store mixin): scoring, milestones, Rift Marks, settlement, Rift Exchange
+  events/eventService.js weekly UTC event calendar (LocalEventService; swap for a server-driven one)
   ui/widgets.js        buttons (with press juice + click sound), panels, number formatting
   audio/audio.js       WebAudio engine: synthesized SFX recipes, generated per-screen music, crossfade, unlock, haptics
   tutorial/tutorial.js 8-step guided tutorial: coach card, pointer, step detection, assists, skip/replay
   ui/screens/          archive.js (research tree), troops.js (Barracks, tiers, promote), squads.js (details, edit formation, pickers), armory.js, infirmary.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–7 suites × 2 builds (936 checks)
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–8 suites × 2 builds (1070 checks)
 screens/               screenshots from the test run
 ```
 
@@ -420,7 +517,8 @@ screens/               screenshots from the test run
 - PvP: see **PvP path** above. Player bases are already world entities with an owner.
 - Balance knobs for hunts are all in `src/config.js`: `WORLD`, `CREATURES` (incl. per-type `calib`), `BATTLE`,
   `CASUALTIES`, `INFIRMARY`, `STAMINA`, `HUNT_REWARDS`, `CORES.battle`, and for stage 4 `RESEARCH`,
-  `RESEARCH_TUNING`, `TIERS`, `PROMOTE`, and for stage 5 `AUDIO`, `PERF`, `TUTORIAL`.
+  `RESEARCH_TUNING`, `TIERS`, `PROMOTE`, for stage 5 `AUDIO`, `PERF`, `TUTORIAL`, and for stage 8 `MISSIONS`, `EVENTS`.
+- Events online: implement the `LocalEventService` interface against a server (`report(id, points)` for rankings).
 
 ## Known gaps
 
