@@ -856,8 +856,9 @@ export default class UIScene extends Phaser.Scene {
     const keep = c.list.length;
     build(c, rect, () => this.closeModal(true));
     // tall sheets on short phones: everything below the title scrolls above the Close button
-    const top = title ? y + 78 : y + 8, bot = closeLabel ? y + h - 98 : y + h - 8;
-    scrollify(this, c, keep, { x: x + 4, y: top, w: w - 8, h: bot - top }, `overlay:${title ?? ''}`);
+    // (only when it really overflows: the view ends just above the Close button)
+    const top = title ? y + 78 : y + 8, bot = closeLabel ? y + h - 92 : y + h - 8;
+    scrollify(this, c, keep, { x: x + 4, y: top, w: w - 8, h: bot - top }, `overlay:${title ?? ''}`, { pad: 0, slack: 6 });
     if (closeLabel) c.add(button(this, x + w / 2, y + h - 54, 260, 70, closeLabel, () => this.closeModal(true), { style: 'ghost', size: 26 }));
     c.alpha = 0;
     this.tweens.add({ targets: c, alpha: 1, duration: 120 });

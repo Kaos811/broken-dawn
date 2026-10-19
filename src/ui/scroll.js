@@ -46,11 +46,11 @@ export function installScrolling(scene) {
 
 // Make parent's children from index `keep` on scroll inside `view` if they overflow it.
 // `key` remembers the offset across re-renders of the same screen. Returns the scroller or null.
-export function scrollify(scene, parent, keep, view, key, { pad = 20 } = {}) {
+export function scrollify(scene, parent, keep, view, key, { pad = 20, slack = 0 } = {}) {
   const moving = parent.list.slice(keep).filter((o) => !o.fixedInScroll);
   const bottom = contentBottom(moving, view);
   const max = Math.ceil(bottom + pad - (view.y + view.h));
-  if (max <= 0) { if (scene.scroller?.parent === parent) scene.scroller = null; return null; }
+  if (max <= slack) { if (scene.scroller?.parent === parent) scene.scroller = null; return null; }
   const body = scene.add.container(0, 0);
   for (const o of moving) { parent.remove(o); body.add(o); }
   parent.addAt(body, keep);

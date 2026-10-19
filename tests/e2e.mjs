@@ -1423,7 +1423,7 @@ async function runStage4(url, label, takeShots) {
     check('promote x10: 10 ready Sentinels leave, cost = difference (10 × 7 E + 10 × 2 Alloy)', s.troops.sentinel === p0.troops.sentinel - 10 && s.training.sentinel.from === 'sentinel' && s.training.sentinel.unit === 'bulwark' && s.training.sentinel.count === 10 && near(p0.resources.alloy - s.resources.alloy, 20, 0.5) && p0.resources.energy - s.resources.energy > 69 && p0.resources.energy - s.resources.energy < 71.5, JSON.stringify({ tr: s.training.sentinel, de: p0.resources.energy - s.resources.energy }));
     await sleep(500);
     await shot('stage4-barracks-tiers-promote.png');
-    check('lane shows the promotion (Sentinel → Bulwark)', await waitTrue(() => __BD.ui().screen?.container.list.some((o) => o.text === 'Sentinel → Bulwark')));
+    check('lane shows the promotion (Sentinel → Bulwark)', await waitTrue(() => __BD.ui().screen?.container.list.some((o) => /Sentinel → Bulwark$/.test(o.text ?? ''))));
     const pc = await ev(() => { const st = __BD.store; const e = st.state.resources.energy, s0 = st.state.troops.sentinel; const r = st.cancelLane('sentinel'); return { r, back: st.state.troops.sentinel - s0, de: st.state.resources.energy - e }; });
     check('cancelling a promotion refunds the cost and gives the Sentinels back', pc.r.ok && pc.back === 10 && pc.r.refund === 70 && pc.r.alloy === 20 && near(pc.de, 70, 1e-6), JSON.stringify(pc));
     const pr = await ev(() => {
