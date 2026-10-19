@@ -25,8 +25,14 @@ import chestSilverOpen from './ui/chest-silver-open.webp';
 import chestGoldOpen from './ui/chest-gold-open.webp';
 import bannerBeaconSurge from './ui/banner-beacon-surge.webp';
 import bannerRiftHunt from './ui/banner-rift-hunt.webp';
+// Stage 9: painted troop figures + Beacon Call recruit banner (tools/process_stage9.py)
+import troopSentinel from './ui/troop-sentinel.webp';
+import troopBearer from './ui/troop-bearer.webp';
+import troopVoyager from './ui/troop-voyager.webp';
+import bannerBeaconCall from './ui/banner-beacon-call.webp';
 
 export const UI_ART_URLS = {
+  'troop-sentinel': troopSentinel, 'troop-bearer': troopBearer, 'troop-voyager': troopVoyager, 'banner-beacon-call': bannerBeaconCall,
   'nav-world': navWorld, 'nav-troops': navTroops, 'nav-armory': navArmory,
   'nav-squads': navSquads, 'nav-more': navMore,
   'hud-base-emblem': hudBaseEmblem, 'more-research': moreResearch, 'more-events': moreEvents, 'hud-energy': hudEnergy, 'hud-alloy': hudAlloy, 'hud-shards': hudShards,

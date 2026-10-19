@@ -149,6 +149,25 @@ function tierBadge(ctx, W, H, tier, col) {
   ctx.restore();
 }
 
+// Stage 9: troop portraits from the painted figures (head to thigh), on a dark gradient lit in the
+// class colour. T2 / T3 reuse the T1 art with a cool / warm tint and a tier-coloured rim.
+const TIER_TINTS = { 1: null, 2: 'rgba(120,230,255,0.16)', 3: 'rgba(255,200,90,0.20)' };
+const TIER_RIMS = { 1: '#8a6a3a', 2: '#3fd9d2', 3: '#ffcf5a' };
+function paintedPortrait(ctx, W, H, img, def) {
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#1a212b'); bg.addColorStop(1, '#07090d');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const r = ctx.createRadialGradient(W / 2, H * 0.38, 6, W / 2, H * 0.38, W * 0.75);
+  r.addColorStop(0, `${def.colorHex}66`); r.addColorStop(1, `${def.colorHex}00`);
+  ctx.fillStyle = r; ctx.fillRect(0, 0, W, H);
+  const s = (H * 1.55) / img.height, dw = img.width * s, dh = img.height * s;
+  ctx.drawImage(img, W / 2 - dw / 2 + (def.cls === 'sentinel' ? 8 : 0), 6, dw, dh);
+  const t = TIER_TINTS[def.tier];
+  if (t) { ctx.globalCompositeOperation = 'source-atop'; ctx.fillStyle = t; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over'; }
+  const v = ctx.createLinearGradient(0, H * 0.72, 0, H); v.addColorStop(0, 'rgba(7,9,13,0)'); v.addColorStop(1, 'rgba(7,9,13,0.85)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = TIER_RIMS[def.tier] ?? '#8a6a3a'; ctx.lineWidth = 4; ctx.strokeRect(2, 2, W - 4, H - 4);
+}
+
 export function makePortraitTextures(scene) {
   const { W, H } = PORTRAIT;
   canvasTex(scene, 'glow-white', 128, 128, (ctx, w) => {
@@ -166,9 +185,10 @@ export function makePortraitTextures(scene) {
     ctx.fillStyle = '#3ff0ff'; poly(ctx, [[w / 2, h / 2 + 16], [w / 2 + 26, h / 2 + 30], [w / 2, h / 2 + 44], [w / 2 - 26, h / 2 + 30]]); ctx.fill();
   });
   for (const [id, def] of Object.entries(TROOP_CLASSES)) {
+    const art = scene.textures.exists(`troop-${def.cls}`) ? scene.textures.get(`troop-${def.cls}`).getSourceImage() : null;
     canvasTex(scene, `portrait-${id}`, W, H, (ctx) => {
-      background(ctx, W, H, def.colorHex);
-      DRAW[def.cls](ctx, W, H, def.colorHex);
+      if (art) paintedPortrait(ctx, W, H, art, def);
+      else { background(ctx, W, H, def.colorHex); DRAW[def.cls](ctx, W, H, def.colorHex); }
       if (def.tier > 1) tierBadge(ctx, W, H, def.tier, def.colorHex);
     });
   }
