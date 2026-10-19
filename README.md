@@ -412,7 +412,7 @@ src/
   audio/audio.js       WebAudio engine: synthesized SFX recipes, generated per-screen music, crossfade, unlock, haptics
   tutorial/tutorial.js 8-step guided tutorial: coach card, pointer, step detection, assists, skip/replay
   ui/screens/          archive.js (research tree), troops.js (Barracks, tiers, promote), squads.js (details, edit formation, pickers), armory.js, infirmary.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–7 suites × 2 builds (934 checks)
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–7 suites × 2 builds (936 checks)
 screens/               screenshots from the test run
 ```
 
