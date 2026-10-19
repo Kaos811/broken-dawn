@@ -153,6 +153,19 @@ function tierBadge(ctx, W, H, tier, col) {
 // class colour. T2 / T3 reuse the T1 art with a cool / warm tint and a tier-coloured rim.
 const TIER_TINTS = { 1: null, 2: 'rgba(120,230,255,0.16)', 3: 'rgba(255,200,90,0.20)' };
 const TIER_RIMS = { 1: '#8a6a3a', 2: '#3fd9d2', 3: '#ffcf5a' };
+function paintedLeader(ctx, W, H, img, crest, zoom) {
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#1d2430'); bg.addColorStop(1, '#07090d');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const r = ctx.createRadialGradient(W / 2, H * 0.32, 6, W / 2, H * 0.32, W * 0.8);
+  r.addColorStop(0, `${crest}5a`); r.addColorStop(1, `${crest}00`);
+  ctx.fillStyle = r; ctx.fillRect(0, 0, W, H);
+  // cover-fit by height, scaled up by zoom; anchor the top of the head near the top edge
+  const s = Math.max((H * zoom) / img.height, W / img.width), dw = img.width * s, dh = img.height * s;
+  ctx.drawImage(img, W / 2 - dw / 2, H * (zoom > 1.1 ? 0.03 : 0.04), dw, dh);
+  const v = ctx.createLinearGradient(0, H * 0.7, 0, H); v.addColorStop(0, 'rgba(7,9,13,0)'); v.addColorStop(1, 'rgba(7,9,13,0.8)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
 function paintedPortrait(ctx, W, H, img, def) {
   const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#1a212b'); bg.addColorStop(1, '#07090d');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
@@ -195,6 +208,13 @@ export function makePortraitTextures(scene) {
   for (const [id, L] of Object.entries(LEADERS)) {
     const A = TROOP_CLASSES[L.affinity].colorHex;
     const crest = hex(RARITY[L.rarity].color);
+    const art = scene.textures.exists(`leaderart-${id}`) ? scene.textures.get(`leaderart-${id}`).getSourceImage() : null;
+    if (art) {
+      // tiles: head-and-shoulders crop; detail views: the fuller bust
+      canvasTex(scene, `leader-${id}`, W, H, (ctx) => paintedLeader(ctx, W, H, art, crest, 1.32));
+      canvasTex(scene, `leader-big-${id}`, 300, 360, (ctx, w, h) => paintedLeader(ctx, w, h, art, crest, 1.0));
+      continue;
+    }
     canvasTex(scene, `leader-${id}`, W, H, (ctx) => {
       background(ctx, W, H, crest);
       DRAW[L.affinity](ctx, W, H, A, crest);
@@ -205,6 +225,19 @@ export function makePortraitTextures(scene) {
       ctx.fillText(L.name[0], W - 32, 33);
     });
   }
+  for (const id of Object.keys(GEAR)) {
+    if (!scene.textures.exists(`gearart-${id}`)) continue;
+    const img = scene.textures.get(`gearart-${id}`).getSourceImage();
+    const col = hex(RARITY[GEAR[id].rarity].color);
+    canvasTex(scene, `gearicon-${id}`, 160, 160, (ctx, w, h) => {
+      const r = ctx.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, w * 0.55);
+      r.addColorStop(0, `${col}55`); r.addColorStop(1, `${col}00`);
+      ctx.fillStyle = r; ctx.fillRect(0, 0, w, h);
+      const s = Math.min((w - 12) / img.width, (h - 12) / img.height);
+      ctx.drawImage(img, w / 2 - img.width * s / 2, h / 2 - img.height * s / 2, img.width * s, img.height * s);
+    });
+    PAINTED_GEAR.add(id);
+  }
   for (const rar of RARITIES) {
     const col = hex(RARITY[rar].color);
     canvasTex(scene, `gear-armor-${rar}`, 120, 120, (ctx, w, h) => armorIcon(ctx, w, h, col));
@@ -212,4 +245,7 @@ export function makePortraitTextures(scene) {
   }
 }
 
-export const gearTexture = (gearId) => `gear-${GEAR[gearId].slot}-${GEAR[gearId].rarity}`;
+const PAINTED_GEAR = new Set();
+export const gearTexture = (gearId) => (PAINTED_GEAR.has(gearId) ? `gearicon-${gearId}` : `gear-${GEAR[gearId].slot}-${GEAR[gearId].rarity}`);
+// detail views use the fuller bust when painted art is loaded
+export const leaderBig = (scene, id) => (scene.textures.exists(`leader-big-${id}`) ? `leader-big-${id}` : `leader-${id}`);

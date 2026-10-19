@@ -1,7 +1,7 @@
 import { PALETTE, GACHA, RARITY, RARITIES, LEADERS, LEADER_IDS, GEAR, GEAR_IDS, TROOP_CLASSES, SQUADS, TROOPS, CORES, UPGRADES } from '../../config.js';
 import { store } from '../../state/store.js';
 import { text, button, fmt } from '../widgets.js';
-import { gearTexture } from '../../art/portraits.js';
+import { gearTexture, leaderBig } from '../../art/portraits.js';
 import { header, tabRow, card, tapZone, fmtBuff, fmtGearBuff, itemName, sectionHeader, tile } from './common.js';
 import { SKIN, drawFrame, diamond, lerpC, glyph } from '../skin.js';
 
@@ -138,7 +138,7 @@ export function leaderDetail(ui, api, lid) {
   api.overlay({
     title: `${L.name} · ${L.title}`, h: 900,
     build: (c, r, close) => {
-      tile(ui, c, `leader-${lid}`, r.x + 28, r.y + 86, 220, 264, { rim: R.color, imgH: 264, stars: own.stars, maxStars: GACHA.maxStars });
+      tile(ui, c, leaderBig(ui, lid), r.x + 28, r.y + 86, 220, 264, { rim: R.color, imgH: 264, stars: own.stars, maxStars: GACHA.maxStars });
       const tc = TROOP_CLASSES[L.affinity];
       const nextBuff = own.stars < GACHA.maxStars ? `\nNext ★: ${fmtBuff(L.buff, 1 + GACHA.starBonus * own.stars)}` : '\nMax stars';
       c.add(text(ui, r.x + 272, r.y + 88, R.name.toUpperCase(), 22, R.hex, { fontStyle: 'bold', letterSpacing: 2 }));

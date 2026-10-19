@@ -30,8 +30,15 @@ import troopSentinel from './ui/troop-sentinel.webp';
 import troopBearer from './ui/troop-bearer.webp';
 import troopVoyager from './ui/troop-voyager.webp';
 import bannerBeaconCall from './ui/banner-beacon-call.webp';
+// Stage 9b: painted leader busts + gear icons (tools/process_stage9b.py)
+const PAINTED = import.meta.glob(['./ui/leader-*.webp', './ui/gear-*.webp'], { eager: true, import: 'default' });
+const paintedUrls = Object.fromEntries(Object.entries(PAINTED).map(([f, url]) => {
+  const n = f.slice(5, -5); // leader-kael / gear-arcRifle
+  return [n.replace(/^leader-/, 'leaderart-').replace(/^gear-/, 'gearart-'), url];
+}));
 
 export const UI_ART_URLS = {
+  ...paintedUrls,
   'troop-sentinel': troopSentinel, 'troop-bearer': troopBearer, 'troop-voyager': troopVoyager, 'banner-beacon-call': bannerBeaconCall,
   'nav-world': navWorld, 'nav-troops': navTroops, 'nav-armory': navArmory,
   'nav-squads': navSquads, 'nav-more': navMore,
