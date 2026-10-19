@@ -47,10 +47,10 @@ export function renderInfirmary(ui, c, a, api) {
     else troopFigure(ui, c, t, 28, y + 10, 104, CH - 20);
     const nx = compact ? 30 + CH - 6 : 148;
     c.add(text(ui, nx, y + (compact ? 6 : 12), `${def.plural}${def.tier > 1 ? ` · ${TIERS[def.tier].label}` : ''}`, compact ? 21 : 26, def.colorHex, { fontStyle: 'bold' }));
-    const wl = text(ui, nx, y + (compact ? 34 : 46), '', compact ? 16 : 19, '#8fffc1', { wordWrap: { width: compact ? 330 : 540 } });
-    const cost = text(ui, nx, y + (compact ? CH - 26 : 74), '', compact ? 15 : 17, PALETTE.textDim);
+    const wl = text(ui, nx, y + (compact ? 34 : 42), '', compact ? 16 : 19, '#8fffc1', { wordWrap: { width: compact ? 330 : 540 } });
+    const cost = text(ui, nx, y + (compact ? CH - 26 : 66), '', compact ? 15 : 17, PALETTE.textDim);
     c.add([wl, cost]);
-    const by = compact ? y + CH / 2 : y + 112;
+    const by = compact ? y + CH / 2 : y + 117;
     const b1 = button(ui, compact ? 530 : 148 + 62, by, compact ? 100 : 124, compact ? 46 : 56, 'Heal 1', () => { const r = store.heal(t, 1); if (!r.ok) api.toast(r.reason); }, { style: 'cyan', size: compact ? 17 : 20 });
     const bAll = button(ui, compact ? 640 : 148 + 254, by, compact ? 110 : 236, compact ? 46 : 56, 'Heal all', () => { const r = store.heal(t, store.maxHealable(t)); api.toast(r.ok ? `Healing ${r.n} ${r.n === 1 ? def.name : def.plural}  (−${fmt(r.cost)} Energy)` : r.reason); }, { style: 'gold', size: compact ? 16 : 20 });
     b1.chip = `heal1-${t}`; bAll.chip = `heal-${t}`;
