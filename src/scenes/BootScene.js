@@ -1,3 +1,4 @@
+import { ART_URLS } from '../art/baseArt.js';
 import Phaser from 'phaser';
 import { PALETTE, MAP } from '../config.js';
 import { makePortraitTextures } from '../art/portraits.js';
@@ -58,6 +59,11 @@ function groundShadow(g, cx, cy, hw, hh) {
 
 export default class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
+
+  preload() {
+    // painted Base art (stage 6)
+    for (const [key, url] of Object.entries(ART_URLS)) this.load.image(key, url);
+  }
 
   create() {
     this.makeSoftTextures();
