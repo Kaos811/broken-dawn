@@ -1,4 +1,4 @@
-// Headless e2e test for stages 1-6. Runs against the single-file build
+// Headless e2e test for stages 1-7. Runs against the single-file build
 // (file://) and the dist/ build (served over http) at a 390x844 phone viewport.
 //   npm run build && npm test
 import { chromium } from 'playwright-core';
@@ -261,7 +261,13 @@ async function run(url, label, takeShots) {
 
   // --- Nav: Troops / Armory / Squads open real screens now; Settings > Reset
   // (indices kept from stage 1/2; the nav now also has a World tab, so look tabs up by id)
-  const tabPt = (i) => ev((id) => __BD.tabToPage(id), ['base', 'troops', 'armory', 'squads', 'settings'][i]);
+  const tabPt = (i) => ev((id) => __BD.tabToPage(id), ['base', 'troops', 'armory', 'squads', 'more'][i]);
+  // Settings moved into the More sheet (v0.6 nav): More tab -> Settings tile
+  const openSettings1 = async () => {
+    const m = await tabPt(4); await page.mouse.click(m.x, m.y); await sleep(300);
+    let st = null; for (let i = 0; i < 20 && !st; i++) { st = await ev(() => __BD.controls().find((c) => c.meta === 'more-settings')); if (!st) await sleep(100); }
+    await page.mouse.click(st.x, st.y); await sleep(300);
+  };
   let t = await tabPt(1); await page.mouse.click(t.x, t.y); await sleep(300);
   check('Troops tab opens the Barracks screen', await ev(() => __BD.ui().screen?.id === 'troops' && __BD.ui().activeTab === 'troops'));
   // map is blocked while a screen is open
@@ -274,7 +280,7 @@ async function run(url, label, takeShots) {
   }
   t = await tabPt(0); await page.mouse.click(t.x, t.y); await sleep(200);
   check('Base tab closes screens', await ev(() => __BD.ui().screen === null && __BD.ui().activeTab === 'base'));
-  t = await tabPt(4); await page.mouse.click(t.x, t.y); await sleep(250);
+  await openSettings1();
   const btn = async (label) => {
     for (let i = 0; i < 30; i++) {
       const p = await ev((label) => {
@@ -290,7 +296,7 @@ async function run(url, label, takeShots) {
   check('Reset Save asks for confirmation', await ev(() => __BD.ui().modal.list.some((o) => o.text && /Reset all progress/.test(o.text))));
   rb = await btn('Cancel'); await page.mouse.click(rb.x, rb.y); await sleep(200);
   check('Cancel keeps the save', (await state()).beacon.level === 2);
-  t = await tabPt(4); await page.mouse.click(t.x, t.y); await sleep(250);
+  await openSettings1();
   rb = await btn('Reset Save'); await page.mouse.click(rb.x, rb.y); await sleep(250);
   rb = await btn('Reset'); await page.mouse.click(rb.x, rb.y); await sleep(300);
   const fresh = await state();
@@ -349,7 +355,7 @@ async function runStage2(url, label, takeShots) {
   // Polls a page predicate (up to ~2.5 s) so UI-timing checks don't flake under load.
   const waitTrue = async (fn, arg) => { for (let i = 0; i < 25; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
   const refresh = async () => { await ev(() => __BD.ui().renderScreen()); await sleep(150); };
-  const tab = async (i) => { const p = await ev((id) => __BD.tabToPage(id), ['base', 'troops', 'armory', 'squads', 'settings'][i]); await page.mouse.click(p.x, p.y); await sleep(350); };
+  const tab = async (i) => { const p = await ev((id) => __BD.tabToPage(id), ['base', 'troops', 'armory', 'squads', 'more'][i]); await page.mouse.click(p.x, p.y); await sleep(350); };
   // Overwrite the save while the page can't overwrite it back, then reload.
   const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload(); await ready(); };
 
@@ -1609,8 +1615,9 @@ async function runStage5(url, label, takeShots) {
 
     // --- 9. Settings: audio panel
     await ev(() => { const u = __BD.ui(); u.closePanel(true); u.closeScreen(); });
-    await tab('settings');
-    check('Settings opens the audio panel', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'AUDIO')) && await ev(() => __BD.ui().activeTab === 'settings'));
+    await tab('more');
+    await click(null, { meta: 'more-settings' });
+    check('Settings (More → Settings) opens the audio panel', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'AUDIO')) && await ev(() => __BD.ui().activeTab === 'more'));
     await click(null, { meta: 'music-down' });
     await click(null, { meta: 'sfx-up' });
     s = await state();
@@ -1803,7 +1810,7 @@ async function runStage6(url, label, takeShots) {
     // --- 2. HUD: avatar + Power + resources, left queue buttons, right quick buttons
     const ctrls = await ev(() => __BD.controls().map((c) => c.meta).filter(Boolean));
     check('HUD left column: Builder, Research, Training, Healing queue buttons', ['q-builder', 'q-research', 'q-training', 'q-healing'].every((m) => ctrls.includes(m)), ctrls.join(','));
-    check('HUD right column: Hunt, Rewards, Armory, Events quick buttons', ['k-hunt', 'k-rewards', 'k-armory', 'k-events'].every((m) => ctrls.includes(m)));
+    check('old right column replaced: Hunt -> World emblem, Rewards -> Cores +, Armory -> tab, Events -> More', !ctrls.some((m) => /^k-/.test(m)) && ctrls.includes('cores-plus') && (await ev(() => !!__BD.ui().hero && __BD.ui().tabs.some((t) => t.id === 'armory') && __BD.ui().tabs.some((t) => t.id === 'more'))));
     check('HUD top bar: commander avatar, Power and resource counters', await ev(() => { const u = __BD.ui(); return u.avatar.texture.key === 'art-avatar' && u.powerText.text === String(__BD.store.power.total) && u.energyText.visible && u.coreText.visible && u.shardText.visible && u.alloyText.visible && u.troopText.visible; }));
     const qIdle = await ev(() => Object.values(__BD.ui().queueBtns).map((b) => b.timer.text));
     check('queue buttons idle on a new game (Research waits for Beacon Lv 3)', qIdle.join('|') === 'Idle|Beacon 3|Idle|Idle', qIdle.join('|'));
@@ -1821,18 +1828,20 @@ async function runStage6(url, label, takeShots) {
     await click(null, { meta: 'q-healing' });
     check('Healing button jumps to the Infirmary screen', await waitTrue(() => __BD.ui().screen?.id === 'infirmary'));
     await tab('base');
-    await click(null, { meta: 'k-armory' });
-    check('Armory quick button opens the Armory', await waitTrue(() => __BD.ui().screen?.id === 'armory'));
+    await tab('armory');
+    check('Armory tab opens the Armory', await waitTrue(() => __BD.ui().screen?.id === 'armory'));
     await tab('base');
-    await click(null, { meta: 'k-rewards' });
-    check('Rewards quick button opens Beacon Core Rewards', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'Beacon Core Rewards')));
+    await click(null, { meta: 'cores-plus' });
+    check('Cores + opens Beacon Core Rewards', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'Beacon Core Rewards')));
     await ev(() => __BD.ui().closeModal());
     await tab('base');
-    await click(null, { meta: 'k-hunt' });
-    check('Hunt quick button opens the World map (side columns hide there)', await waitTrue(() => __BD.ui().worldMode && !__BD.ui().queueBtns.builder.visible));
+    await tab('world');
+    check('World emblem opens the World map (side columns hide there)', await waitTrue(() => __BD.ui().worldMode && !__BD.ui().queueBtns.builder.visible));
     await tab('base');
-    await click(null, { meta: 'k-events' });
-    check('Events placeholder explains it is coming soon', await toastHas(/coming soon/));
+    await tab('more');
+    await click(null, { meta: 'more-events' });
+    check('Events placeholder (More sheet) explains it is coming soon', await toastHas(/coming soon/));
+    await ev(() => __BD.ui().closeModal());
 
     // --- 3. hidden until unlocked
     s = await state();
@@ -1937,6 +1946,218 @@ async function runStage6(url, label, takeShots) {
   await browser.close();
 }
 
+
+// Stage 7 (v0.6 HUD + nav redesign): top HUD (portrait, Power plaque, Beacon gauge, Cores pill, resource
+// capsules + tooltips), sculpted bottom nav (illustrated tabs, World emblem, badges, raised active tab),
+// More sheet, safe-area insets and other phone sizes.
+async function runStage7(url, label, takeShots) {
+  console.log(`\n=== stage 7 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const open = async (viewport, test = {}) => {
+    const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    await ctx.addInitScript((t) => { window.__BD_TEST = { noTutorial: true, ...t }; }, test);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(url);
+    await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(500);
+    return { ctx, page, errors };
+  };
+  let { ctx, page, errors } = await open({ width: 390, height: 844 });
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+  const shot = async (name, p = page) => { if (takeShots) { await sleep(400); await p.evaluate(() => { const u = __BD.ui(); u.tweens.killTweensOf(u.toastBox); u.toastBox.setVisible(false); }); await sleep(60); await p.screenshot({ path: join(ROOT, 'screens', name) }); console.log(`      saved screens/${name}`); } };
+  const ctl = async (meta) => { for (let i = 0; i < 15; i++) { const c = await ev((m) => __BD.controls().find((c) => c.meta === m && c.enabled), meta); if (c) return c; await sleep(150); } return null; };
+  const click = async (meta) => { await frames(2); const c = await ctl(meta); if (!c) throw new Error(`control not found: ${meta}`); await page.mouse.click(c.x, c.y); await frames(4); await sleep(300); };
+  const tapGame = async (x, y) => { const p = await ev(([x, y]) => __BD.gameToPage(x, y), [x, y]); await page.mouse.click(p.x, p.y); await frames(4); await sleep(300); };
+  const waitTrue = async (fn, arg, n = 30) => { for (let i = 0; i < n; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
+  const tab = async (id) => { const p = await ev((id) => __BD.tabToPage(id), id); await page.mouse.click(p.x, p.y); await frames(4); await sleep(350); };
+  const modalHas = (re) => waitTrue((src) => !!__BD.ui().modal?.list.some((o) => o.text && new RegExp(src).test(o.text)), re.source);
+  // text objects (visible, in the UI scene) whose bounds overlap each other inside a region
+  const overlaps = (y0, y1) => ev(([y0, y1]) => {
+    const ui = __BD.ui(), out = [], vis = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active || p.alpha === 0) return false; return true; };
+    const walk = (o) => { if (o.type === 'Text' && o.text && vis(o)) out.push(o); (o.list ?? []).forEach(walk); };
+    ui.children.list.forEach(walk);
+    const bs = out.map((t) => ({ t: t.text, b: t.getBounds() })).filter((x) => x.b.y >= y0 && x.b.bottom <= y1);
+    const bad = [];
+    for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
+      const a = bs[i].b, b = bs[j].b;
+      if (a.x < b.right - 1 && b.x < a.right - 1 && a.y < b.bottom - 1 && b.y < a.bottom - 1) bad.push(`${bs[i].t}|${bs[j].t}`);
+    }
+    return bad;
+  }, [y0, y1]);
+
+  try {
+    await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(600);
+    const L = await ev(() => __BD.layout());
+    // --- 1. top HUD
+    const hud = await ev(() => {
+      const u = __BD.ui(), s = __BD.store.state;
+      return { av: u.avatar.texture.key, lv: u.avatarLv.text, blv: s.beacon.level, beacon: u.beaconLv.text, charge: u.chargeText.text, power: u.powerText.text, total: String(__BD.store.power.total), cores: u.coreText.text, c: String(s.resources.cores), plus: !!u.corePlus,
+        icons: u.children.list.filter((o) => o.type === 'Image').map((o) => o.texture.key).filter((k) => /^hud-|^nav-troops/.test(k)) };
+    });
+    check('top HUD: commander portrait in a gold ring with the commander level badge', hud.av === 'art-avatar' && hud.lv === String(hud.blv), JSON.stringify(hud));
+    check('Power plaque shows Base Power with the shield icon', hud.power === hud.total && hud.icons.includes('hud-power'));
+    check('Beacon level + charge stay visible (gauge under the portrait)', hud.beacon === `BEACON Lv ${hud.blv}` && /^\d+%$|^FULL$/.test(hud.charge), `${hud.beacon} ${hud.charge}`);
+    check('Beacon Cores pill with a + button on the right', hud.cores === hud.c && hud.plus && hud.icons.includes('hud-core'));
+    check('resource capsules use the new icons (Energy, Alloy, Shards, Troops)', ['hud-energy', 'hud-alloy', 'hud-shards', 'nav-troops'].every((k) => hud.icons.includes(k)), hud.icons.join(','));
+    check('top HUD stays compact (≤ 190 game px at 390×844, no insets)', L.TOP_H <= 190 && L.SAFE.top === 0, JSON.stringify(L));
+    const visFrac = await ev(() => { const H = __BD.ui().scale.height, l = __BD.layout(); return (H - l.TOP_H - l.NAV_H) / H; });
+    check('the base keeps most of the screen (≥ 70% between HUD and nav)', visFrac >= 0.7, visFrac.toFixed(3));
+    check('top HUD labels do not overlap', (await overlaps(0, L.TOP_H)).length === 0, (await overlaps(0, L.TOP_H)).join(', '));
+    await shot('stage7-hud-base.png');
+
+    // portrait / plaque -> Power breakdown; Beacon gauge -> glide to the Beacon
+    await tapGame(74, L.SAFE.top + 70);
+    check('tapping the portrait opens the Power breakdown (profile)', await modalHas(/^Base Power$/));
+    await ev(() => __BD.ui().closeModal());
+    await tapGame(300, L.SAFE.top + 62);
+    check('tapping the Power plaque opens the Power breakdown', await modalHas(/^Base Power$/));
+    await ev(() => __BD.ui().closeModal());
+    await tab('troops');
+    await tapGame(76, L.SAFE.top + 155);
+    check('tapping the Beacon gauge returns to the base and glides to the Beacon', await waitTrue(() => !__BD.ui().screen && __BD.ui().panelOpenFor === 'beacon'));
+    await ev(() => __BD.ui().closePanel(true));
+    // Cores pill / + -> rewards, badge counts ready rewards
+    await click('cores-plus');
+    check('Cores + opens Beacon Core Rewards', await modalHas(/^Beacon Core Rewards$/));
+    await ev(() => __BD.ui().closeModal());
+    await tapGame(560, L.SAFE.top + 62);
+    check('tapping the Cores pill also opens the rewards', await modalHas(/^Beacon Core Rewards$/));
+    await ev(() => __BD.ui().closeModal());
+    check('red badge on Cores + shows how many rewards are ready', await waitTrue(() => { const u = __BD.ui(), n = __BD.store.rewardsReady(); return n > 0 && u.coreBadgeText.text === String(n); }));
+
+    // capsule tooltips
+    const capTap = async (id) => { const p = await ev((id) => { const c = __BD.ui().capsules[id]; return __BD.gameToPage(c.x + c.w / 2, c.hit.y); }, id); await page.mouse.click(p.x, p.y); await frames(3); await sleep(250); };
+    const tips = {};
+    for (const id of ['energy', 'alloy', 'shards', 'troops']) { await capTap(id); tips[id] = await ev(() => __BD.ui().tip && { kind: __BD.ui().tip.kind, text: __BD.ui().tip.text, vis: __BD.ui().tipBox.visible }); }
+    check('tapping a capsule shows a tooltip for that resource', Object.entries(tips).every(([id, t]) => t && t.kind === id && t.vis), JSON.stringify(Object.values(tips).map((t) => t?.kind)));
+    check('tooltips explain the source (Energy rate from the Beacon, Alloy from the Command Center, Shards from the Armory, Troops from the Barracks)',
+      /\/s from the Beacon/.test(tips.energy.text) && /Command Center/.test(tips.alloy.text) && /Armory/.test(tips.shards.text) && /Barracks/.test(tips.troops.text), JSON.stringify(tips));
+    await capTap('troops');
+    check('tapping the same capsule again closes its tooltip', await waitTrue(() => !__BD.ui().tip));
+    await capTap('energy');
+    const cam0 = await ev(() => __BD.base().cameras.main.scrollX);
+    await tapGame(360, 900);
+    check('a tap elsewhere closes the tooltip (and does not pass through to the map)', await waitTrue(() => !__BD.ui().tip) && (await ev(() => __BD.base().cameras.main.scrollX)) === cam0);
+    await capTap('alloy');
+    await ev(() => { const u = __BD.ui(); u.tip.until = u.time.now - 1; });
+    check('tooltips close by themselves after a few seconds', await waitTrue(() => !__BD.ui().tip));
+
+    // --- 2. bottom nav
+    const nav = await ev(() => { const u = __BD.ui(); return u.tabs.map((t) => ({ id: t.id, cx: Math.round(t.cx), hero: !!t.hero, key: t.icon?.texture.key, label: t.label?.text })); });
+    check('nav order: Base, Troops, [World emblem], Armory, Squads, More', nav.map((t) => t.id).join(',') === 'base,troops,world,armory,squads,more', nav.map((t) => t.id).join(','));
+    check('illustrated tab icons with labels', nav.filter((t) => !t.hero).every((t) => t.key === `nav-${t.id}` && t.label && t.label.length > 3), JSON.stringify(nav));
+    check('World is the big centre emblem button', await ev(() => { const u = __BD.ui(), h = u.hero; return Math.abs(h.x - u.scale.width / 2) < 1 && h.em.texture.key === 'hud-emblem' && h.em.displayWidth >= 120 && h.y - h.em.displayHeight / 2 < u.scale.height - __BD.layout().NAV_H; }));
+    check('nav labels do not overlap', (await overlaps(await ev(() => __BD.ui().scale.height - __BD.layout().NAV_H - __BD.layout().HERO_RISE), 99999)).length === 0);
+    const lifted = async (id) => ev((id) => { const u = __BD.ui(), t = u.tabs.find((x) => x.id === id), o = u.tabs.find((x) => !x.hero && x.id !== id); return u.activeTab === id && t.icon.y < o.icon.y && t.icon.scale > o.icon.scale && u.navGlow.visible && Math.abs(u.navGlow.x - t.cx) < 1 && t.label.style.color === '#ffb347'; }, id);
+    check('active tab (Base) is raised and glowing gold', await lifted('base'));
+    for (const id of ['troops', 'armory', 'squads']) {
+      await tab(id);
+      check(`${id} tab opens its screen and becomes the raised tab`, (await ev((id) => __BD.ui().screen?.id === id, id)) && await lifted(id));
+    }
+    await shot('stage7-tab-squads.png');
+    await tab('troops');
+    await shot('stage7-tab-troops.png');
+    await tab('world');
+    check('World emblem opens the World map and lights up (no tab plate)', await waitTrue(() => __BD.ui().worldMode && __BD.ui().activeTab === 'world' && !__BD.ui().navGlow.visible));
+    check('the World emblem is not covered by the World squad bar', await ev(() => { const u = __BD.ui(); return u.worldHud.barRect.bottom <= u.hero.y - u.hero.em.displayHeight / 2 + 4; }));
+    await tab('base');
+    check('Base tab returns to the base', await waitTrue(() => !__BD.ui().worldMode && !__BD.ui().screen && __BD.ui().activeTab === 'base'));
+    check('screens end above the World emblem', await ev(() => { const u = __BD.ui(), a = u.area; return a.y + a.h <= u.hero.y - u.hero.em.displayHeight / 2 + 2; }));
+
+    // --- 3. More sheet
+    await tab('more');
+    const more = await ev(() => ({ open: !!__BD.ui().modal?.isMore, tab: __BD.ui().activeTab, items: __BD.controls().filter((c) => /^more-/.test(c.meta)).map((c) => c.meta) }));
+    check('More opens a sheet: Settings, Rewards, Power, Leaders, Research, Events', more.open && more.tab === 'more' && ['settings', 'rewards', 'profile', 'leaders', 'research', 'events'].every((k) => more.items.includes(`more-${k}`)), JSON.stringify(more));
+    await shot('stage7-more-sheet.png');
+    await tab('more');
+    check('tapping More again closes the sheet', await waitTrue(() => !__BD.ui().modal && __BD.ui().activeTab === 'base'));
+    await tab('more');
+    await tapGame(360, 300);
+    check('tapping outside the sheet closes it', await waitTrue(() => !__BD.ui().modal));
+    await tab('more');
+    await tab('squads');
+    check('the nav stays usable while More is open (Squads closes it and opens Squads)', await waitTrue(() => !__BD.ui().modal && __BD.ui().screen?.id === 'squads'));
+    await tab('more');
+    await click('more-settings');
+    check('More → Settings opens Settings (audio, tutorial, Reset)', await modalHas(/^AUDIO$/) && await ev(() => __BD.ui().activeTab === 'more'));
+    await ev(() => __BD.ui().closeModal());
+    await tab('more'); await click('more-leaders');
+    check('More → Leaders opens the leader collection', await waitTrue(() => __BD.ui().screen?.id === 'armory' && __BD.ui().screenState.armoryTab === 'leaders'));
+    await tab('more'); await click('more-rewards');
+    check('More → Rewards opens Beacon Core Rewards', await modalHas(/^Beacon Core Rewards$/));
+    await ev(() => __BD.ui().closeModal());
+    await tab('more'); await click('more-research');
+    check('More → Research explains the Archive (Beacon Lv 3) before it unlocks', await waitTrue(() => /Archive/.test(__BD.ui().toastText.text) && __BD.ui().toastBox.visible));
+    await tab('more'); await click('more-profile');
+    check('More → Power opens the Power breakdown', await modalHas(/^Base Power$/));
+    await ev(() => __BD.ui().closeModal());
+
+    // --- 4. badges
+    const badge = (id) => ev((id) => __BD.ui().tabs.find((t) => t.id === id).badgeText.text, id);
+    await tab('base');
+    await ev(() => { __BD.store.state.resources.cores = 3; });
+    check('Armory badge: Cores for recruits (3 Cores -> 3)', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'armory').badgeText.text === '3'));
+    await ev(() => { __BD.store.state.resources.cores = 0; });
+    check('Armory badge clears with no Cores', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'armory').badgeText.text === ''));
+    check('More badge counts rewards ready to claim', await waitTrue(() => { const n = __BD.store.rewardsReady(); return n > 0 && __BD.ui().tabs.find((t) => t.id === 'more').badgeText.text === String(n); }));
+    await ev(() => __BD.store.claimAllRewards());
+    check('More badge clears once rewards are claimed', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'more').badgeText.text === ''));
+    await ev(() => { const st = __BD.store; st.state.resources.energy = 5000; st.train('sentinel', 4); st.tick(120); });
+    check('Troops badge: troops finished training while you were elsewhere', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'troops').badgeText.text === '4'), await badge('troops'));
+    await tab('troops');
+    check('Troops badge clears when you open Troops', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'troops').badgeText.text === ''));
+    await ev(() => { const st = __BD.store.state; st.beacon.level = 3; st.buildings.archive.placed = false; });
+    check('Base badge (!) while a new building waits to be placed', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'base').badgeText.text === '!'));
+    await tab('base');
+    check('…and clears on the Base tab', await waitTrue(() => __BD.ui().tabs.find((t) => t.id === 'base').badgeText.text === ''));
+    check('stage 7 (390×844): no console errors', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+
+    // --- 5. safe-area insets (notch + home indicator) and other phone sizes
+    ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { safe: { top: 47, bottom: 34 } }));
+    const S = await page.evaluate(() => {
+      const u = __BD.ui(), l = __BD.layout(), H = u.scale.height;
+      const t = u.tabs.filter((x) => !x.hero);
+      return { l, H, avatarTop: u.avatar.y - u.avatar.displayHeight / 2, powerTop: u.powerText.y, labelsBottom: Math.max(...t.map((x) => x.label.y + x.label.height)), heroLab: u.hero.y + u.hero.lab.y + u.hero.lab.height };
+    });
+    check('safe-area insets: HUD and nav grow by the notch / home-indicator insets', S.l.SAFE.top > 70 && S.l.SAFE.bottom > 50 && S.l.TOP_H === S.l.SAFE.top + S.l.HUD_CONTENT_H && S.l.NAV_H === S.l.NAV_BODY + S.l.SAFE.bottom, JSON.stringify(S.l));
+    check('…the portrait and Power sit below the top inset', S.avatarTop >= S.l.SAFE.top && S.powerTop >= S.l.SAFE.top, JSON.stringify(S));
+    check('…tab labels and the World label sit above the home indicator', S.labelsBottom <= S.H - S.l.SAFE.bottom && S.heroLab <= S.H - S.l.SAFE.bottom, JSON.stringify(S));
+    await page.evaluate(() => __BD.ui().openScreen('troops'));
+    check('…screens fit between the HUD and nav with insets', await page.evaluate(() => { const u = __BD.ui(), a = u.area, l = __BD.layout(); return a.y === l.TOP_H && a.y + a.h <= u.scale.height - l.NAV_H - l.HERO_RISE; }));
+    await page.evaluate(() => __BD.ui().closeScreen());
+    if (takeShots) { await sleep(400); await page.screenshot({ path: join(ROOT, 'screens', 'stage7-safe-area.png') }); console.log('      saved screens/stage7-safe-area.png'); }
+    check('safe-area run: no console errors', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+    for (const vp of [{ width: 360, height: 640 }, { width: 430, height: 932 }, { width: 375, height: 667 }]) {
+      ({ ctx, page, errors } = await open(vp));
+      const r = await page.evaluate(() => {
+        const u = __BD.ui(), H = u.scale.height, l = __BD.layout();
+        u.openMore();
+        const m = u.modal.sheetRect;
+        const fits = m.y >= l.TOP_H && m.bottom <= H - l.NAV_H - l.HERO_RISE;
+        u.closeModal();
+        return { H, fits, vis: (H - l.TOP_H - l.NAV_H) / H };
+      });
+      const bad = await page.evaluate(() => {
+        const ui = __BD.ui(), out = [], vis = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active || p.alpha === 0) return false; return true; };
+        const walk = (o) => { if (o.type === 'Text' && o.text && vis(o)) out.push({ t: o.text, b: o.getBounds() }); (o.list ?? []).forEach(walk); };
+        ui.children.list.forEach(walk);
+        const bad = []; for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) { const a = out[i].b, b = out[j].b; if (a.x < b.right - 1 && b.x < a.right - 1 && a.y < b.bottom - 1 && b.y < a.bottom - 1) bad.push(`${out[i].t}|${out[j].t}`); }
+        return bad;
+      });
+      check(`${vp.width}×${vp.height}: HUD + nav lay out without overlaps, More sheet fits, base keeps ≥ 65%`, r.fits && bad.length === 0 && r.vis >= 0.65 && errors.length === 0, JSON.stringify({ ...r, bad, errors }));
+      await ctx.close();
+    }
+  } catch (e) {
+    check('stage 7 suite ran without exceptions', false, e.message);
+  }
+  await browser.close();
+}
+
 const srv = await serveDist();
 try {
   if (!process.env.ONLY || process.env.ONLY === '1') {
@@ -1953,6 +2174,8 @@ try {
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '5')) await runStage5(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
   if (!process.env.ONLY || process.env.ONLY === '6') await runStage6(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '6')) await runStage6(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
+  if (!process.env.ONLY || process.env.ONLY === '7') await runStage7(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
+  if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '7')) await runStage7(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
