@@ -9,6 +9,8 @@ import { resolveBattle, combatPower } from './world/battle.js';
 import { creatureArmy, squadArmy } from './world/armies.js';
 import { createWorld, ringLevel, dist } from './world/worldState.js';
 import { audio } from './audio/audio.js';
+import * as gridMath from './systems/grid.js';
+import { BUILDINGS, BEACON, MAP } from './config.js';
 
 store.load();
 
@@ -68,6 +70,15 @@ window.__BD = {
     const ui = game.scene.getScene('UI'); const t = ui.tabs.find((x) => x.id === id);
     return this.gameToPage(t.cx, GAME_HEIGHT - 65);
   },
+  // Base grid math for tests: footprint centres / tile centres -> page px (stage 6 map)
+  grid: { ...gridMath, BUILDINGS, BEACON, MAP },
+  fpToPage(id) {
+    const st = id === 'beacon' ? { gx: BEACON.gx, gy: BEACON.gy } : this.base().pos(id);
+    const size = id === 'beacon' ? BEACON.footprint : BUILDINGS[id].footprint;
+    const w = gridMath.isoToWorld(st.gx + size / 2, st.gy + size / 2);
+    return this.worldToPage(w.x, w.y);
+  },
+  baseTileToPage(gx, gy) { const w = gridMath.isoToWorld(gx + 0.5, gy + 0.5); return this.worldToPage(w.x, w.y); },
   // world point -> page (CSS px) coordinates
   worldToPage(wx, wy) {
     const s = game.scene.getScene('Base').worldToScreen(wx, wy);
