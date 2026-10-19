@@ -348,7 +348,7 @@ pointer (the camera glides to off-screen buildings):
   - Left column: queue buttons **Builder**, **Research**, **Training** and **Healing**, each with a live timer
     and a progress ring. Each one jumps to the right building or screen.
   - Right column (stage 6): Hunt, Rewards, Armory, Events. The v0.6.0 HUD redesign (below) moved these into
-    the World emblem, the Cores **+**, the Armory tab and the More sheet.
+    the World tab, the Cores **+**, the Armory tab and the More sheet.
 - **Tutorial:** step 8 is now "tap the Research button". Before Beacon Lv 3 it explains where research comes from.
 - **Saves (v9):** v8 saves migrate automatically (backup `brokenDawn.save.v1.backup-v8`). Buildings on their
   old default tiles move to the new defaults. Moved buildings keep their direction from the Beacon (scaled
@@ -365,15 +365,18 @@ Built from the approved mockup and adapted for portrait phones.
   gauge under the portrait; tap it to jump to the Beacon. Below that is a slim row of glass resource capsules:
   Energy (with its rate), Alloy, Shards and Troops. Tap a capsule for a tooltip that says where the resource
   comes from.
-- **Bottom nav:** a sculpted gunmetal bar with gold filigree and illustrated icons. Tabs: **Base**, **Troops**,
-  [**World** emblem, the large centre button], **Armory**, **Squads**, **More**. The active tab is raised and glows gold.
+- **Bottom nav:** a sculpted gunmetal bar with gold filigree and illustrated icons. Tabs: **World** (planet globe),
+  **Troops**, [**Base** emblem, the large centre button: a gold medallion with a glowing beacon fortress],
+  **Armory**, **Squads**, **More**. The game opens on Base. The active tab is raised and glows gold; the Base
+  emblem lights up instead.
 - **Red badges:**
   - Troops: troops trained or healed since you last looked.
   - Armory: the number of recruits your Cores can buy.
   - More: rewards ready to claim.
-  - Base: a building waiting to be placed.
-- **More** opens a sheet with Settings, Rewards, Power, Leaders, Research and Events (coming soon). The nav
-  stays usable while the sheet is open.
+  - Base (on the emblem): a building waiting to be placed.
+- **More** opens a sheet with Settings, Rewards, Power, Leaders, Research and Events (coming soon). Research and Events
+  have illustrated icons (holographic flask orb, gold star medallion); the left-column Research queue button
+  uses the same flask orb. The nav stays usable while the sheet is open.
 - **Safe areas:** with `viewport-fit=cover`, the HUD and nav grow by the notch and home-indicator insets
   (`src/ui/layout.js`). Tested at 390×844 (with and without insets), 360×640, 375×667 and 430×932.
 - **Art:** 12 WebP icons (~77 KB) in `src/art/ui/`. They were keyed from the magenta (nav) and green (HUD)
@@ -409,7 +412,7 @@ src/
   audio/audio.js       WebAudio engine: synthesized SFX recipes, generated per-screen music, crossfade, unlock, haptics
   tutorial/tutorial.js 8-step guided tutorial: coach card, pointer, step detection, assists, skip/replay
   ui/screens/          archive.js (research tree), troops.js (Barracks, tiers, promote), squads.js (details, edit formation, pickers), armory.js, infirmary.js, common.js
-tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–7 suites × 2 builds (926 checks)
+tests/e2e.mjs          Playwright (playwright-core + system Chrome) e2e test: stage 1–7 suites × 2 builds (934 checks)
 screens/               screenshots from the test run
 ```
 

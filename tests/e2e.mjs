@@ -795,9 +795,12 @@ async function runStage2(url, label, takeShots) {
     await ev(() => { const st = __BD.store; st.state.resources.energy = 5000; st.state.construction = []; st.save(); __BD.base().select('barracks'); });
     await sleep(400);
     const bPow0 = (await power()).total, bCap0 = await ev(() => __BD.store.laneCapacity()), bE0 = (await state()).resources.energy;
+    await waitTrue(() => { const u = __BD.ui(); return u.panel.visible && Math.abs(u.panel.y) < 0.5 && /^Upgrade/.test(u.pUpgrade.labelText.text); }); await sleep(150);
     const upB = await ev(() => { const b = __BD.ui().pUpgrade; return __BD.gameToPage(b.x, b.y); });
+    const dbg = await ev(() => { const u = __BD.ui(); return { lab: u.pUpgrade.labelText.text, en: u.pUpgrade.enabled, py: u.panel.y, vis: u.panel.visible, modal: !!u.modal, screen: u.screen?.id ?? !!u.screen, tab: u.activeTab, sel: __BD.base().selected?.id ?? __BD.base().selected }; });
     await page.mouse.click(upB.x, upB.y); await sleep(400);
     s = await state();
+    if (!s.construction.length) console.log('DBG', JSON.stringify(dbg), JSON.stringify(upB));
     check('Barracks Lv 2→3 upgrade starts via the panel: 30 s, 47 Energy paid up front', s.construction.length === 1 && s.construction[0].id === 'barracks' && s.construction[0].toLevel === 3 && s.construction[0].total === 30 && Math.abs(bE0 - s.resources.energy - 47) < 1, JSON.stringify(s.construction));
     check('panel shows countdown + Cancel while upgrading', await waitTrue(() => /Upgrading to Lv 3/.test(__BD.ui().pStats.text) && /^Cancel/.test(__BD.ui().pUpgrade.labelText.text)));
     check('map shows a countdown over the Barracks', await waitTrue(() => { const t = __BD.base().buildTexts?.barracks; return !!t && t.visible && /Lv 3/.test(t.text); }));
@@ -812,6 +815,7 @@ async function runStage2(url, label, takeShots) {
     // cancel = full refund (UI)
     await ev(() => { __BD.base().select('commandCenter'); }); await sleep(300);
     const cE0 = (await state()).resources.energy;
+    await waitTrue(() => { const u = __BD.ui(); return u.panel.visible && Math.abs(u.panel.y) < 0.5 && /^Upgrade/.test(u.pUpgrade.labelText.text); }); await sleep(150);
     const upC = await ev(() => { const b = __BD.ui().pUpgrade; return __BD.gameToPage(b.x, b.y); });
     await page.mouse.click(upC.x, upC.y); await sleep(400);
     const cCost = (await state()).construction[0]?.cost;
