@@ -10,7 +10,7 @@ import {
   AUDIO, TUTORIAL,
 } from '../config.js';
 import { researchMods, researchLevel, archiveUnlocked } from '../systems/research.js';
-import { isValidPlacement } from '../systems/grid.js';
+import { isValidPlacement, nearestFree, BEACON_TILE } from '../systems/grid.js';
 import { basePower, squadPower, squadSoldiers, troopPowerBreakdown } from '../systems/power.js';
 import { LocalWorldService } from '../world/worldService.js';
 import { createWorld, sanitizeWorld, dist, marchSeconds, LOCAL_OWNER } from '../world/worldState.js';
@@ -35,7 +35,7 @@ function defaultState() {
   const buildings = {};
   for (const id of BUILDING_IDS) {
     const s = BUILDINGS[id].start;
-    buildings[id] = { level: s.level, gx: s.gx, gy: s.gy };
+    buildings[id] = { level: s.level, gx: s.gx, gy: s.gy, placed: !BUILDINGS[id].unlockBeacon };
   }
   const squads = {};
   for (const id of TROOPS.squadIds) squads[id] = emptySquad();
@@ -75,6 +75,10 @@ class Emitter {
 
 function num(v, d) { return Number.isFinite(v) ? v : d; }
 const int = (v, d = 0) => Math.max(0, Math.floor(num(v, d)));
+
+// v8 layout (26x26 map, Beacon 2x2 at 12,12, buildings 2x2) used by the v9 migration.
+const V8_START = { commandCenter: { gx: 12, gy: 8 }, barracks: { gx: 8, gy: 12 }, armory: { gx: 16, gy: 16 }, infirmary: { gx: 16, gy: 8 }, archive: { gx: 8, gy: 8 } };
+const V9_SCALE = 1.75; // old offsets from the Beacon -> new map (bigger buildings need more room)
 
 // v1 (stage 1) -> v2 (stage 2). Never drops progress: buildings, levels, Energy and
 // Beacon carry over; new resources start at their defaults.
@@ -148,6 +152,33 @@ export function migrate(raw) {
     raw.tutorial = { done: true, step: TUTORIAL.steps, skipped: false };
     raw.version = 8;
   }
+  // v8 -> v9: the painted Base. The map is bigger (Beacon 4x4 at the centre, buildings 3x3), so every
+  // saved position is carried over: buildings on their old default tile go to the new default, any
+  // other spot keeps its direction and distance from the Beacon (scaled up to the new map). Spots that
+  // no longer fit snap to the nearest free one (see sanitize). Buildings gated behind a Beacon level
+  // are hidden until unlocked: an unlocked one stays placed, a locked one waits to be placed on unlock.
+  if (num(raw.version, 1) < 9) {
+    raw = { ...raw };
+    const lv = num(raw.beacon?.level, 1);
+    const out = {};
+    for (const [id, b] of Object.entries(raw.buildings ?? {})) {
+      if (!BUILDINGS[id] || !b || typeof b !== 'object') { out[id] = b; continue; }
+      const nb = { ...b };
+      if (Number.isFinite(b.gx) && Number.isFinite(b.gy)) {
+        const old = V8_START[id];
+        if (old && old.gx === b.gx && old.gy === b.gy) { nb.gx = BUILDINGS[id].start.gx; nb.gy = BUILDINGS[id].start.gy; } else {
+          const half = BUILDINGS[id].footprint / 2;
+          nb.gx = Math.round(BEACON_TILE.gx + V9_SCALE * (b.gx + 1 - 13) - half);
+          nb.gy = Math.round(BEACON_TILE.gy + V9_SCALE * (b.gy + 1 - 13) - half);
+        }
+      }
+      const gate = BUILDINGS[id].unlockBeacon;
+      nb.placed = !gate || lv >= gate;
+      out[id] = nb;
+    }
+    raw.buildings = out;
+    raw.version = 9;
+  }
   return raw;
 }
 
@@ -172,21 +203,23 @@ function sanitize(raw) {
   const placed = [];
   for (const id of BUILDING_IDS) {
     const r = raw.buildings?.[id];
+    const gate = BUILDINGS[id].unlockBeacon;
     const b = {
       level: Math.max(1, Math.floor(num(r?.level, 1))),
       gx: Math.floor(num(r?.gx, d.buildings[id].gx)),
       gy: Math.floor(num(r?.gy, d.buildings[id].gy)),
+      // gated buildings are hidden until the Beacon unlocks them, then until the player places them
+      placed: !gate || (s.beacon.level >= gate && r?.placed === true),
     };
+    s.buildings[id] = b;
+    if (!b.placed) continue; // not on the map: no footprint yet
     const size = BUILDINGS[id].footprint;
-    if (!isValidPlacement(b.gx, b.gy, size, placed)) { b.gx = d.buildings[id].gx; b.gy = d.buildings[id].gy; }
     if (!isValidPlacement(b.gx, b.gy, size, placed)) {
-      // default spot is taken too (e.g. a new building added to an old save): first free platform spot
-      search: for (let gy = MAP.platformMin; gy <= MAP.platformMax; gy++) for (let gx = MAP.platformMin; gx <= MAP.platformMax; gx++) {
-        if (isValidPlacement(gx, gy, size, placed)) { b.gx = gx; b.gy = gy; break search; }
-      }
+      // spot doesn't fit (old map, taken, or a new building added to an old save): nearest free spot
+      const f = nearestFree(b.gx, b.gy, size, placed);
+      if (f) { b.gx = f.gx; b.gy = f.gy; }
     }
     placed.push({ gx: b.gx, gy: b.gy, size });
-    s.buildings[id] = b;
   }
   for (const t of TROOP_IDS) s.troops[t] = int(raw.troops?.[t]);
   // Lanes are never trimmed to capacity on load (that would silently delete paid-for units).
@@ -527,6 +560,7 @@ class Store extends Emitter {
       j.progress += add;
       if (j.progress + 1e-9 < j.total) continue;
       const before = this.power.total;
+      const unlocks = j.id === BEACON.id ? BUILDING_IDS.filter((id) => BUILDINGS[id].unlockBeacon && !this.isUnlocked(id) && j.toLevel >= BUILDINGS[id].unlockBeacon) : [];
       if (j.id === BEACON.id) {
         this.state.beacon.level = j.toLevel;
         this.state.hunt.stamina = Math.max(this.state.hunt.stamina, this.staminaMax()); // Beacon level-up refills stamina
@@ -534,6 +568,7 @@ class Store extends Emitter {
       this.state.construction.splice(this.state.construction.indexOf(j), 1);
       done.push({ id: j.id, level: j.toLevel });
       this.emit('upgrade', j.id, { before, after: this.power.total });
+      for (const id of unlocks) this.emit('unlocked', id);
     }
     if (done.length) { this.save(); this.emit('change'); }
     return done;
@@ -541,7 +576,7 @@ class Store extends Emitter {
 
   // ---- Placement ------------------------------------------------------
   othersFootprints(excludeId) {
-    return BUILDING_IDS.filter((id) => id !== excludeId).map((id) => ({
+    return BUILDING_IDS.filter((id) => id !== excludeId && this.state.buildings[id].placed).map((id) => ({
       gx: this.state.buildings[id].gx, gy: this.state.buildings[id].gy, size: BUILDINGS[id].footprint,
     }));
   }
@@ -552,7 +587,7 @@ class Store extends Emitter {
   }
 
   moveBuilding(id, gx, gy) {
-    if (!this.canPlace(id, gx, gy)) return false;
+    if (!this.isPlaced(id) || !this.canPlace(id, gx, gy)) return false;
     const b = this.state.buildings[id];
     if (b.gx === gx && b.gy === gy) return true;
     b.gx = gx; b.gy = gy;
@@ -560,6 +595,29 @@ class Store extends Emitter {
     this.emit('moved', id);
     this.emit('change');
     return true;
+  }
+
+  // ---- Hidden-until-unlocked buildings (stage 6) -----------------------
+  isUnlocked(id) { const g = BUILDINGS[id]?.unlockBeacon; return !g || this.state.beacon.level >= g; }
+  isPlaced(id) { return id === BEACON.id || !!this.state.buildings[id]?.placed; }
+  // unlocked but not on the map yet: the player still has to choose a spot
+  pendingPlacements() { return BUILDING_IDS.filter((id) => this.isUnlocked(id) && !this.state.buildings[id].placed); }
+  // suggested spot for placing `id`: its default tile, or the nearest free one
+  suggestSpot(id) {
+    const st = BUILDINGS[id].start;
+    if (this.canPlace(id, st.gx, st.gy)) return { gx: st.gx, gy: st.gy };
+    return nearestFree(st.gx, st.gy, BUILDINGS[id].footprint, this.othersFootprints(id));
+  }
+  placeBuilding(id, gx, gy) {
+    if (!BUILDINGS[id]) return { ok: false, reason: 'Unknown building' };
+    if (!this.isUnlocked(id)) return { ok: false, reason: `Unlocks at Beacon Lv ${BUILDINGS[id].unlockBeacon}` };
+    if (this.isPlaced(id)) return { ok: false, reason: 'Already built' };
+    if (!this.canPlace(id, gx, gy)) return { ok: false, reason: 'Can\'t build there: needs open ground' };
+    Object.assign(this.state.buildings[id], { gx, gy, placed: true });
+    this.save();
+    this.emit('placed', id);
+    this.emit('change');
+    return { ok: true };
   }
 
   // ---- Barracks / training -------------------------------------------

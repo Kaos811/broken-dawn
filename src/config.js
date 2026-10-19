@@ -31,25 +31,27 @@ export const PALETTE = {
 };
 
 export const MAP = {
-  size: 26,          // grid is size x size iso tiles
+  size: 44,          // nominal iso grid (only sets the world origin; buildable area is the ellipse below)
   tileW: 96,         // iso diamond width
   tileH: 48,         // iso diamond height
-  // Metal platform where buildings may be placed (inclusive grid range).
-  platformMin: 7,
-  platformMax: 18,
-  platformThickness: 22,
-  minZoom: 0.4,
-  maxZoom: 1.8,
-  startZoom: 0.62,
+  // Buildable ground: an ellipse (world px) around the Beacon, taller than wide for portrait phones.
+  buildRx: 600,
+  buildRy: 820,
+  // Painted ground extends this far past the buildable area on each side (camera stays inside it).
+  groundPadX: 640,
+  groundPadY: 700,
+  minZoom: 0.42,
+  maxZoom: 1.6,
+  startZoom: 0.72,
 };
 
 // Beacon: fixed at the centre of the map, never movable.
 export const BEACON = {
   id: 'beacon',
   name: 'The Beacon',
-  footprint: 2,
-  gx: 12,
-  gy: 12,
+  footprint: 4,
+  gx: 20,
+  gy: 20,
   powerPerLevel: 15,          // counts as the "Beacon Relay" in the power formula
   maxCharge: 100,
   // Charge per second at a given Beacon level (slows as it grows).
@@ -64,57 +66,57 @@ export const BUILDINGS = {
   commandCenter: {
     id: 'commandCenter',
     name: 'Command Center',
-    footprint: 2,
+    footprint: 3,
     powerPerLevel: 10,
     baseCost: 50,
     costGrowth: 1.6,
-    start: { gx: 12, gy: 8, level: 1 },
+    start: { gx: 11, gy: 11, level: 1 },
     accent: 'gold',
     description: 'Main hub. Oversees Base Power, unlocks the Bravo and Charlie squads, and caps squad levels.',
   },
   barracks: {
     id: 'barracks',
     name: 'Barracks',
-    footprint: 2,
+    footprint: 3,
     powerPerLevel: 5,
     baseCost: 30,
     costGrowth: 1.55,
-    start: { gx: 8, gy: 12, level: 1 },
+    start: { gx: 23, gy: 30, level: 1 },
     accent: 'blue',
     description: 'Trains Sentinels, Bearers and Voyagers side by side, one lane per class. Higher levels give every lane more room and train faster.',
   },
   armory: {
     id: 'armory',
     name: 'Armory',
-    footprint: 2,
+    footprint: 3,
     powerPerLevel: 0, // not part of the power formula; the Armory hosts recruitment (gacha)
     baseCost: 40,
     costGrowth: 1.6,
-    start: { gx: 16, gy: 16, level: 1 },
+    start: { gx: 30, gy: 23, level: 1 },
     accent: 'cyan',
     description: 'Recruitment hub for leaders, armor and weapons. Spend Shards on pulls; equip what you find on your squads.',
   },
   infirmary: {
     id: 'infirmary',
     name: 'Infirmary',
-    footprint: 2,
+    footprint: 3,
     powerPerLevel: 5,
     baseCost: 35,
     costGrowth: 1.55,
-    start: { gx: 16, gy: 8, level: 1 },
+    start: { gx: 19, gy: 12, level: 1 },
     accent: 'green',
     description: 'Treats troops wounded on World hunts. Wounded beyond its capacity die. Healing costs Energy and takes time; higher levels hold more and heal faster.',
   },
   archive: {
     id: 'archive',
     name: 'Archive',
-    footprint: 2,
+    footprint: 3,
     powerPerLevel: 5,       // only once unsealed (Beacon Lv 3)
     baseCost: 60,
     costGrowth: 1.6,
-    start: { gx: 8, gy: 8, level: 1 },
+    start: { gx: 12, gy: 19, level: 1 },
     accent: 'violet',
-    unlockBeacon: 3,        // sealed until the Beacon reaches this level
+    unlockBeacon: 3,        // hidden until the Beacon reaches this level, then placed by the player
     description: 'Decodes the Beacon\'s signal into research. One project at a time; its level caps how far each research can go.',
   },
 };
@@ -350,7 +352,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 8; // v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 9; // v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
