@@ -1846,7 +1846,7 @@ async function runStage6(url, label, takeShots) {
     await tab('base');
     await tab('more');
     await click(null, { meta: 'more-events' });
-    check('Events placeholder (More sheet) explains it is coming soon', await toastHas(/coming soon/));
+    check('More → Events opens the Events hub (stage 8; no longer a placeholder)', await waitTrue(() => !!__BD.ui().modal?.isEvents));
     await ev(() => __BD.ui().closeModal());
 
     // --- 3. hidden until unlocked
