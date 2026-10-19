@@ -338,8 +338,8 @@ export default class UIScene extends Phaser.Scene {
     const icon = this.add.graphics();
     draw(icon, ring);
     const arc = this.add.graphics();
-    const cap = text(this, 0, r + 3, caption, 14, PALETTE.text, { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5, 0);
-    const timer = text(this, 0, r + 30, '', 14, '#ffffff', { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5);
+    const cap = text(this, 0, r + 1, caption, 14, PALETTE.text, { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5, 0);
+    const timer = text(this, 0, r + 32, '', 14, '#ffffff', { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5);
     const badge = this.add.graphics();
     const hit = this.add.circle(0, 0, r + 4, 0, 0.001).setInteractive({ useHandCursor: true });
     c.add([g, arc, icon, timer, cap, badge, hit]);
