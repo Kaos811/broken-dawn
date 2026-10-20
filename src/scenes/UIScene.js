@@ -4,7 +4,7 @@ import { fmtClock } from '../ui/widgets.js';
 import { store } from '../state/store.js';
 import { buildingPower } from '../systems/power.js';
 import { text, fmt, fmtDuration, panelBg, button } from '../ui/widgets.js';
-import { SKIN, drawBar, drawCard, drawFrame, drawBadge, glyph, diamond, oct, lerpC } from '../ui/skin.js';
+import { SKIN, drawBar, drawCard, drawFrame, drawBadge, glyph, diamond, oct, lerpC, bake } from '../ui/skin.js';
 import { statLine, priceTag, sectionHeader, tile } from '../ui/kit.js';
 import { installScrolling, scrollify } from '../ui/scroll.js';
 import { renderTroops } from '../ui/screens/troops.js';
@@ -658,6 +658,25 @@ export default class UIScene extends Phaser.Scene {
   }
 
   // "More" sheet: Settings plus room for more (Rewards, Profile, Research, Leaders, Events).
+  // More → Leaders: painted commander's crest (more-leaders.webp) or a clean gold star-and-laurel placeholder
+  leadersIconKey() {
+    if (this.textures.exists('more-leaders')) return 'more-leaders';
+    return bake(this, 'more-leaders-ph', 120, 120, (g) => {
+      const cx = 60, cy = 58;
+      for (const side of [-1, 1]) for (let k = 0; k < 6; k++) {
+        const a = 0.55 + k * 0.38, r = 40; // laurel leaves up each side
+        g.fillStyle(k % 2 ? 0xc9761a : 0xffb347, 1).fillEllipse(cx + side * Math.sin(a) * r, cy + Math.cos(a) * r, 14, 22);
+      }
+      g.fillStyle(0x05070a, 1).fillCircle(cx, cy, 31);
+      g.fillStyle(0x4a3412, 1).fillCircle(cx, cy, 29);
+      g.fillGradientStyle(0xffe08a, 0xffe08a, 0xc9761a, 0xc9761a, 1, 1, 1, 1).fillCircle(cx, cy, 26);
+      g.fillStyle(0x0b2a2c, 1).fillCircle(cx, cy, 21);
+      glyph(g, 'star', cx, cy, 16, 0x3fd9d2);
+      g.fillStyle(0xffffff, 0.25).fillEllipse(cx - 8, cy - 14, 18, 6);
+      g.fillStyle(0xc9761a, 1).fillTriangle(cx - 18, cy + 30, cx + 18, cy + 30, cx, cy + 46);
+    });
+  }
+
   openMore() {
     this.closeModal(true);
     this.closePanel(true);
@@ -665,7 +684,7 @@ export default class UIScene extends Phaser.Scene {
       { id: 'settings', label: 'Settings', icon: 'nav-more', go: () => this.openSettings() },
       { id: 'rewards', label: 'Rewards', icon: 'hud-core', badge: () => store.rewardsReady(), go: () => this.openRewards() },
       { id: 'profile', label: 'Power', icon: 'hud-power', go: () => this.openPowerBreakdown() },
-      { id: 'leaders', label: 'Leaders', icon: 'nav-troops', go: () => this.openScreen('armory', { armoryTab: 'leaders' }) },
+      { id: 'leaders', label: 'Leaders', icon: this.leadersIconKey(), go: () => this.openScreen('armory', { armoryTab: 'leaders' }) },
       { id: 'research', label: 'Research', icon: 'more-research', go: () => { this.closeModal(); this.onQueue('research'); } },
       { id: 'events', label: 'Events', icon: 'more-events', badge: () => store.eventsReady(), go: () => openEvents(this) },
       { id: 'items', label: 'Items', icon: 'su-icon-h1', go: () => openItems(this) },

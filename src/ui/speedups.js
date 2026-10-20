@@ -6,6 +6,8 @@ import { planAuto, itemDef } from '../systems/speedups.js';
 import { text, button, fmt, fmtClock } from './widgets.js';
 import { SKIN, drawCard, drawBar, glyph, oct, lerpC, bake } from './skin.js';
 import { sectionHeader } from './kit.js';
+import { tabRow } from './screens/common.js';
+import { ITEMS, ITEM_SECTIONS } from '../systems/items.js';
 import { audio } from '../audio/audio.js';
 
 // rim colour by size: bronze (minutes), silver-teal (hours), gold (8h), violet (24h)
@@ -160,31 +162,81 @@ export function openSpeedUp(ui, job) {
   ui.modal.isSpeedUp = job;
 }
 
-// More → Items: the speed-up inventory.
-export function openItems(ui) {
+// Any registry item's icon: painted texture when loaded, else a clean placeholder (speed-ups: the
+// baked chrono tile; resources: the HUD resource icon on a gunmetal plate). Short label underneath.
+export function itemIcon(ui, c, def, x, y, size) {
+  if (def.section === 'speedup') return speedupIcon(ui, c, def.id, x, y, size);
+  const painted = ui.textures.exists(def.icon);
+  const out = [];
+  if (!painted) {
+    const key = bake(ui, `item-plate-${def.section}`, 96, 96, (g) => {
+      g.fillStyle(0x000000, 0.45).fillPoints(oct(5, 7, 88, 88, 18), true);
+      g.fillStyle(0x4a3412, 1).fillPoints(oct(2, 2, 92, 92, 18), true);
+      g.fillStyle(0x8a6a3a, 1).fillPoints(oct(5, 5, 86, 86, 16), true);
+      g.fillGradientStyle(0x2a313b, 0x2a313b, 0x07090d, 0x07090d, 1, 1, 1, 1).fillPoints(oct(10, 10, 76, 76, 13), true);
+      g.fillStyle(0xffffff, 0.1).fillRect(14, 12, 68, 8);
+    });
+    const pl = ui.add.image(x, y, key).setScale(size / 96); out.push(pl);
+  }
+  const k = painted ? def.icon : (def.fallbackIcon && ui.textures.exists(def.fallbackIcon) ? def.fallbackIcon : null);
+  if (k) { const im = ui.add.image(x, y - (painted ? 0 : size * 0.06), k); im.setScale((painted ? size : size * 0.62) / Math.max(im.width, im.height)); out.push(im); }
+  if (def.short) out.push(text(ui, x, y + size * 0.36, def.short, Math.round(size * 0.24), '#fff3cf', { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5));
+  c.add(out);
+  return out;
+}
+
+// More → Items: the general inventory, one tab per registry section.
+export function openItems(ui, section = ui.itemsTab ?? 'speedup') {
+  ui.itemsTab = section;
+  const reopen = () => openItems(ui, ui.itemsTab);
   ui.openOverlay({
-    title: 'Items', h: 900, tab: 'more',
+    title: 'Items', h: 960, tab: 'more',
     build: (c, r) => {
       const x0 = r.x + 28, w0 = r.w - 56;
-      let y = r.y + 90;
-      sectionHeader(ui, c, x0, y, 'SPEED-UPS', { w: w0, right: `${store.itemsTotal()} owned` });
-      y += 40;
-      const cols = 2, gap = 14, tw = (w0 - gap) / cols, th = 92;
-      SPEEDUPS.items.forEach((it, i) => {
-        const tx = x0 + (i % cols) * (tw + gap), ty = y + Math.floor(i / cols) * (th + 10), n = store.itemCount(it.id);
+      let y = r.y + 88;
+      tabRow(ui, c, x0, y, w0, 70, ITEM_SECTIONS.map((sec) => ({ id: sec.id, label: sec.name, sub: `${fmt(store.sectionCount(sec.id))} owned` })), section, (id) => openItems(ui, id));
+      y += 88;
+      const sec = ITEM_SECTIONS.find((x) => x.id === section);
+      const defs = ITEMS.filter((d) => d.section === section);
+      const owned = defs.filter((d) => store.itemCount(d.id) > 0);
+      if (!owned.length && section !== 'speedup') {
+        // clean empty state
         const g = ui.add.graphics(); c.add(g);
-        drawCard(g, tx, ty, tw, th, { state: n ? 'normal' : 'locked' });
-        speedupIcon(ui, c, it.id, tx + 46, ty + th / 2, 70);
-        c.add(text(ui, tx + 92, ty + 16, it.name, 19, n ? PALETTE.text : PALETTE.textDim, { fontStyle: 'bold' }));
-        c.add(text(ui, tx + 92, ty + 48, `×${fmt(n)}`, 24, n ? PALETTE.textGold : PALETTE.textDim, { fontStyle: 'bold' }));
-      });
-      y += Math.ceil(SPEEDUPS.items.length / cols) * (th + 10) + 8;
-      c.add(text(ui, x0, y, [
-        'Use speed-ups from the Speed Up button on a building upgrade or a research project.',
-        `Anything with ${SPEEDUPS.freeSeconds / 60} min or less left finishes free, and Beacon Cores can finish any timer.`,
-        'Earn them from daily mission chests, the daily login, event milestones, Beacon level rewards and the Rift Exchange.',
-      ].join('\n\n'), 17, PALETTE.textDim, { wordWrap: { width: w0 }, lineSpacing: 4 }));
+        drawCard(g, x0, y, w0, 230, { state: 'locked' });
+        const eg = ui.add.graphics(); c.add(eg);
+        glyph(eg, section === 'resource' ? 'lanes' : 'diamond', x0 + w0 / 2, y + 62, 26, SKIN.goldDk);
+        c.add(text(ui, x0 + w0 / 2, y + 108, section === 'resource' ? 'No resource bundles' : 'Nothing here yet', 24, PALETTE.textGold, { fontStyle: 'bold' }).setOrigin(0.5, 0));
+        c.add(text(ui, x0 + w0 / 2, y + 146, sec.empty, 17, PALETTE.textDim, { wordWrap: { width: w0 - 60 }, align: 'center', lineSpacing: 4 }).setOrigin(0.5, 0));
+        return;
+      }
+      if (section === 'speedup') {
+        const cols = 2, gap = 14, tw = (w0 - gap) / cols, th = 92;
+        defs.forEach((it, i) => {
+          const tx = x0 + (i % cols) * (tw + gap), ty = y + Math.floor(i / cols) * (th + 10), n = store.itemCount(it.id);
+          const g = ui.add.graphics(); c.add(g);
+          drawCard(g, tx, ty, tw, th, { state: n ? 'normal' : 'locked' });
+          itemIcon(ui, c, it, tx + 46, ty + th / 2, 70);
+          c.add(text(ui, tx + 92, ty + 16, it.name, 19, n ? PALETTE.text : PALETTE.textDim, { fontStyle: 'bold' }));
+          c.add(text(ui, tx + 92, ty + 48, `×${fmt(n)}`, 24, n ? PALETTE.textGold : PALETTE.textDim, { fontStyle: 'bold' }));
+        });
+        y += Math.ceil(defs.length / cols) * (th + 10) + 8;
+        c.add(text(ui, x0, y, `Use speed-ups from the Speed Up button on a building upgrade or a research project. Anything with ${SPEEDUPS.freeSeconds / 60} min or less left finishes free, and Beacon Cores can finish any timer.`, 17, PALETTE.textDim, { wordWrap: { width: w0 }, lineSpacing: 4 }));
+        return;
+      }
+      // usable items (resource bundles, ...): one row each with Use / Use all
+      for (const it of owned) {
+        const n = store.itemCount(it.id), rh = 96;
+        const g = ui.add.graphics(); c.add(g);
+        drawCard(g, x0, y, w0, rh - 10, {});
+        itemIcon(ui, c, it, x0 + 46, y + 43, 70);
+        c.add(text(ui, x0 + 92, y + 12, it.name, 21, PALETTE.text, { fontStyle: 'bold' }));
+        c.add(text(ui, x0 + 92, y + 44, `Owned ${fmt(n)}  ·  ${it.desc}`, 16, PALETTE.textCyan, { wordWrap: { width: w0 - 360 } }));
+        const use = (k) => { const res = store.useItem(it.id, k); if (!res.ok) { ui.toast(res.reason); return; } audio.play('reward'); ui.toast(`Used ${res.n}× ${it.name}: ${Object.entries(res.gained ?? {}).map(([kk, v]) => `+${fmt(v)} ${kk[0].toUpperCase() + kk.slice(1)}`).join(', ')}`, 1800); reopen(); };
+        const b1 = button(ui, x0 + w0 - 196, y + 43, 100, 56, 'Use', () => use(1), { style: 'cyan', size: 20 }); b1.chip = `item-use-${it.id}`;
+        const ba = button(ui, x0 + w0 - 64, y + 43, 112, 56, `All (${n})`, () => use(n), { style: 'gold', size: 19 }); ba.chip = `item-all-${it.id}`; ba.setVisible(n > 1);
+        c.add([b1, ba]);
+        y += rh;
+      }
     },
   });
 }
-void glyph;

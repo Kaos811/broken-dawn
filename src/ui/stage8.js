@@ -7,6 +7,7 @@ import { SKIN, drawBar, drawCard } from './skin.js';
 import { sectionHeader } from './kit.js';
 import { audio } from '../audio/audio.js';
 import { speedupIconKey } from './speedups.js';
+import { itemById } from '../systems/items.js';
 import { TOP_H } from './layout.js';
 
 const testFlags = () => (typeof window !== 'undefined' ? window.__BD_TEST ?? {} : {});
@@ -14,8 +15,9 @@ const testFlags = () => (typeof window !== 'undefined' ? window.__BD_TEST ?? {} 
 // "+900 Energy · +40 Alloy · +1 Core"
 export function fmtBundle(b, sep = '  ·  ') {
   const names = { energy: 'Energy', alloy: 'Alloy', shards: 'Shards', stamina: 'Stamina', marks: 'Rift Marks', cores: 'Core' };
-  const su = (k) => SPEEDUPS.items.find((i) => `su_${i.id}` === k);
-  return Object.entries(b ?? {}).filter(([, v]) => v).map(([k, v]) => (su(k) ? `+${v}× ${su(k).short} speed-up` : `+${fmt(v)} ${k === 'cores' ? (v === 1 ? 'Beacon Core' : 'Beacon Cores') : names[k] ?? k}`)).join(sep);
+  const su = (k) => SPEEDUPS.items.find((i) => `su_${i.id}` === k || `it_${i.id}` === k);
+  const it = (k) => (k.startsWith('it_') ? itemById(k.slice(3)) : null);
+  return Object.entries(b ?? {}).filter(([, v]) => v).map(([k, v]) => (su(k) ? `+${v}× ${su(k).short} speed-up` : it(k) ? `+${v}× ${it(k).name} bundle` : `+${fmt(v)} ${k === 'cores' ? (v === 1 ? 'Beacon Core' : 'Beacon Cores') : names[k] ?? k}`)).join(sep);
 }
 
 function drawBadge(btn, n) {

@@ -172,8 +172,8 @@ export const SPEEDUPS = {
   autoWaste: 300,            // Auto-use may overshoot by at most this many seconds
   // reward sources (bundle keys are `su_<id>`)
   login: { su_m15: 1 },      // every daily login claim
-  loginStreak: { su_h3: 1 }, // extra on every 7th day in a row
-  beaconLevel: (lv) => ({ su_h1: 1, ...(lv === 5 ? { su_h8: 1 } : {}), ...(lv === 10 ? { su_h24: 1 } : {}) }),
+  loginStreak: { su_h3: 1, it_res_energy_10k: 1, it_res_alloy_1k: 1 }, // extra on every 7th day in a row (stage 10b: + resource bundles)
+  beaconLevel: (lv) => ({ su_h1: 1, it_res_energy_1k: 1, ...(lv % 5 === 0 ? { it_res_shards_100: 1 } : {}), ...(lv === 5 ? { su_h8: 1 } : {}), ...(lv === 10 ? { su_h24: 1 } : {}) }),
   firstUpgrade: { su_m5: 3 }, // one-time, with the first upgrade started (teaches the button)
 };
 export const SPEEDUP_IDS = SPEEDUPS.items.map((i) => i.id);

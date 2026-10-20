@@ -32,7 +32,10 @@ export const LAYOUT_SCREENS = [
   ['reveal x1', "u.playReveal([{ kind: 'leader', id: 'kael', rarity: 'legendary', result: 'new' }]);"],
   ['reveal x10', "u.playReveal(['kael', 'lyra', 'jax', 'seren', 'vex', 'orin', 'nova', 'rook', 'dax', 'mira'].map((id) => ({ kind: 'leader', id, rarity: 'rare', result: 'shards', refund: 10 })));"],
   // stage 10: speed-ups
-  ['items', 'u.openItems();'],
+  ['items', "u.openItems('speedup');"],
+  ['items resources', "Object.assign(__BD.store.state.items, { res_energy_1k: 3, res_energy_10k: 1, res_alloy_1k: 2, res_shards_100: 1 }); u.openItems('resource');"],
+  ['items resources empty', "for (const k of Object.keys(__BD.store.state.items)) if (k.startsWith('res_')) __BD.store.state.items[k] = 0; u.openItems('resource');"],
+  ['items other', "u.openItems('other');"],
   ['speedup build', "const st = __BD.store; if (!st.state.construction.length) { st.state.resources.energy += 1e6; st.state.beacon.charge = 100; st.upgrade('commandCenter'); } Object.assign(st.state.items, { m1: 3, m5: 12, m15: 4, h1: 2, h3: 1, h8: 1, h24: 0 }); u.openSpeedUp({ kind: 'build', id: st.state.construction[0].id });"],
   ['speedup research', "const st = __BD.store; if (st.researchJob()) { Object.assign(st.state.items, { m5: 2, h1: 1 }); u.openSpeedUp({ kind: 'research' }); }"],
   ['speedup lane', "const st = __BD.store; st.state.resources.energy += 1e5; st.train('sentinel', 5); u.openSpeedUp({ kind: 'lane', id: 'sentinel' });"],

@@ -2,11 +2,13 @@
 // Jobs are addressed as { kind, id }: kind 'build' (id = building id), 'research', 'lane' (id = class),
 // 'heal' (the whole healing queue). Items only work on 'build' and 'research'.
 import { SPEEDUPS, SPEEDUP_IDS } from '../config.js';
+import { ITEM_IDS, itemById, bundleItemId } from './items.js';
 
-export const emptySpeedups = () => Object.fromEntries(SPEEDUP_IDS.map((id) => [id, 0]));
+// counts for every registry item (speed-ups, resource bundles, ...)
+export const emptySpeedups = () => Object.fromEntries(ITEM_IDS.map((id) => [id, 0]));
 export function sanitizeSpeedups(raw) {
   const d = emptySpeedups();
-  for (const id of SPEEDUP_IDS) { const v = Math.floor(Number(raw?.[id])); if (v > 0) d[id] = v; }
+  for (const id of ITEM_IDS) { const v = Math.floor(Number(raw?.[id])); if (v > 0) d[id] = v; }
   return d;
 }
 export const itemDef = (id) => SPEEDUPS.items.find((i) => i.id === id);
@@ -35,10 +37,22 @@ export const speedupMethods = {
   itemsTotal() { return SPEEDUP_IDS.reduce((n, id) => n + this.itemCount(id), 0); },
   grantItems(bundle) {
     for (const [k, v] of Object.entries(bundle ?? {})) {
-      if (!k.startsWith('su_') || !(v > 0)) continue;
-      const id = k.slice(3);
-      if (SPEEDUP_IDS.includes(id)) this.state.items[id] += Math.floor(v);
+      const id = bundleItemId(k);
+      if (!id || !(v > 0) || !itemById(id)) continue;
+      this.state.items[id] = (this.state.items[id] ?? 0) + Math.floor(v);
     }
+  },
+  sectionCount(section) { return Object.entries(this.state.items).reduce((n, [id, k]) => n + (itemById(id)?.section === section ? k : 0), 0); },
+  // Uses n of an item from the Items screen (items with a `use` handler; speed-ups are used on a timer instead)
+  useItem(id, n = 1) {
+    const def = itemById(id);
+    n = Math.floor(n);
+    if (!def?.use) return { ok: false, reason: 'Use this from a timer' };
+    if (!(n > 0) || this.itemCount(id) < n) return { ok: false, reason: `Not enough ${def.name}` };
+    this.state.items[id] -= n;
+    const gained = def.use(this, n);
+    this.save(); this.emit('change');
+    return { ok: true, n, gained };
   },
   jobLeft(job) {
     if (!job) return 0;
