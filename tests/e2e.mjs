@@ -982,7 +982,7 @@ async function runStage3(url, label, takeShots) {
     await click('Attack · Alpha', { meta: 'attack-alpha' });
     s = await state();
     const m0 = s.world.marches[0];
-    check('Attack sends a march: −10 stamina, target reserved, travel 5 s + 1 s/tile', !!m0 && m0.squadId === 'alpha' && m0.phase === 'out' && s.hunt.stamina === 90 && s.world.entities.find((e) => e.id === lv1).busy === m0.id && Math.abs(m0.travel - Math.min(60, 5 + Math.hypot(m0.to.x - 40, m0.to.y - 75))) < 1e-6, JSON.stringify(m0 && { t: m0.travel, st: s.hunt.stamina }));
+    check('Attack sends a march: −10 stamina, target reserved, travel 5 s + 1 s/tile', !!m0 && m0.squadId === 'alpha' && m0.phase === 'out' && s.hunt.stamina === 90 && s.world.entities.find((e) => e.id === lv1).busy === m0.id && Math.abs(m0.travel - Math.min(60, 5 + Math.hypot(m0.to.x - 43, m0.to.y - 78))) < 1e-6, JSON.stringify(m0 && { t: m0.travel, st: s.hunt.stamina }));
     check('only healthy troops march (army snapshot = Alpha lines 14/12/10)', JSON.stringify(m0.army.lines.map((l) => l.count)) === '[14,12,10]');
     check('formation is locked while marching', (await ev(() => __BD.store.saveFormation('alpha', [{ type: 'sentinel', count: 1 }, { type: null, count: 0 }, { type: null, count: 0 }]).reason)) === 'Alpha is out on a march');
     check('a second squad can\'t attack the same creature', /already on its way/.test(await ev((id) => __BD.store.attackInfo('bravo', id).reason, lv1)));
@@ -2200,8 +2200,8 @@ async function runStage12(url, label) {
       return { cit: cit && { x: cit.x, y: cit.y, locked: cit.locked }, C, B, nBots: bots.length, botsOk: bots.every((b) => b.name && b.level >= 1 && b.level <= 20 && b.power > 0 && Number.isFinite(b.color) && b.owner !== 'local'),
         tagged: bots.filter((b) => b.tag).length, det: again === bots.map(key).join(), minCrD, crNearBase, lv1, local: bases.find((b) => b.id === 'base-local') };
     });
-    check('Rift Citadel at the exact centre of the map, locked', w.cit && w.cit.x === 40 && w.cit.y === 40 && w.cit.locked === true && w.C.x === 40, JSON.stringify(w.cit));
-    check('your base occupies its own spot on the outer edge', w.local && w.local.x === w.B.x && w.local.y === w.B.y && w.B.y === 75);
+    check('Rift Citadel at the exact centre of the map, locked', w.cit && w.cit.x === 43 && w.cit.y === 43 && w.cit.locked === true && w.C.x === 43, JSON.stringify(w.cit));
+    check('your base occupies its own spot on the outer edge', w.local && w.local.x === w.B.x && w.local.y === w.B.y && w.B.y === 78);
     check('14 seeded neighbour bases with name, Beacon level, power and banner colour; most in an alliance', w.nBots === 14 && w.botsOk && w.tagged >= 8, `${w.nBots} bots, ${w.tagged} tagged`);
     check('neighbour bases are deterministic from the world seed (server can replace them later)', w.det);
     check('no creatures inside the Citadel dome; none on top of a base', w.minCrD >= 7 && w.crNearBase >= 3 - 1e-9, `${w.minCrD.toFixed(1)} / ${w.crNearBase.toFixed(1)}`);
@@ -2220,12 +2220,12 @@ async function runStage12(url, label) {
     check('painted world loads: one atlas (base tiers, citadel, crystals, lairs, ruins, fissures, roads, fog) + ground tile', sc.ground && sc.atlas >= 20 && sc.props > 150, JSON.stringify(sc));
     check('every base renders (yours + 14 neighbours)', sc.bases === 15);
     check('off-screen decor is culled at the start zoom', sc.shown < sc.props * 0.5, `${sc.shown}/${sc.props}`);
-    await ev(() => { const ws = __BD.world(); ws.cameras.main.setZoom(0.25); ws.cameras.main.centerOn(40.5 * 72, 40.5 * 72); }); await sleep(300);
+    await ev(() => { const ws = __BD.world(); ws.cameras.main.setZoom(0.25); ws.cameras.main.centerOn(43.5 * 72, 43.5 * 72); }); await sleep(300);
     const sc2 = await ev(() => __BD.world().props.filter((p) => p.visible).length);
     check('zooming out shows more decor', sc2 > sc.shown, `${sc.shown} -> ${sc2}`);
     const tapAt = async (x, y) => { const p = await ev(([x, y]) => __BD.tileToPage(x, y), [x, y]); await page.mouse.click(p.x, p.y); await sleep(400); };
-    await ev(() => { const ws = __BD.world(); ws.cameras.main.setZoom(0.6); ws.cameras.main.centerOn(40.5 * 72, 40.5 * 72); }); await sleep(200);
-    await tapAt(40, 39);
+    await ev(() => { const ws = __BD.world(); ws.cameras.main.setZoom(0.6); ws.cameras.main.centerOn(43.5 * 72, 43.5 * 72); }); await sleep(200);
+    await tapAt(43, 42);
     const cc = await ev(() => { const m = __BD.ui().modal; return m && { kind: m.kind, txt: m.list.filter((o) => o.text).map((o) => o.text).join(' | ') }; });
     check('tapping the Citadel opens its card: weekly alliance war for buffs, coming with alliances', cc?.kind === 'citadel' && /weekly|once a week/i.test(cc.txt) && /alliance/i.test(cc.txt) && /buff/i.test(cc.txt), cc?.txt?.slice(0, 120));
     await ev(() => { __BD.ui().closeModal(); __BD.world().select(null); });
@@ -2240,7 +2240,7 @@ async function runStage12(url, label) {
     check('your base on the map follows your Beacon tier (Lv 20 = gold-crowned stronghold)', grow[0] === 0 && grow[1] === 4, JSON.stringify(grow));
     // hunts still work from the new base position
     const h = await ev(() => { const st = __BD.store, B = __BD.dev.BASE_POS; st.state.hunt.stamina = 100; const t = st.creatures().filter((e) => e.level === 1).sort((a, b) => __BD.dev.dist(a, B) - __BD.dev.dist(b, B))[0]; const r = st.attack('alpha', t.id); const m = st.squadMarch('alpha'); return { ok: r.ok, from: m && m.from, travel: m?.travel, want: Math.min(60, 5 + __BD.dev.dist(t, B)) }; });
-    check('hunts march from your base on the new map (5 s + 1 s/tile)', h.ok && h.from.x === 40 && h.from.y === 75 && Math.abs(h.travel - h.want) < 1e-6, JSON.stringify(h));
+    check('hunts march from your base on the new map (5 s + 1 s/tile)', h.ok && h.from.x === 43 && h.from.y === 78 && Math.abs(h.travel - h.want) < 1e-6, JSON.stringify(h));
 
     // --- v11 -> v12 migration
     const mg = await ev(() => {
@@ -2253,7 +2253,7 @@ async function runStage12(url, label) {
     });
     await page.reload(); await ready();
     const m2 = await ev(() => { const s = __BD.store.state; return { v: s.version, seed: s.world.seed, base: s.world.entities.find((e) => e.id === 'base-local'), cit: !!s.world.entities.find((e) => e.kind === 'citadel'), marches: s.world.marches.length, stamina: s.hunt.stamina, best: s.hunt.bestKill, bots: s.world.entities.filter((e) => e.bot).length }; });
-    check('v11 save migrates to v12: world rebuilt from the same seed around the Citadel, base moved, squads home, stamina refunded, hunt progress kept', m2.v === 12 && m2.seed === 4242 && m2.base.x === 40 && m2.base.y === 75 && m2.cit && m2.marches === 0 && m2.stamina >= 50 && m2.best === 7 && m2.bots === 14, JSON.stringify(m2));
+    check('v11 save migrates to v12: world rebuilt from the same seed around the Citadel, base moved, squads home, stamina refunded, hunt progress kept', m2.v === 12 && m2.seed === 4242 && m2.base.x === 43 && m2.base.y === 78 && m2.cit && m2.marches === 0 && m2.stamina >= 50 && m2.best === 7 && m2.bots === 14, JSON.stringify(m2));
     check('stage 12: no page errors', errors.length === 0, errors.join(' | '));
   } finally { await browser.close(); }
 }

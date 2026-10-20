@@ -130,15 +130,14 @@ export default class WorldScene extends Phaser.Scene {
     this.tweens.add({ targets: this.coreGlow, alpha: 0.4, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.add.text(c.x, c.y + WORLD.citadelRadius * T + 30, '🔒  RIFT CITADEL', { fontFamily: 'system-ui, sans-serif', fontSize: '34px', fontStyle: 'bold', color: PALETTE.textGold, stroke: '#05070a', strokeThickness: 7, letterSpacing: 3 }).setOrigin(0.5).setDepth(40);
     this.add.text(c.x, c.y + WORLD.citadelRadius * T + 72, 'contested dome · alliance war coming', { fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffd27fcc', stroke: '#05070a', strokeThickness: 6 }).setOrigin(0.5).setDepth(40);
-    // fog over the unexplored edges (+ darkness past the border)
-    for (let i = 0; i < 96; i++) {
-      const side = i % 4, t = rnd() * SIZE, inset = -160 + rnd() * 380;
+    // fog over the unexplored edges (+ darkness past the border): soft black falloff over the map's edge
+    for (let t = -350; t <= SIZE + 350; t += 300) for (const [x, y] of [[t, -40], [t, SIZE + 40], [-40, t], [SIZE + 40, t]]) this.prop(x, y, 'shadow', { w: 900, alpha: 0.95, depth: 59 });
+    for (let i = 0; i < 200; i++) {
+      const side = i % 4, t = -300 + rnd() * (SIZE + 600), inset = -560 + rnd() * 660;
       const x = side === 0 ? t : side === 1 ? t : side === 2 ? inset : SIZE - inset;
       const y = side === 0 ? inset : side === 1 ? SIZE - inset : t;
-      this.prop(x, y, rnd() > 0.5 ? 'fog-1' : 'fog-2', { w: 520 + rnd() * 380, alpha: 0.85, depth: 60, rot: rnd() * 6.28 });
+      this.prop(x, y, rnd() > 0.5 ? 'fog-1' : 'fog-2', { w: 460 + rnd() * 360, alpha: inset < 0 ? 0.95 : 0.7, depth: 60, rot: rnd() * 6.28, tint: inset < -200 ? 0x777777 : 0xffffff });
     }
-    const fogEdge = this.add.graphics().setDepth(59);
-    for (let k = 0; k < 6; k++) { fogEdge.lineStyle(60, 0x0a0c10, 0.22); fogEdge.strokeRect(-30 + k * 50, -30 + k * 50, SIZE + 60 - k * 100, SIZE + 60 - k * 100); }
   }
 
   tierFor(level) { return baseTier(level); }

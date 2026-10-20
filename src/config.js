@@ -428,10 +428,10 @@ export const STAMINA = {
 export const WORLD = {
   // Stage 12: the Rift Citadel sits at the exact centre; zones get tougher closer to it. Ring min/max are
   // tile distances from the CENTRE; inside a ring the level rises as you move inward.
-  size: 80,
+  size: 86,
   tile: 72,
-  centerX: 40, centerY: 40,
-  baseX: 40, baseY: 75,     // your base: south edge of the outer (Lv 1-5) zone
+  centerX: 43, centerY: 43,
+  baseX: 43, baseY: 78,     // your base: south edge of the outer (Lv 1-5) zone
   citadelRadius: 5,         // locked stronghold + golden dome (no creatures inside ~6 tiles)
   rings: [
     { min: 29, max: 37, levels: [1, 5], count: 16 },

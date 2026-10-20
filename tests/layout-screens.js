@@ -40,5 +40,9 @@ export const LAYOUT_SCREENS = [
   ['speedup research', "const st = __BD.store; if (st.researchJob()) { Object.assign(st.state.items, { m5: 2, h1: 1 }); u.openSpeedUp({ kind: 'research' }); }"],
   ['speedup lane', "const st = __BD.store; st.state.resources.energy += 1e5; st.train('sentinel', 5); u.openSpeedUp({ kind: 'lane', id: 'sentinel' });"],
   ['panel upgrading', "const st = __BD.store; if (!st.state.construction.length) { st.state.resources.energy += 1e6; st.upgrade('commandCenter'); } __BD.base().select(st.state.construction[0].id === 'beacon' ? 'beacon' : st.state.construction[0].id);"],
+  // stage 12: painted world cards
+  ['world citadel card', "u.showWorld(); u.onWorldSelect('citadel');"],
+  ['world profile card', "u.showWorld(); u.onWorldSelect(__BD.store.world.bases().find((b) => b.bot && b.tag).id);"],
+  ['world your base card', "u.showWorld(); u.onWorldSelect('base-local');"],
   ['reset modal', "u.openModal({ title: 'Reset all progress?', body: 'This permanently erases your base, troops, squads, leaders, gear and all resources. This can\\u2019t be undone.', buttons: [{ label: 'Cancel' }, { label: 'Reset', style: 'danger' }] });"],
 ];

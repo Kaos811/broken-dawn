@@ -501,6 +501,33 @@ Plan: `docs/stage10-plan.md`. Config: `SPEEDUPS` in `src/config.js`; logic: `src
 - **More → Leaders** has its own crest icon (`more-leaders`; placeholder gold laurel and star until painted art lands).
 - **Painted icons:** put `su-m1 … su-h24`, `res-energy|alloy|shards` and `more-leaders` images (magenta background) in `/workspace/artwork/raw/`, then run `python3 tools/process_stage10b.py`. That writes `src/art/ui/item-su-*.webp`, `item-res-*.webp` and `more-leaders.webp`, which load automatically and replace the placeholders.
 
+## Stage 12 (v0.9.0): Painted world map
+
+The World tab is now a painted wasteland in the base's gold/teal style (save v12).
+
+- **Map**: 86×86 tiles, drag to pan, pinch or wheel to zoom (0.25–1.6). Painted ground tile plus props from one
+  texture atlas: broken roads, teal rift fissures (pulsing), crystal nodes, ruins, creature lairs under every
+  creature, and fog over the unexplored edges. Off-screen props are culled each time the camera moves.
+- **Rift Citadel** sits at the exact centre under a golden contested dome. It's **locked**: tap it for a card
+  about the weekly alliance war for buffs that comes with alliances.
+- **Zones get tougher toward the centre**: Zone 1 Lv 1-5 (outer edge, 29-37 tiles from the Citadel) → Zone 4
+  Lv 16-20 (7-13 tiles). Levels rise as you move inward. The outer zones gather on your side of the map, so
+  Lv 1 creatures stay a short march away. Your base is on the south edge (43, 78).
+- **Player bases** are WorldService entities `{ id, owner, name, level, tag, color, power, x, y }`. They render
+  by Beacon level in 5 tiers (Lv 1-4 Outpost, 5-9 Walled Camp, 10-14 Fortress, 15-19 Citadel with a teal spire,
+  20 gold-crowned Stronghold) with an alliance-colour banner. Your base follows your Beacon level.
+- **Neighbours**: 14 bot bases are seeded from the world seed (`seedBotBases`), most in one of 5 alliances. Tap
+  one for a profile card (name, level, power, alliance). Scout and Attack are disabled: "PvP coming with
+  alliances". `canSend` refuses bases and the Citadel. A server version only has to return real players from
+  `bases()` in the same shape (see PvP path).
+- All existing hunting is unchanged: creature levels, marches (5 s + 1 s/tile from your base), stamina, Auto,
+  Reports, the squads strip, and the offline Auto cap.
+- **Migration v11 → v12**: the world is rebuilt from the same seed. Squads that were out are home, and their
+  stamina is refunded. Hunt progress, first kills, reports and Auto are kept.
+- **Art**: `tools/process_stage12.py` slices `artwork/raw/world-concept-stronghold.jpg` (soft-masked crops:
+  5 base tiers, the Citadel + dome, crystals, lairs, ruins), builds a seamless ground tile from its ground
+  patches, paints the fissure, road, fog, banner and crown pieces, and packs `src/art/world/world-atlas.*`.
+
 ## Code layout
 
 ```
@@ -557,7 +584,7 @@ screens/               screenshots from the test run
 - Wins always cost at least 10% casualties, even against a creature far weaker than the squad.
 - Offline Auto only starts new marches with the stamina you had plus what regenerated (capped at 8 h), so a
   long absence yields at most about 8–10 hunts. Rewards are credited at battle time, not when the squad gets home.
-- The world map is local to this device. Nothing is shared between players yet (see PvP path).
+- The world map is local to this device. Neighbour bases are seeded bots, and nothing is shared between players yet (see PvP path).
 - Only one research slot, and research can't be sped up with Cores yet (`store.speedUpResearch` exists as a hook).
 - Tier Power (1/2/4) feeds Troop Power; research bonuses don't show up in Base Power.
 - The JS bundle is about 1.4 MB (≈400 KB gzipped), almost all of it Phaser. Stage 6 adds ~0.5 MB of WebP art

@@ -21,13 +21,13 @@ const shot = async (n) => { await sleep(900); await page.screenshot({ path: `scr
 const tab = (id) => ev((id) => __BD.ui().onTab(id), id);
 const cam = (x, y, z) => ev(([x, y, z]) => { const w = __BD.world(); w.tweens.killTweensOf(w.cameras.main); w.cameras.main.setZoom(z); w.cameras.main.centerOn((x + 0.5) * 72, (y + 0.5) * 72); w.clampCamera(); }, [x, y, z]);
 await tab('world'); await sleep(800);
-await cam(40, 52, 0.25); await shot('overview');
-await cam(40, 73, 0.85); await shot('base');
-await ev(() => { const w = __BD.world(); w.select('citadel'); }); await cam(40, 40, 0.45); await shot('citadel-card');
+await cam(43, 56, 0.25); await shot('overview');
+await cam(43, 76, 0.85); await shot('base');
+await ev(() => { const w = __BD.world(); w.select('citadel'); }); await cam(43, 43, 0.45); await shot('citadel-card');
 await ev(() => __BD.ui().closeModal());
 await ev(() => { const w = __BD.world(), b = __BD.store.world.bases().find((e) => e.bot && e.level >= 10) ?? __BD.store.world.bases().find((e) => e.bot); w.select(b.id); w.cameras.main.setZoom(0.7); w.cameras.main.centerOn((b.x + .5) * 72, (b.y + .5) * 72); }); await shot('profile');
 await ev(() => __BD.ui().closeModal()); await ev(() => __BD.world().select(null));
 const r = await ev(() => { const st = __BD.store; st.state.hunt.stamina = 100; const home = st.world.homeOf('local'); const t = st.creatures().filter((e) => e.level === 1).sort((a, b) => __BD.dev.dist(a, home) - __BD.dev.dist(b, home))[0]; return { r: st.attack('alpha', t.id), t }; });
 console.log('march', JSON.stringify(r.r.ok), r.r.reason);
-await sleep(2500); await cam(r.t.x, (r.t.y + 75) / 2 + 1, 0.6); await shot('march');
+await sleep(2500); await cam(r.t.x, (r.t.y + 78) / 2 + 1, 0.6); await shot('march');
 await browser.close(); srv.close();
