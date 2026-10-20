@@ -130,19 +130,53 @@ export const BUILDING_LEVEL_HEADROOM = 2;
 // Cost is paid up front; level, power and unlocks apply only when the timer finishes.
 export const CONSTRUCTION = {
   builders: 1,                       // upgrades that can run at the same time
-  // Seconds to upgrade TO a level. Past the table, each level takes `growth`x the previous one.
-  table: { 2: 10, 3: 30, 4: 120, 5: 360, 6: 1200 },
-  growth: 3,
+  // Seconds to upgrade TO a level. Past the table, each level takes `growth`x the previous one,
+  // and no single upgrade takes longer than `cap` (stage 10: flattened from x3 per level).
+  table: { 2: 10, 3: 30, 4: 120, 5: 360, 6: 1200, 7: 3600, 8: 10800 },
+  growth: 1.6,
+  cap: 72 * 3600,
   seconds(toLevel) {
     if (toLevel <= 1) return 0;
     const t = this.table[toLevel];
     if (t != null) return t;
     const top = Math.max(...Object.keys(this.table).map(Number));
-    return this.table[top] * Math.pow(this.growth, toLevel - top);
+    return Math.min(this.cap, Math.round(this.table[top] * Math.pow(this.growth, toLevel - top)));
   },
-  // Hook for future Beacon Core speed-ups (no UI yet): store.speedUpConstruction(id, seconds).
   speedUp: { secondsPerCore: 300 },
 };
+
+// Stage 10: speed-ups. Items skip time on construction and research. Any job (construction, research,
+// training lane, healing batch) with <= freeSeconds left can be finished for free; any job can be
+// finished with Beacon Cores (earned only, never bought).
+export const SPEEDUPS = {
+  items: [
+    { id: 'm1', name: '1m Speed-up', short: '1m', seconds: 60 },
+    { id: 'm5', name: '5m Speed-up', short: '5m', seconds: 300 },
+    { id: 'm15', name: '15m Speed-up', short: '15m', seconds: 900 },
+    { id: 'h1', name: '1h Speed-up', short: '1h', seconds: 3600 },
+    { id: 'h3', name: '3h Speed-up', short: '3h', seconds: 10800 },
+    { id: 'h8', name: '8h Speed-up', short: '8h', seconds: 28800 },
+    { id: 'h24', name: '24h Speed-up', short: '24h', seconds: 86400 },
+  ],
+  freeSeconds: 300,
+  // Core finish for construction + research: 1 Core per 5 min for the first hour, then 1 per 15 min.
+  coreCost(secs) {
+    secs = Math.max(0, secs);
+    if (secs <= 0) return 0;
+    if (secs <= 3600) return Math.ceil(secs / 300);
+    return 12 + Math.ceil((secs - 3600) / 900);
+  },
+  // training lanes + healing: 1 Core per 10 min (min 1)
+  queueCoreCost(secs) { return secs > 0 ? Math.max(1, Math.ceil(secs / 600)) : 0; },
+  confirmAt: 5,              // ask before spending this many Cores or more
+  autoWaste: 300,            // Auto-use may overshoot by at most this many seconds
+  // reward sources (bundle keys are `su_<id>`)
+  login: { su_m15: 1 },      // every daily login claim
+  loginStreak: { su_h3: 1 }, // extra on every 7th day in a row
+  beaconLevel: (lv) => ({ su_h1: 1, ...(lv === 5 ? { su_h8: 1 } : {}), ...(lv === 10 ? { su_h24: 1 } : {}) }),
+  firstUpgrade: { su_m5: 3 }, // one-time, with the first upgrade started (teaches the button)
+};
+export const SPEEDUP_IDS = SPEEDUPS.items.map((i) => i.id);
 
 export const buildingUpgradeCost = (id, level) => {
   const b = BUILDINGS[id];
@@ -352,7 +386,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 10; // v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 11; // v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -534,11 +568,11 @@ export const MISSIONS = {
   ],
   // Activity chests. L = Beacon level. Only the 100-point chest pays a Beacon Core (1 a day).
   chests: [
-    { at: 20, tier: 'bronze', reward: (L) => ({ energy: 300 * L }) },
-    { at: 40, tier: 'bronze', reward: (L) => ({ alloy: 40 * L, stamina: 10 }) },
-    { at: 60, tier: 'silver', reward: () => ({ shards: 60 }) },
-    { at: 80, tier: 'silver', reward: (L) => ({ energy: 600 * L, stamina: 20 }) },
-    { at: 100, tier: 'gold', reward: () => ({ cores: 1, shards: 100 }) },
+    { at: 20, tier: 'bronze', reward: (L) => ({ energy: 300 * L, su_m5: 1 }) },
+    { at: 40, tier: 'bronze', reward: (L) => ({ alloy: 40 * L, stamina: 10, su_m15: 1 }) },
+    { at: 60, tier: 'silver', reward: () => ({ shards: 60, su_m5: 2 }) },
+    { at: 80, tier: 'silver', reward: (L) => ({ energy: 600 * L, stamina: 20, su_h1: 1 }) },
+    { at: 100, tier: 'gold', reward: () => ({ cores: 1, shards: 100, su_m15: 1 }) },
   ],
 };
 
@@ -566,11 +600,11 @@ export const EVENTS = {
   },
   // Milestone rewards (same shape for every event). L = Beacon level. 2 Beacon Cores per event at most.
   milestoneRewards: (L) => [
-    { energy: 400 * L, alloy: 50 * L },
-    { shards: 80 },
-    { stamina: 30, marks: 10 },
-    { cores: 1, energy: 1000 * L },
-    { cores: 1, shards: 150, marks: 20 },
+    { energy: 400 * L, alloy: 50 * L, su_m15: 1 },
+    { shards: 80, su_m15: 2 },
+    { stamina: 30, marks: 10, su_h1: 1 },
+    { cores: 1, energy: 1000 * L, su_h3: 1 },
+    { cores: 1, shards: 150, marks: 20, su_h8: 1 },
   ],
   marksPer: 50,       // 1 Rift Mark per 50 event points
   keepDays: 21,       // settled event records are dropped after this
@@ -581,5 +615,8 @@ export const EVENTS = {
     { id: 'stamina', name: 'Stamina cell', price: 30, limit: 3, reward: () => ({ stamina: 50 }) },
     { id: 'gear', name: 'Gear upgrade crate', price: 40, limit: 3, reward: () => ({ shards: 200 }) },
     { id: 'core', name: 'Beacon Core', price: 200, limit: 1, reward: () => ({ cores: 1 }) },
+    { id: 'su5', name: '5m Speed-up', price: 5, limit: 10, reward: () => ({ su_m5: 1 }) },
+    { id: 'su60', name: '1h Speed-up', price: 30, limit: 3, reward: () => ({ su_h1: 1 }) },
+    { id: 'su480', name: '8h Speed-up', price: 120, limit: 1, reward: () => ({ su_h8: 1 }) },
   ],
 };

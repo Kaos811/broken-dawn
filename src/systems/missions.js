@@ -123,6 +123,7 @@ export const missionMethods = {
     if (b.stamina) s.hunt.stamina = Math.min(STAMINA.overCap, s.hunt.stamina + b.stamina);
     if (b.marks) s.events.marks += b.marks;
     if (b.cores) this.grantCores(b.cores, source);
+    this.grantItems?.(b);
     return b;
   },
 };

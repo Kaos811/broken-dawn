@@ -4,7 +4,7 @@ import {
   BEACON, BUILDINGS, BUILDING_IDS, BUILDING_LEVEL_HEADROOM, ECONOMY,
   SAVE_KEY, SAVE_VERSION, TROOPS, buildingUpgradeCost,
   TROOP_CLASSES, TROOP_IDS, BARRACKS, SQUADS, RESOURCES, GACHA, RARITY, RARITIES,
-  LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION,
+  LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION, SPEEDUPS,
   INFIRMARY, CASUALTIES, STAMINA, WORLD, HUNT_REWARDS, CREATURES, creaturePower, MAP,
   CLASS_IDS, TIERS, MAX_TIER, PROMOTE, RESEARCH, RESEARCH_IDS, RESEARCH_TUNING, healBase, classOf, tierOf, nextTier,
   AUDIO, TUTORIAL,
@@ -18,6 +18,7 @@ import { squadArmy } from '../world/armies.js';
 import { combatPower, resolveBattle, odds } from '../world/battle.js';
 import { defaultMissions, sanitizeMissions, missionMethods } from '../systems/missions.js';
 import { defaultEvents, sanitizeEvents, eventMethods } from '../systems/events.js';
+import { emptySpeedups, sanitizeSpeedups, speedupMethods } from '../systems/speedups.js';
 import { LocalEventService } from '../events/eventService.js';
 
 // Line: { type, count, full } -- `count` = healthy troops in the line now, `full` = the count the formation
@@ -68,6 +69,8 @@ function defaultState() {
     missions: defaultMissions(),               // stage 8: daily missions (local day, progress, claims, chests)
     events: defaultEvents(),                   // stage 8: event progress by id, Rift Marks, Exchange purchases
     hints: { missions: false, events: false }, // stage 8: one-time pointers already shown
+    items: emptySpeedups(),                    // stage 10: speed-up items { m1, m5, m15, h1, h3, h8, h24 }
+    firstUpgradeGift: false,                   // stage 10: one-time 3x 5m with the first upgrade
     lastSaved: Date.now(),
   };
 }
@@ -189,6 +192,17 @@ export function migrate(raw) {
   if (num(raw.version, 1) < 10) {
     raw = { ...raw, missions: undefined, events: undefined, hints: undefined };
     raw.version = 10;
+  }
+  // v10 -> v11: speed-up items (empty inventory). Running timers stay valid: progress is kept and a
+  // job's total only ever shrinks to the new (flatter) build time, never grows.
+  if (num(raw.version, 1) < 11) {
+    raw.items = emptySpeedups();
+    raw.firstUpgradeGift = Array.isArray(raw.construction) && raw.construction.length > 0;
+    if (Array.isArray(raw.construction)) for (const j of raw.construction) {
+      const t = CONSTRUCTION.seconds(num(j?.toLevel, 2));
+      if (j && num(j.total, 0) > t && t > 0) j.total = Math.max(t, num(j.progress, 0));
+    }
+    raw.version = 11;
   }
   return raw;
 }
@@ -334,6 +348,9 @@ function sanitize(raw) {
   s.missions = sanitizeMissions(raw.missions);
   s.events = sanitizeEvents(raw.events);
   s.hints = { missions: raw.hints?.missions === true, events: raw.hints?.events === true };
+  // Stage 10
+  s.items = sanitizeSpeedups(raw.items);
+  s.firstUpgradeGift = raw.firstUpgradeGift === true;
   return s;
 }
 
@@ -547,6 +564,7 @@ class Store extends Emitter {
     this.state.resources.energy -= info.cost;
     if (id === BEACON.id) this.state.beacon.charge = 0; // the full charge is spent to start the upgrade
     this.state.construction.push({ id, toLevel: info.level + 1, cost: info.cost, total: info.seconds, progress: 0 });
+    if (!this.state.firstUpgradeGift) { this.state.firstUpgradeGift = true; this.grantItems(SPEEDUPS.firstUpgrade); this.emit('gift', SPEEDUPS.firstUpgrade); }
     this.track('upgradeStart');
     this.save();
     this.emit('upgradeStart', id);
@@ -568,14 +586,14 @@ class Store extends Emitter {
     return { ok: true, refund: j.cost };
   }
 
-  // Hook for future Beacon Core speed-ups (no UI yet): skips `seconds` of a running upgrade.
+  // Skips `seconds` of a running upgrade (stage 10 speed-ups go through speedups.js).
   speedUpConstruction(id, seconds) {
     const j = this.constructionJob(id);
     if (!j || !(seconds > 0)) return { ok: false };
     this.processConstruction(0, { id, seconds });
     return { ok: true };
   }
-  speedUpCoreCost(id) { return Math.ceil(this.constructionLeft(id) / CONSTRUCTION.speedUp.secondsPerCore); }
+  speedUpCoreCost(id) { return SPEEDUPS.coreCost(this.constructionLeft(id)); }
 
   // Advances running upgrades; level, power and unlocks apply only here, on completion.
   processConstruction(dt, only = null) {
@@ -792,10 +810,11 @@ class Store extends Emitter {
   }
 
   // Advances every lane by dt seconds, independently; returns { unit: unitsCompleted }.
-  processTraining(dt) {
+  processTraining(dt, only = null) {
     const done = {};
     if (!(dt > 0)) return done;
     for (const c of CLASS_IDS) {
+      if (only && c !== only) continue;
       const l = this.lane(c);
       if (l.count < 1) continue;
       const ut = this.laneUnitTime(c);
@@ -808,6 +827,8 @@ class Store extends Emitter {
     }
     return done;
   }
+
+  processTrainingOnly(cls, dt) { return this.processTraining(dt, cls); }
 
   // ---- Research (Archive) --------------------------------------------
   // One project at a time. A node's level can't exceed the Archive's level; tier nodes need Barracks
@@ -1033,6 +1054,8 @@ class Store extends Emitter {
     if (!info.can) return { ok: false, reason: 'Already claimed today. Come back tomorrow.' };
     this.state.daily = { lastDay: this.dayIndex(), streak: info.streak };
     this.grantCores(info.reward, 'daily');
+    const items = { ...SPEEDUPS.login, ...(info.reward > CORES.daily.base ? SPEEDUPS.loginStreak : {}) };
+    this.grantItems(items);
     this.track('daily');
     this.state.hunt.stamina = Math.min(STAMINA.overCap, this.state.hunt.stamina + STAMINA.dailyBonus); // +20 stamina too
     this.save(); this.emit('change');
@@ -1048,8 +1071,10 @@ class Store extends Emitter {
     if (this.state.claims.beacon.includes(level)) return { ok: false, reason: 'Already claimed' };
     this.state.claims.beacon.push(level);
     this.grantCores(CORES.beaconLevel, 'beacon');
+    const items = SPEEDUPS.beaconLevel(level);
+    this.grantItems(items);
     this.save(); this.emit('change');
-    return { ok: true, cores: CORES.beaconLevel };
+    return { ok: true, cores: CORES.beaconLevel, items };
   }
   milestones() {
     return CORES.milestones.map((m) => ({ id: m.id, name: m.name, desc: m.desc, cores: m.cores, done: !!m.check(this), claimed: this.state.claims.milestones.includes(m.id) }));
@@ -1483,5 +1508,5 @@ class Store extends Emitter {
   }
 }
 
-Object.assign(Store.prototype, missionMethods, eventMethods);
+Object.assign(Store.prototype, missionMethods, eventMethods, speedupMethods);
 export const store = new Store();

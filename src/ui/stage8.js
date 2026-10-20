@@ -1,6 +1,6 @@
 // Stage 8 UI: the right-edge Missions + Event buttons, the Daily Missions screen (task list + activity
 // chest track), and one-time pointers. Lives in the UI scene; `ui` is the UIScene.
-import { GAME_WIDTH as W, PALETTE, MISSIONS, EVENTS } from '../config.js';
+import { GAME_WIDTH as W, PALETTE, MISSIONS, EVENTS, SPEEDUPS } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, fmt, fmtDuration } from './widgets.js';
 import { SKIN, drawBar, drawCard } from './skin.js';
@@ -13,7 +13,8 @@ const testFlags = () => (typeof window !== 'undefined' ? window.__BD_TEST ?? {} 
 // "+900 Energy · +40 Alloy · +1 Core"
 export function fmtBundle(b, sep = '  ·  ') {
   const names = { energy: 'Energy', alloy: 'Alloy', shards: 'Shards', stamina: 'Stamina', marks: 'Rift Marks', cores: 'Core' };
-  return Object.entries(b ?? {}).filter(([, v]) => v).map(([k, v]) => `+${fmt(v)} ${k === 'cores' ? (v === 1 ? 'Beacon Core' : 'Beacon Cores') : names[k] ?? k}`).join(sep);
+  const su = (k) => SPEEDUPS.items.find((i) => `su_${i.id}` === k);
+  return Object.entries(b ?? {}).filter(([, v]) => v).map(([k, v]) => (su(k) ? `+${v}× ${su(k).short} speed-up` : `+${fmt(v)} ${k === 'cores' ? (v === 1 ? 'Beacon Core' : 'Beacon Cores') : names[k] ?? k}`)).join(sep);
 }
 
 function drawBadge(btn, n) {
