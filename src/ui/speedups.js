@@ -139,7 +139,7 @@ export function openSpeedUp(ui, job) {
           const b1 = button(ui, x0 + w0 - 222, y + 36, 100, 56, 'Use', () => use(1), { style: 'cyan', size: 20 });
           b1.chip = `su-use-${it.id}`; b1.setEnabled(n > 0);
           const bn = button(ui, x0 + w0 - 64, y + 36, 112, 56, `Use ×${k}`, () => use(k), { style: 'ghost', size: 19 });
-          bn.chip = `su-usen-${it.id}`; bn.setEnabled(n > 1 && k > 1);
+          bn.chip = `su-usen-${it.id}`; bn.setVisible(n > 1 && k > 1);
           c.add([b1, bn]);
           y += rh;
         }
