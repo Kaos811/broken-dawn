@@ -204,6 +204,15 @@ export function migrate(raw) {
     }
     raw.version = 11;
   }
+  if (num(raw.version, 1) < 12) {
+    // v12 (stage 12): the world map was rebuilt around the Rift Citadel (new size, your base on the south
+    // edge, rings inverted). Regenerate the world with the same seed; any squad that was out is simply home
+    // again (its army was a snapshot and no stamina is lost: refund it). Hunt progress, reports, Auto stay.
+    const out = Array.isArray(raw.world?.marches) ? raw.world.marches.filter((m) => m?.phase === 'out') : [];
+    if (raw.hunt && out.length) raw.hunt.stamina = num(raw.hunt.stamina, 0) + out.reduce((n, m) => n + num(m.meta?.stamina, 0), 0);
+    raw.world = raw.world && Number.isFinite(raw.world.seed) ? createWorld(raw.world.seed >>> 0) : undefined;
+    raw.version = 12;
+  }
   return raw;
 }
 
@@ -1384,7 +1393,7 @@ class Store extends Emitter {
     const power = this.squadCombatPower(squadId);
     sq.lines.forEach((l, i) => { l.count = saved[i]; });
     if (power <= 0) return null;
-    const home = { x: WORLD.baseX, y: WORLD.baseY }, maxL = this.maxAttackLevel();
+    const home = this.world.homeOf(LOCAL_OWNER), maxL = this.maxAttackLevel();
     const ok = this.creatures().filter((e) => !e.busy && e.level <= maxL && power >= WORLD.autoMargin * this.creaturePowerOf(e));
     ok.sort((a, b) => b.level - a.level || dist(a, home) - dist(b, home));
     return ok[0] ?? null;

@@ -9,6 +9,8 @@
 //
 // Interface
 //   snapshot()                         -> world (read-only use)
+//   bases() / citadel()                -> player-base entities { id, owner, name, level, tag, color, power, x, y }
+//                                         (stage 12: neighbours are seeded bots; a server returns real players)
 //   entities(kind?) / get(id)          -> entities
 //   marches(owner?) / marchFor(owner, squadId)
 //   canSend({ owner, squadId, targetId }) -> { ok, reason?, travel }
@@ -35,6 +37,8 @@ export class LocalWorldService {
   get(id) { return this.w.entities.find((e) => e.id === id) ?? null; }
   marches(owner) { return owner ? this.w.marches.filter((m) => m.owner === owner) : this.w.marches; }
   marchFor(owner, squadId) { return this.w.marches.find((m) => m.owner === owner && m.squadId === squadId) ?? null; }
+  bases() { return this.entities('base'); }
+  citadel() { return this.w.entities.find((e) => e.kind === 'citadel') ?? null; }
   homeOf(owner) { return this.w.entities.find((e) => e.kind === 'base' && e.owner === owner) ?? this.get(BASE_ID); }
 
   // Defender army for any target entity. A shared server would load a player's defense here.
@@ -48,6 +52,8 @@ export class LocalWorldService {
     const t = this.get(targetId);
     if (!t) return { ok: false, reason: 'Target is gone' };
     if (t.owner === owner) return { ok: false, reason: 'That\'s your own base' };
+    if (t.kind === 'citadel') return { ok: false, reason: 'The Rift Citadel is sealed: alliance war is coming with alliances' };
+    if (t.kind === 'base') return { ok: false, reason: 'PvP coming with alliances' };
     if (t.busy) return { ok: false, reason: 'Another squad is already on its way there' };
     if (this.marchFor(owner, squadId)) return { ok: false, reason: 'That squad is already out' };
     if (this.marches(owner).length >= WORLD.maxMarches) return { ok: false, reason: 'All march slots are busy' };

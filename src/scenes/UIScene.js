@@ -22,6 +22,7 @@ import { openSpeedUp, openItems, finishNow, speedupIconKey } from '../ui/speedup
 import { SPEEDUPS } from '../config.js';
 import { Tutorial } from '../tutorial/tutorial.js';
 import { PERF, AUDIO, TUTORIAL } from '../config.js';
+import { CITADEL, BASE_TIERS, baseTier, ALLIANCES } from '../config.js';
 
 import { SAFE, TOP_H, NAV_H, NAV_BODY, HERO_R, HERO_RISE } from '../ui/layout.js';
 const HERO_TAB = 'base'; // the big centre emblem
@@ -66,7 +67,7 @@ export default class UIScene extends Phaser.Scene {
     ev.on('base:moveMode', (id, o) => this.showBanner(id, o), this);
     ev.on('base:placeTarget', (valid) => this.bannerPlace?.setEnabled(valid), this);
     ev.on('toast', (msg) => this.toast(msg), this);
-    ev.on('world:select', (id) => this.worldHud.openSheet(id), this);
+    ev.on('world:select', (id) => this.onWorldSelect(id), this);
     ev.on('world:deselect', () => this.worldHud.closeSheet(), this);
     this.unsubs = [
       store.on('upgrade', (id) => {
@@ -727,6 +728,7 @@ export default class UIScene extends Phaser.Scene {
     c.alpha = 0; c.y = 24;
     this.tweens.add({ targets: c, alpha: 1, y: 0, duration: 160, ease: 'Cubic.easeOut' });
     c.panelRect = { x, y, w, h };
+    c.kind = kind ?? null;
     this.modal = c;
     this.activeTab = 'more'; this.drawNav();
     audio.play('open');
@@ -1361,7 +1363,34 @@ export default class UIScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------- modal -----
-  openModal({ title, body, buttons, tab }) {
+  // Stage 12: tapping the World map. Creatures open the attack sheet; bases and the Citadel open cards.
+  onWorldSelect(id) {
+    const e = store.world.get(id);
+    if (!e) return;
+    if (e.kind === 'creature') { this.worldHud.openSheet(id); return; }
+    this.worldHud.closeSheet();
+    const ws = this.scene.get('World');
+    const close = { label: 'Close', style: 'gold', onClick: () => ws.select(null) };
+    if (e.kind === 'citadel') {
+      this.openModal({ title: `🔒 ${CITADEL.name}`, body: CITADEL.body, buttons: [close], kind: 'citadel' });
+      return;
+    }
+    const local = e.id === 'base-local';
+    const level = local ? store.state.beacon.level : e.level;
+    const tier = BASE_TIERS[baseTier(level)].name;
+    const al = ALLIANCES.find((a) => a.tag === e.tag);
+    if (local) {
+      this.openModal({ title: 'Your Base', body: `Beacon Lv ${level} · ${tier}\nPower ${fmt(store.power)}\nAlliance: none yet (alliances are coming)\n\nYour base grows on the map as your Beacon levels up: Outpost, Walled Camp, Fortress, Citadel, then a gold-crowned Stronghold at Lv 20.`, buttons: [{ label: 'Enter Base', style: 'cyan', onClick: () => { ws.select(null); this.time.delayedCall(0, () => this.onTab('base')); } }, close], kind: 'base-local' });
+      return;
+    }
+    this.openModal({
+      title: e.name,
+      body: `Beacon Lv ${level} · ${tier}\nPower ${fmt(e.power)}\nAlliance: ${al ? `[${al.tag}] ${al.name}` : 'none'}\n\nPvP coming with alliances: scouting and attacking other bases unlock then.`,
+      buttons: [{ label: 'Scout', disabled: true }, { label: 'Attack', disabled: true, style: 'danger' }, close], kind: 'profile',
+    });
+  }
+
+  openModal({ title, body, buttons, tab, kind }) {
     this.closeModal();
     const c = this.add.container(0, 0).setDepth(100);
     const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x020305, 0.7).setInteractive();
@@ -1379,14 +1408,17 @@ export default class UIScene extends Phaser.Scene {
     c.add([dim, g, t, b]);
     const bw = (w - 64 - (buttons.length - 1) * 20) / buttons.length;
     buttons.forEach((btn, i) => {
-      c.add(button(this, x + 32 + bw / 2 + i * (bw + 20), y + h - 66, bw, 80, btn.label, () => {
+      const bt = button(this, x + 32 + bw / 2 + i * (bw + 20), y + h - 66, bw, 80, btn.label, () => {
         if (!btn.keepOpen) this.closeModal();
         btn.onClick?.();
-      }, { style: btn.style ?? 'ghost', size: 26 }));
+      }, { style: btn.style ?? 'ghost', size: 26 });
+      if (btn.disabled) { bt.setEnabled(false); bt.chip = `modal-${btn.label.toLowerCase()}`; }
+      c.add(bt);
     });
     c.alpha = 0;
     this.tweens.add({ targets: c, alpha: 1, duration: 140 });
     c.panelRect = { x, y, w, h };
+    c.kind = kind ?? null;
     this.modal = c;
     if (tab) { this.activeTab = tab; this.drawNav(); }
   }

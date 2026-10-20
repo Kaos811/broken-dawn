@@ -386,7 +386,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 11; // v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 12; // v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -426,16 +426,21 @@ export const STAMINA = {
 
 // World map: square tiles, the player's base at the centre, creature levels rising in rings outward.
 export const WORLD = {
-  size: 64,
+  // Stage 12: the Rift Citadel sits at the exact centre; zones get tougher closer to it. Ring min/max are
+  // tile distances from the CENTRE; inside a ring the level rises as you move inward.
+  size: 80,
   tile: 72,
-  baseX: 32, baseY: 32,
+  centerX: 40, centerY: 40,
+  baseX: 40, baseY: 73,     // your base: south edge of the outer zone
+  citadelRadius: 5,         // locked stronghold + golden dome (no creatures inside ~6 tiles)
   rings: [
-    { min: 3, max: 9, levels: [1, 5], count: 12 },
-    { min: 10, max: 16, levels: [6, 10], count: 11 },
-    { min: 17, max: 23, levels: [11, 15], count: 9 },
-    { min: 24, max: 30, levels: [16, 20], count: 8 },
+    { min: 29, max: 37, levels: [1, 5], count: 16 },
+    { min: 21, max: 28, levels: [6, 10], count: 12 },
+    { min: 14, max: 20, levels: [11, 15], count: 9 },
+    { min: 7, max: 13, levels: [16, 20], count: 7 },
   ],
   minSpacing: 2.2,          // tiles between creatures
+  baseClear: 3,             // tiles kept clear around any player base
   respawnSeconds: 600,      // a killed creature comes back after 10 min, somewhere else in its ring
   march: { base: 5, perTile: 1, max: 60 }, // seconds each way
   maxMarches: 3,            // one per squad
@@ -444,6 +449,28 @@ export const WORLD = {
   reportsKept: 12,
   maxLevel: 20,
   minZoom: 0.25, maxZoom: 1.6, startZoom: 0.55,
+  bots: 14,                 // seeded neighbour bases (a server replaces these with real players later)
+};
+
+// Stage 12: player-base look by Beacon level (5 tiers) + seeded neighbour alliances.
+export const BASE_TIERS = [
+  { min: 1, max: 4, name: 'Outpost' },
+  { min: 5, max: 9, name: 'Walled Camp' },
+  { min: 10, max: 14, name: 'Fortress' },
+  { min: 15, max: 19, name: 'Citadel' },
+  { min: 20, max: 20, name: 'Stronghold' },
+];
+export const baseTier = (lv) => Math.max(0, BASE_TIERS.findIndex((t) => lv >= t.min && lv <= t.max));
+export const ALLIANCES = [
+  { tag: 'ASH', name: 'Ashen Vow', color: 0xd9483b },
+  { tag: 'TDL', name: 'Tidelight', color: 0x2fc4c9 },
+  { tag: 'GLD', name: 'Gilded Reach', color: 0xe7b24a },
+  { tag: 'VOI', name: 'Void Choir', color: 0x8d5bd6 },
+  { tag: 'IRN', name: 'Iron Wake', color: 0x7f93a8 },
+];
+export const CITADEL = {
+  name: 'Rift Citadel',
+  body: 'The stronghold at the heart of the Rift, sealed under a golden contested dome.\n\nComing with alliances: once a week the dome falls and alliances fight a war for the Citadel. The holder\'s alliance gets buffs for the week (gather, march speed, training).\n\nZones get tougher the closer you get: Lv 16-20 creatures guard its walls.',
 };
 
 // Creature Combat Power by level: ~20 at Lv 1, +20% per level (~640 at Lv 20). Elites x1.25.

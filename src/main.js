@@ -7,7 +7,7 @@ import UIScene from './scenes/UIScene.js';
 import WorldScene from './scenes/WorldScene.js';
 import { resolveBattle, combatPower } from './world/battle.js';
 import { creatureArmy, squadArmy } from './world/armies.js';
-import { createWorld, ringLevel, dist } from './world/worldState.js';
+import { createWorld, ringLevel, dist, BASE_POS, CENTER, seedBotBases } from './world/worldState.js';
 import { audio } from './audio/audio.js';
 import * as gridMath from './systems/grid.js';
 import * as layout from './ui/layout.js';
@@ -69,7 +69,7 @@ window.__BD = {
   ui: () => game.scene.getScene('UI'),
   world: () => game.scene.getScene('World'),
   // pure world/battle helpers (tests + debugging)
-  dev: { resolveBattle, combatPower, creatureArmy, squadArmy, createWorld, ringLevel, dist },
+  dev: { resolveBattle, combatPower, creatureArmy, squadArmy, createWorld, ringLevel, dist, BASE_POS, CENTER, seedBotBases },
   // creature / tile -> page (CSS px) coordinates on the World map
   tileToPage(x, y) {
     const s = game.scene.getScene('World').tileToScreen(x, y);

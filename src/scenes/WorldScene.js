@@ -1,16 +1,22 @@
 import Phaser from 'phaser';
-import { WORLD, PALETTE, CREATURES, SQUADS } from '../config.js';
+import { WORLD, PALETTE, CREATURES, SQUADS, BASE_TIERS, baseTier } from '../config.js';
 import { store } from '../state/store.js';
 import { mulberry32 } from '../world/battle.js';
-import { LOCAL_OWNER } from '../world/worldState.js';
+import { LOCAL_OWNER, BASE_ID, CENTER, dist } from '../world/worldState.js';
 
 const T = WORLD.tile;
 const SIZE = WORLD.size * T;
 const TAP_SLOP = 10;
 const tileToWorld = (x, y) => ({ x: (x + 0.5) * T, y: (y + 0.5) * T });
 
-// The World map: a separate view from the base. Creatures in level rings around your base; squads
-// march out, auto-battle, and march back. Pan: drag. Zoom: pinch / wheel. Tap a creature to target it.
+// The World map (stage 12: painted wasteland). The Rift Citadel sits at the centre under a golden dome;
+// creature zones get tougher closer to it. Your base and seeded neighbour bases (WorldService bases())
+// render by Beacon tier with an alliance banner. Squads march out, auto-battle and march back.
+// Pan: drag. Zoom: pinch / wheel. Tap a creature to target it, a base for its profile, the Citadel for its card.
+// Perf: every prop is one image from the 'wmap' atlas (one batch) and off-screen props are culled.
+const TIER_FRAMES = ['base-t1', 'base-t2', 'base-t3', 'base-t4', 'base-t5'];
+const TIER_W = [150, 170, 190, 205, 225]; // on-map width in px (world units)
+const LAIR_OF = { hound: 'lair-3', scuttler: 'lair-1', drone: 'ruin-3', golem: 'ruin-1', wyrm: 'lair-2' };
 export default class WorldScene extends Phaser.Scene {
   constructor() { super('World'); }
 
@@ -19,12 +25,10 @@ export default class WorldScene extends Phaser.Scene {
     this.input.setGlobalTopOnly(false);
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x05070a);
-    this.drawGround();
+    this.props = [];               // culled decor
+    this.drawWorld();
+    this.baseSprites = new Map();  // id -> { parts[], tier, e }
     const b = tileToWorld(WORLD.baseX, WORLD.baseY);
-    this.baseGlow = this.add.image(b.x, b.y, 'glow').setBlendMode('ADD').setScale(1.6).setAlpha(0.6).setDepth(2);
-    this.tweens.add({ targets: this.baseGlow, scale: 2, alpha: 0.9, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    this.baseSprite = this.add.image(b.x, b.y - 10, 'world-base').setScale(0.9).setDepth(3);
-    this.add.text(b.x, b.y + 72, 'YOUR BASE', { fontFamily: 'system-ui, sans-serif', fontSize: '22px', fontStyle: 'bold', color: PALETTE.textGold, stroke: '#05070a', strokeThickness: 6 }).setOrigin(0.5, 0).setDepth(4);
     this.marchG = this.add.graphics().setDepth(5);
     this.selG = this.add.graphics().setDepth(6);
     this.crSprites = new Map();   // id -> { img, badge, lock }
@@ -53,43 +57,140 @@ export default class WorldScene extends Phaser.Scene {
 
   ui() { return this.scene.get('UI'); }
 
-  drawGround() {
-    const g = this.add.graphics().setDepth(0);
+  prop(x, y, frame, o = {}) {
+    const im = this.add.image(x, y, 'wmap', frame).setDepth(o.depth ?? 1);
+    if (o.w) im.setScale(o.w / im.width); else if (o.scale) im.setScale(o.scale);
+    if (o.rot) im.setRotation(o.rot);
+    if (o.alpha != null) im.setAlpha(o.alpha);
+    if (o.add) im.setBlendMode('ADD');
+    if (o.tint != null) im.setTint(o.tint);
+    if (o.flip) im.setFlipX(true);
+    if (o.cull !== false) this.props.push(im);
+    return im;
+  }
+
+  drawWorld() {
     const rnd = mulberry32(777);
-    g.fillStyle(0x05070a, 1).fillRect(-2000, -2000, SIZE + 4000, SIZE + 4000);
-    g.fillStyle(0x0d1015, 1).fillRect(0, 0, SIZE, SIZE);
-    // ring tint bands (darker / redder farther out = more dangerous)
-    const c = tileToWorld(WORLD.baseX, WORLD.baseY);
-    const tints = [0x1a1f1c, 0x1f1c18, 0x231916, 0x271413];
-    for (let i = WORLD.rings.length - 1; i >= 0; i--) {
-      const R = WORLD.rings[i];
-      g.fillStyle(tints[i], 1).fillCircle(c.x, c.y, (R.max + 1) * T);
+    const c = tileToWorld(CENTER.x, CENTER.y);
+    this.add.rectangle(SIZE / 2, SIZE / 2, SIZE + 6000, SIZE + 6000, 0x07080a).setDepth(0);
+    this.add.tileSprite(SIZE / 2, SIZE / 2, SIZE, SIZE, 'wmap-ground').setTileScale(1.25).setDepth(0);
+    // the land darkens + scorches toward the Citadel (tougher zones)
+    this.add.image(c.x, c.y, 'wmap', 'shadow').setScale((WORLD.rings[1].max * 2.3 * T) / 96).setAlpha(0.55).setDepth(0.1);
+    this.add.image(c.x, c.y, 'wmap', 'shadow').setScale((WORLD.rings[3].max * 2.4 * T) / 96).setAlpha(0.6).setDepth(0.1);
+    // keep-out test for decor (bases, citadel, creatures move so we only avoid fixed things)
+    const fixed = store.world.entities().filter((e) => e.kind !== 'creature').map((e) => ({ ...tileToWorld(e.x, e.y), r: (e.kind === 'citadel' ? WORLD.citadelRadius + 1.5 : 2) * T }));
+    const clear = (x, y, pad = 0) => fixed.every((f) => Math.hypot(f.x - x, f.y - y) > f.r + pad);
+    // broken roads: from your base and the map edges toward the Citadel, with gaps
+    const roads = [[tileToWorld(WORLD.baseX, WORLD.baseY + 4), c]];
+    for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + (k - 2) * 0.95 + (rnd() - 0.5) * 0.3; roads.push([{ x: c.x + Math.cos(a) * 39 * T, y: c.y + Math.sin(a) * 39 * T }, c]); }
+    for (let k = 0; k < 3; k++) { const a = rnd() * Math.PI * 2, r1 = (12 + rnd() * 20) * T; const p = { x: c.x + Math.cos(a) * r1, y: c.y + Math.sin(a) * r1 }; const b2 = a + (rnd() > 0.5 ? 1 : -1) * (0.6 + rnd() * 0.6); roads.push([p, { x: c.x + Math.cos(b2) * r1, y: c.y + Math.sin(b2) * r1 }]); }
+    for (const [a, b] of roads) {
+      const len = Math.hypot(b.x - a.x, b.y - a.y), n = Math.floor(len / 200), ang = Math.atan2(b.y - a.y, b.x - a.x);
+      let wob = 0;
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n; wob += (rnd() - 0.5) * 40;
+        const x = a.x + (b.x - a.x) * t - Math.sin(ang) * wob, y = a.y + (b.y - a.y) * t + Math.cos(ang) * wob;
+        if (Math.hypot(x - c.x, y - c.y) < (WORLD.citadelRadius + 1) * T || rnd() < 0.14) continue; // broken
+        this.prop(x, y, 'road', { w: 250, rot: ang + (rnd() - 0.5) * 0.25, alpha: 0.75, depth: 0.3 });
+      }
     }
-    g.fillStyle(0x1c222b, 1).fillCircle(c.x, c.y, (WORLD.rings[0].min) * T);
-    // scattered rocks + crystals
-    for (let i = 0; i < 900; i++) {
-      const x = rnd() * SIZE, y = rnd() * SIZE, k = rnd();
-      if (k < 0.6) { const s = 4 + rnd() * 16; g.fillStyle(0x2b2420, 0.55 + rnd() * 0.4).fillEllipse(x, y, s * 2, s * 1.2); }
-      else if (k < 0.85) { const s = 10 + rnd() * 30; g.lineStyle(2, 0x3a302a, 0.6).strokeEllipse(x, y, s * 2, s); }
-      else { const s = 4 + rnd() * 7, col = rnd() > 0.5 ? PALETTE.cyan : PALETTE.teal; g.fillStyle(col, 0.12).fillCircle(x, y, s * 2.2); g.fillStyle(col, 0.8).fillTriangle(x - s * 0.5, y, x + s * 0.5, y, x, y - s * 2); }
-    }
-    // faint tile grid
-    g.lineStyle(1, 0xffffff, 0.03);
-    for (let i = 0; i <= WORLD.size; i++) { g.lineBetween(i * T, 0, i * T, SIZE); g.lineBetween(0, i * T, SIZE, i * T); }
-    // ring borders + level labels
+    // zone rings (gold, red at the inner zone) + labels
+    const g = this.add.graphics().setDepth(0.5);
     WORLD.rings.forEach((R, i) => {
-      g.lineStyle(10, PALETTE.gold, 0.05).strokeCircle(c.x, c.y, (R.max + 1) * T);
-      g.lineStyle(2, i === 3 ? 0xff4d5e : PALETTE.gold, 0.35).strokeCircle(c.x, c.y, (R.max + 1) * T);
-      for (const a of [-Math.PI / 2, Math.PI / 2]) {
+      g.lineStyle(14, PALETTE.gold, 0.05).strokeCircle(c.x, c.y, (R.max + 1) * T);
+      g.lineStyle(3, i === 3 ? 0xff4d5e : PALETTE.gold, 0.28).strokeCircle(c.x, c.y, (R.max + 1) * T);
+      for (const a of [Math.PI / 2 - 0.42, -Math.PI / 2 + 0.42]) {
         const r = (R.min + (R.max - R.min) / 2) * T;
-        this.add.text(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, `ZONE ${i + 1} · Lv ${R.levels[0]}–${R.levels[1]}`, { fontFamily: 'system-ui, sans-serif', fontSize: '26px', fontStyle: 'bold', color: '#ffb34766', letterSpacing: 4 }).setOrigin(0.5).setDepth(1);
+        this.add.text(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, `ZONE ${i + 1} · Lv ${R.levels[0]}–${R.levels[1]}`, { fontFamily: 'system-ui, sans-serif', fontSize: '26px', fontStyle: 'bold', color: '#ffd27f88', stroke: '#05070a99', strokeThickness: 5, letterSpacing: 4 }).setOrigin(0.5).setDepth(1);
       }
     });
-    g.lineStyle(4, 0xff4d5e, 0.5).strokeRect(0, 0, SIZE, SIZE);
+    // teal rift fissures (pulse), crystal nodes, ruins
+    this.fissures = [];
+    for (let i = 0; i < 70; i++) {
+      const r = (WORLD.citadelRadius + 1 + rnd() * 34) * T, a = rnd() * Math.PI * 2, x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
+      if (x < 60 || y < 60 || x > SIZE - 60 || y > SIZE - 60 || !clear(x, y, 60)) continue;
+      this.fissures.push(this.prop(x, y, rnd() > 0.5 ? 'fissure-1' : 'fissure-2', { w: 200 + rnd() * 220, rot: a + Math.PI / 2 + (rnd() - 0.5) * 0.9, add: true, alpha: 0.85, depth: 0.6 }));
+    }
+    // radial cracks around the dome
+    for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2 + rnd() * 0.3, r = (WORLD.citadelRadius + 1.6) * T; this.fissures.push(this.prop(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, 'fissure-1', { w: 260, rot: a, add: true, alpha: 0.9, depth: 0.6 })); }
+    this.tweens.add({ targets: this.fissures, alpha: 0.45, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    for (let i = 0; i < 220; i++) {
+      const x = 80 + rnd() * (SIZE - 160), y = 80 + rnd() * (SIZE - 160), k = rnd();
+      if (Math.hypot(x - c.x, y - c.y) < (WORLD.citadelRadius + 2) * T || !clear(x, y, 50)) continue;
+      if (k < 0.32) this.prop(x, y, `crystal-${1 + Math.floor(rnd() * 4)}`, { w: 70 + rnd() * 50, depth: 2 + y / SIZE, flip: rnd() > 0.5 });
+      else if (k < 0.62) this.prop(x, y, `ruin-${1 + Math.floor(rnd() * 3)}`, { w: 110 + rnd() * 90, depth: 0.8, alpha: 0.9, flip: rnd() > 0.5 });
+      else if (k < 0.72) this.prop(x, y, 'lair-1', { w: 150 + rnd() * 60, depth: 0.8, alpha: 0.75, flip: rnd() > 0.5 });
+    }
+    // Rift Citadel + golden contested dome (LOCKED)
+    const cw = (WORLD.citadelRadius * 2 + 2.4) * T;
+    this.domeGlow = this.add.image(c.x, c.y, 'wmap', 'glow-gold').setBlendMode('ADD').setScale(cw * 1.15 / 128).setAlpha(0.5).setDepth(2.4);
+    this.citadel = this.add.image(c.x, c.y - 0.4 * T, 'wmap', 'citadel').setScale(cw / 550).setDepth(2.5);
+    this.coreGlow = this.add.image(c.x - 0.15 * T, c.y - 2.9 * T, 'wmap', 'glow-teal').setBlendMode('ADD').setScale(2.6).setDepth(2.6);
+    this.tweens.add({ targets: this.domeGlow, alpha: 0.85, scale: cw * 1.22 / 128, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: this.coreGlow, alpha: 0.4, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.add.text(c.x, c.y + WORLD.citadelRadius * T + 30, '🔒  RIFT CITADEL', { fontFamily: 'system-ui, sans-serif', fontSize: '34px', fontStyle: 'bold', color: PALETTE.textGold, stroke: '#05070a', strokeThickness: 7, letterSpacing: 3 }).setOrigin(0.5).setDepth(40);
+    this.add.text(c.x, c.y + WORLD.citadelRadius * T + 72, 'contested dome · alliance war coming', { fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffd27fcc', stroke: '#05070a', strokeThickness: 6 }).setOrigin(0.5).setDepth(40);
+    // fog over the unexplored edges (+ darkness past the border)
+    for (let i = 0; i < 96; i++) {
+      const side = i % 4, t = rnd() * SIZE, inset = -160 + rnd() * 380;
+      const x = side === 0 ? t : side === 1 ? t : side === 2 ? inset : SIZE - inset;
+      const y = side === 0 ? inset : side === 1 ? SIZE - inset : t;
+      this.prop(x, y, rnd() > 0.5 ? 'fog-1' : 'fog-2', { w: 520 + rnd() * 380, alpha: 0.85, depth: 60, rot: rnd() * 6.28 });
+    }
+    const fogEdge = this.add.graphics().setDepth(59);
+    for (let k = 0; k < 6; k++) { fogEdge.lineStyle(60, 0x0a0c10, 0.22); fogEdge.strokeRect(-30 + k * 50, -30 + k * 50, SIZE + 60 - k * 100, SIZE + 60 - k * 100); }
+  }
+
+  // Player bases (yours + neighbours) from the WorldService; rebuilt when the Beacon tier changes.
+  syncBases() {
+    const live = new Set();
+    for (const e of store.world.bases()) {
+      live.add(e.id);
+      const local = e.id === BASE_ID;
+      const level = local ? store.state.beacon.level : e.level ?? 1;
+      const tier = baseTier(level), color = local ? PALETTE.teal : e.color ?? 0x8a96a8;
+      let s = this.baseSprites.get(e.id);
+      const key = `${tier}|${color}|${e.x},${e.y}|${e.name}`;
+      if (s && s.key === key) continue;
+      if (s) s.parts.forEach((o) => o.destroy());
+      const p = tileToWorld(e.x, e.y), parts = [];
+      const d = 3 + p.y / SIZE;
+      parts.push(this.add.image(p.x, p.y + 30, 'wmap', 'shadow').setScale(TIER_W[tier] * 1.4 / 96, TIER_W[tier] * 0.6 / 96).setAlpha(0.7).setDepth(d - 0.01));
+      if (local) { const gl = this.add.image(p.x, p.y, 'glow').setBlendMode('ADD').setScale(1.6).setAlpha(0.45).setDepth(d - 0.005); this.tweens.add({ targets: gl, scale: 2, alpha: 0.75, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); parts.push(gl); }
+      const img = this.add.image(p.x, p.y, 'wmap', TIER_FRAMES[tier]).setDepth(d);
+      img.setScale(TIER_W[tier] / img.width);
+      if (tier === 4) img.setTint(0xfff0c8);
+      parts.push(img);
+      const top = p.y - img.displayHeight / 2;
+      if (tier === 3) parts.push(this.add.image(p.x + 4, top + 22, 'wmap', 'glow-teal').setBlendMode('ADD').setScale(1.3).setDepth(d + 0.001));
+      if (tier === 4) parts.push(this.add.image(p.x, top - 8, 'wmap', 'crown').setScale(0.9).setDepth(d + 0.002));
+      const flag = this.add.image(p.x + img.displayWidth * 0.3, top + 4, 'wmap', 'banner').setOrigin(0.15, 1).setScale(0.85).setTint(color).setDepth(d + 0.003);
+      parts.push(flag);
+      this.tweens.add({ targets: flag, scaleX: 0.75, duration: 900 + (e.x * 37) % 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      const label = local ? 'YOUR BASE' : `${e.tag ? `[${e.tag}] ` : ''}${e.name}`;
+      parts.push(this.add.text(p.x, p.y + img.displayHeight / 2 + 4, label, { fontFamily: 'system-ui, sans-serif', fontSize: local ? '24px' : '19px', fontStyle: 'bold', color: local ? PALETTE.textGold : '#e8e1d0', stroke: '#05070a', strokeThickness: 6 }).setOrigin(0.5, 0).setDepth(41));
+      parts.push(this.add.text(p.x, p.y + img.displayHeight / 2 + (local ? 32 : 27), `Lv ${level} · ${BASE_TIERS[tier].name}`, { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: local ? '#7ff6ee' : '#a9b3c2', stroke: '#05070a', strokeThickness: 5 }).setOrigin(0.5, 0).setDepth(41));
+      s = { parts, tier, color, key, e };
+      this.baseSprites.set(e.id, s);
+    }
+    for (const [id, s] of this.baseSprites) if (!live.has(id)) { s.parts.forEach((o) => o.destroy()); this.baseSprites.delete(id); }
+  }
+
+  // Hide decor outside the camera (plus a margin) so phones only draw what's on screen.
+  cull(force = false) {
+    const v = this.cameras.main.worldView;
+    const key = `${Math.round(v.x / 64)},${Math.round(v.y / 64)},${Math.round(v.width / 64)}`;
+    if (!force && key === this.cullKey) return;
+    this.cullKey = key;
+    const m = 300, x0 = v.x - m, y0 = v.y - m, x1 = v.right + m, y1 = v.bottom + m;
+    let shown = 0;
+    for (const im of this.props) { const vis = im.x > x0 && im.x < x1 && im.y > y0 && im.y < y1; im.setVisible(vis); if (vis) shown++; }
+    this.propsShown = shown;
   }
 
   // ------------------------------------------------------------ sync ---
   syncAll(force = false) {
+    this.syncBases();
     const maxL = store.maxAttackLevel();
     const live = new Set();
     for (const e of store.creatures()) {
@@ -98,10 +199,12 @@ export default class WorldScene extends Phaser.Scene {
       const p = tileToWorld(e.x, e.y);
       if (!s) {
         const elite = !!CREATURES[e.type].elite;
+        const lair = this.add.image(p.x, p.y + 6, 'wmap', LAIR_OF[e.type] ?? 'lair-3').setAlpha(0.8).setDepth(0.9);
+        lair.setScale((elite ? 170 : 120) / lair.width);
         const img = this.add.image(p.x, p.y - 14, `cr-${e.type}`).setScale(elite ? 0.95 : 0.72).setDepth(10 + p.y / SIZE);
         const badge = this.add.text(p.x, p.y + 30, '', { fontFamily: 'system-ui, sans-serif', fontSize: '22px', fontStyle: 'bold', color: '#ffffff', stroke: '#05070a', strokeThickness: 6, align: 'center' }).setOrigin(0.5, 0).setDepth(11);
         const lock = this.add.text(p.x + 30, p.y - 54, '🔒', { fontSize: '24px' }).setOrigin(0.5).setDepth(12);
-        s = { img, badge, lock, e };
+        s = { img, badge, lock, lair, e };
         this.crSprites.set(e.id, s);
         if (!force) { img.setAlpha(0).setScale(0.2); this.tweens.add({ targets: img, alpha: 1, scale: elite ? 0.95 : 0.72, duration: 500, ease: 'Back.easeOut' }); }
       }
@@ -110,7 +213,7 @@ export default class WorldScene extends Phaser.Scene {
       s.img.setTint(locked ? 0x777777 : 0xffffff);
       s.lock.setVisible(locked);
     }
-    for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
+    for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
   }
 
   drawMarches() {
@@ -145,9 +248,9 @@ export default class WorldScene extends Phaser.Scene {
 
   drawSelection() {
     const g = this.selG; g.clear();
-    const s = this.selected && this.crSprites.get(this.selected);
-    if (!s) return;
-    const p = tileToWorld(s.e.x, s.e.y), r = 52 + Math.sin(this.time.now / 180) * 4;
+    const e = this.selected && (this.crSprites.get(this.selected)?.e ?? store.world.get(this.selected));
+    if (!e) return;
+    const p = tileToWorld(e.x, e.y), r = (e.kind === 'citadel' ? WORLD.citadelRadius * T : e.kind === 'base' ? 100 : 52) + Math.sin(this.time.now / 180) * 4;
     g.lineStyle(4, PALETTE.gold, 0.95).strokeCircle(p.x, p.y, r);
     g.lineStyle(10, PALETTE.gold, 0.15).strokeCircle(p.x, p.y, r);
   }
@@ -192,7 +295,13 @@ export default class WorldScene extends Phaser.Scene {
       const d = Math.hypot(wx - p.x, wy - (p.y - 8));
       if (d < bd) { bd = d; best = s.e.id; }
     }
-    return best;
+    if (best) return best;
+    bd = 95;
+    for (const e of store.world.bases()) { const p = tileToWorld(e.x, e.y), d = Math.hypot(wx - p.x, wy - p.y); if (d < bd) { bd = d; best = e.id; } }
+    if (best) return best;
+    const ci = store.world.citadel(), cp = ci && tileToWorld(ci.x, ci.y);
+    if (cp && Math.hypot(wx - cp.x, wy - cp.y) < WORLD.citadelRadius * T) return ci.id;
+    return null;
   }
   select(id) {
     this.selected = id;
@@ -244,6 +353,7 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   update() {
+    this.cull();
     if (!this.lastSync || this.time.now - this.lastSync > 250) { this.lastSync = this.time.now; this.syncAll(); }
     this.drawMarches();
     this.drawSelection();

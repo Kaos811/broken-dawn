@@ -1,5 +1,8 @@
 import { ART_URLS } from '../art/baseArt.js';
 import { UI_ART_URLS } from '../art/uiArt.js';
+import worldAtlasPng from '../art/world/world-atlas.webp';
+import worldAtlasJson from '../art/world/world-atlas.json?url';
+import worldGround from '../art/world/world-ground.webp';
 import Phaser from 'phaser';
 import { PALETTE, MAP } from '../config.js';
 import { makePortraitTextures } from '../art/portraits.js';
@@ -64,6 +67,9 @@ export default class BootScene extends Phaser.Scene {
   preload() {
     // painted Base art (stage 6)
     for (const [key, url] of Object.entries({ ...ART_URLS, ...UI_ART_URLS })) this.load.image(key, url);
+    // stage 12: painted world map (one atlas for every prop + base tier + citadel, tools/process_stage12.py)
+    this.load.atlas('wmap', worldAtlasPng, worldAtlasJson);
+    this.load.image('wmap-ground', worldGround);
   }
 
   create() {
