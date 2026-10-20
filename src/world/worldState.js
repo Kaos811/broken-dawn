@@ -12,6 +12,7 @@ export const marchSeconds = (d) => Math.min(WORLD.march.max, WORLD.march.base + 
 export const BASE_POS = { x: WORLD.baseX, y: WORLD.baseY };
 export const CENTER = { x: WORLD.centerX, y: WORLD.centerY };
 export const CITADEL_ID = 'citadel';
+const BASE_ANGLE = Math.atan2(WORLD.baseY - WORLD.centerY, WORLD.baseX - WORLD.centerX);
 
 // Level for a spot in `ring` at distance d from the CENTRE: rises as you move inward (stage 12).
 export function ringLevel(ring, d) {
@@ -37,7 +38,9 @@ export function spawnCreature(world, ring, forceLevel = null) {
       hi = R.max + 1 - k * w - 0.01; lo = R.max + 1 - (k + 1) * w;
     }
     const r = Math.sqrt(lo * lo + rng() * (hi * hi - lo * lo));
-    const a = rng() * Math.PI * 2;
+    // outer zones gather on your side of the Citadel so low levels stay a short march away
+    const spread = ring === 0 ? (forceLevel != null ? 0.3 : 1.1) : ring === 1 ? 1.5 : 2;
+    const a = BASE_ANGLE + (rng() - 0.5) * Math.PI * spread;
     const x = Math.round(CENTER.x + Math.cos(a) * r), y = Math.round(CENTER.y + Math.sin(a) * r);
     if (x < 1 || y < 1 || x > WORLD.size - 2 || y > WORLD.size - 2) continue;
     const d = dist({ x, y }, CENTER);

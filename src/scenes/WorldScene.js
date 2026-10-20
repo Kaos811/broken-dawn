@@ -15,7 +15,7 @@ const tileToWorld = (x, y) => ({ x: (x + 0.5) * T, y: (y + 0.5) * T });
 // Pan: drag. Zoom: pinch / wheel. Tap a creature to target it, a base for its profile, the Citadel for its card.
 // Perf: every prop is one image from the 'wmap' atlas (one batch) and off-screen props are culled.
 const TIER_FRAMES = ['base-t1', 'base-t2', 'base-t3', 'base-t4', 'base-t5'];
-const TIER_W = [150, 170, 190, 205, 225]; // on-map width in px (world units)
+const TIER_W = [180, 205, 230, 250, 275]; // on-map width in px (world units)
 const LAIR_OF = { hound: 'lair-3', scuttler: 'lair-1', drone: 'ruin-3', golem: 'ruin-1', wyrm: 'lair-2' };
 export default class WorldScene extends Phaser.Scene {
   constructor() { super('World'); }
@@ -81,7 +81,7 @@ export default class WorldScene extends Phaser.Scene {
     const fixed = store.world.entities().filter((e) => e.kind !== 'creature').map((e) => ({ ...tileToWorld(e.x, e.y), r: (e.kind === 'citadel' ? WORLD.citadelRadius + 1.5 : 2) * T }));
     const clear = (x, y, pad = 0) => fixed.every((f) => Math.hypot(f.x - x, f.y - y) > f.r + pad);
     // broken roads: from your base and the map edges toward the Citadel, with gaps
-    const roads = [[tileToWorld(WORLD.baseX, WORLD.baseY + 4), c]];
+    const roads = [[tileToWorld(WORLD.baseX, WORLD.baseY), c]];
     for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + (k - 2) * 0.95 + (rnd() - 0.5) * 0.3; roads.push([{ x: c.x + Math.cos(a) * 39 * T, y: c.y + Math.sin(a) * 39 * T }, c]); }
     for (let k = 0; k < 3; k++) { const a = rnd() * Math.PI * 2, r1 = (12 + rnd() * 20) * T; const p = { x: c.x + Math.cos(a) * r1, y: c.y + Math.sin(a) * r1 }; const b2 = a + (rnd() > 0.5 ? 1 : -1) * (0.6 + rnd() * 0.6); roads.push([p, { x: c.x + Math.cos(b2) * r1, y: c.y + Math.sin(b2) * r1 }]); }
     for (const [a, b] of roads) {
@@ -90,7 +90,7 @@ export default class WorldScene extends Phaser.Scene {
       for (let i = 0; i < n; i++) {
         const t = (i + 0.5) / n; wob += (rnd() - 0.5) * 40;
         const x = a.x + (b.x - a.x) * t - Math.sin(ang) * wob, y = a.y + (b.y - a.y) * t + Math.cos(ang) * wob;
-        if (Math.hypot(x - c.x, y - c.y) < (WORLD.citadelRadius + 1) * T || rnd() < 0.14) continue; // broken
+        if (Math.hypot(x - c.x, y - c.y) < (WORLD.citadelRadius + 1) * T || !clear(x, y, 40) || rnd() < 0.14) continue; // broken
         this.prop(x, y, 'road', { w: 250, rot: ang + (rnd() - 0.5) * 0.25, alpha: 0.75, depth: 0.3 });
       }
     }
@@ -141,6 +141,8 @@ export default class WorldScene extends Phaser.Scene {
     for (let k = 0; k < 6; k++) { fogEdge.lineStyle(60, 0x0a0c10, 0.22); fogEdge.strokeRect(-30 + k * 50, -30 + k * 50, SIZE + 60 - k * 100, SIZE + 60 - k * 100); }
   }
 
+  tierFor(level) { return baseTier(level); }
+
   // Player bases (yours + neighbours) from the WorldService; rebuilt when the Beacon tier changes.
   syncBases() {
     const live = new Set();
@@ -161,7 +163,7 @@ export default class WorldScene extends Phaser.Scene {
       img.setScale(TIER_W[tier] / img.width);
       if (tier === 4) img.setTint(0xfff0c8);
       parts.push(img);
-      const top = p.y - img.displayHeight / 2;
+      const top = p.y - img.displayHeight * 0.3;
       if (tier === 3) parts.push(this.add.image(p.x + 4, top + 22, 'wmap', 'glow-teal').setBlendMode('ADD').setScale(1.3).setDepth(d + 0.001));
       if (tier === 4) parts.push(this.add.image(p.x, top - 8, 'wmap', 'crown').setScale(0.9).setDepth(d + 0.002));
       const flag = this.add.image(p.x + img.displayWidth * 0.3, top + 4, 'wmap', 'banner').setOrigin(0.15, 1).setScale(0.85).setTint(color).setDepth(d + 0.003);

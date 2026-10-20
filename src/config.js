@@ -431,7 +431,7 @@ export const WORLD = {
   size: 80,
   tile: 72,
   centerX: 40, centerY: 40,
-  baseX: 40, baseY: 73,     // your base: south edge of the outer zone
+  baseX: 40, baseY: 75,     // your base: south edge of the outer (Lv 1-5) zone
   citadelRadius: 5,         // locked stronghold + golden dome (no creatures inside ~6 tiles)
   rings: [
     { min: 29, max: 37, levels: [1, 5], count: 16 },
