@@ -113,15 +113,19 @@ export function sanitizeWorld(w) {
       out.entities.push({ id: String(e.id), kind: 'creature', owner: 'npc', x: n(e.x, 0), y: n(e.y, 0), ring: ringOfLevel(e.level), level: Math.floor(e.level), type: e.type, busy: null });
       ids.add(e.id);
     } else if (e.kind === 'base') {
-      const b = { id: String(e.id), kind: 'base', owner: String(e.owner ?? LOCAL_OWNER), name: String(e.name ?? 'Base'), x: n(e.x, WORLD.baseX), y: n(e.y, WORLD.baseY) };
-      if (e.bot) Object.assign(b, { bot: true, level: Math.max(1, Math.min(20, Math.floor(n(e.level, 1)))), tag: typeof e.tag === 'string' ? e.tag : null, color: n(e.color, 0x8a96a8), power: Math.max(0, n(e.power, 0)) });
+      const b = e.bot
+        ? { id: String(e.id), kind: 'base', owner: String(e.owner), bot: true, name: String(e.name ?? 'Base'), level: Math.max(1, Math.min(20, Math.floor(n(e.level, 1)))), tag: typeof e.tag === 'string' ? e.tag : null, color: n(e.color, 0x8a96a8), power: Math.max(0, n(e.power, 0)), x: n(e.x, 0), y: n(e.y, 0) }
+        : { id: String(e.id), kind: 'base', owner: String(e.owner ?? LOCAL_OWNER), name: String(e.name ?? 'Base'), x: n(e.x, WORLD.baseX), y: n(e.y, WORLD.baseY) };
       if (b.id === BASE_ID) { b.x = WORLD.baseX; b.y = WORLD.baseY; }
       out.entities.push(b);
+      ids.add(e.id);
+    } else if (e.kind === 'citadel') {
+      out.entities.push({ id: CITADEL_ID, kind: 'citadel', owner: 'neutral', name: 'Rift Citadel', locked: true, x: CENTER.x, y: CENTER.y });
       ids.add(e.id);
     }
   }
   if (!out.entities.some((e) => e.id === BASE_ID)) out.entities.unshift({ id: BASE_ID, kind: 'base', owner: LOCAL_OWNER, name: 'Your Base', x: WORLD.baseX, y: WORLD.baseY });
-  out.entities.push({ id: CITADEL_ID, kind: 'citadel', owner: 'neutral', name: 'Rift Citadel', locked: true, x: CENTER.x, y: CENTER.y });
+  if (!ids.has(CITADEL_ID)) out.entities.push({ id: CITADEL_ID, kind: 'citadel', owner: 'neutral', name: 'Rift Citadel', locked: true, x: CENTER.x, y: CENTER.y });
   if (!out.entities.some((e) => e.bot)) out.entities.push(...seedBotBases(out.seed));
   for (const r of Array.isArray(w.respawns) ? w.respawns : []) if (WORLD.rings[r?.ring] && Number.isFinite(r.at)) out.respawns.push({ ring: r.ring, at: r.at });
   for (const m of Array.isArray(w.marches) ? w.marches : []) {

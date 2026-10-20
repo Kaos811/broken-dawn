@@ -916,7 +916,7 @@ async function runStage3(url, label, takeShots) {
     const inf = s.buildings.infirmary;
     check('v6 adds the Infirmary at Lv 1 on a free spot (no overlap with the Armory)', inf.level === 1 && !(inf.gx === s.buildings.armory.gx && inf.gy === s.buildings.armory.gy) && (await ev(() => __BD.store.canPlace('infirmary', __BD.store.state.buildings.infirmary.gx, __BD.store.state.buildings.infirmary.gy))), JSON.stringify(inf));
     check('v6 formation lines get full = saved count', s.squads.alpha.lines[0].full === 6 && s.squads.alpha.lines[1].full === 4);
-    check('v6 generates a world: 40 creatures + your base; stamina starts full (100)', s.world.entities.filter((e) => e.kind === 'creature').length === 40 && s.world.entities.some((e) => e.kind === 'base' && e.owner === 'local') && s.hunt.stamina === 100);
+    check('v6 generates a world: 44 creatures + your base + 14 neighbours + the Citadel; stamina starts full (100)', s.world.entities.filter((e) => e.kind === 'creature').length === 44 && s.world.entities.filter((e) => e.bot).length === 14 && s.world.entities.some((e) => e.kind === 'citadel') && s.world.entities.some((e) => e.kind === 'base' && e.owner === 'local') && s.hunt.stamina === 100);
     check('v5 migration keeps a backup of the v5 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v5') || '{}').version === 5));
     check('Infirmary adds +5 Base Power (Lv 1) (+5 Archive, unsealed at Beacon Lv 3)', (await ev(() => __BD.store.power.building)) === 30 + 10 + 45 + 0 + 5 + 5, String(await ev(() => __BD.store.power.building)));
     check('Infirmary sprite is drawn on the base', await ev(() => !!__BD.base().sprites.infirmary?.img.visible));
@@ -1009,7 +1009,7 @@ async function runStage3(url, label, takeShots) {
     check('replay advances through the battle volley by volley', await waitTrue(() => __BD.ui().replayState().i >= 1));
     const det = await ev(() => { const st = __BD.store, r = st.state.hunt.reports[0]; const a = st.replayOf(r), b = st.replayOf(r); return JSON.stringify(a) === JSON.stringify(b) && (a.winner === 'attacker') === r.win && a.seed === r.seed; });
     check('replay is the exact same deterministic battle (same seed → same result)', det);
-    await click('Skip', { wait: 300 });
+    if (await ev(() => !__BD.ui().replayState().done)) await click('Skip', { wait: 300 }); // short battles may already be over
     check('Skip jumps to the result', await waitTrue(() => __BD.ui().replayState().done));
     await click('Close', { wait: 300 });
     check('replay closes', await waitTrue(() => __BD.ui().replay === null));
@@ -1046,7 +1046,7 @@ async function runStage3(url, label, takeShots) {
 
     // --- 7. respawn after 10 min, back to 40
     const resp = await ev(() => { const st = __BD.store; const before = st.creatures().length; for (let i = 0; i < 61; i++) st.tick(10); return [before, st.creatures().length, st.state.world.respawns.length]; });
-    check('creatures respawn after 10 min (back to 40)', resp[0] === 38 && resp[1] === 40 && resp[2] === 0, JSON.stringify(resp));
+    check('creatures respawn after 10 min (back to 44)', resp[0] === 42 && resp[1] === 44 && resp[2] === 0, JSON.stringify(resp));
 
     // --- 8. defeat: heavier losses
     const loss = await ev(() => {
@@ -2535,7 +2535,7 @@ async function runStage8(url, label, takeShots) {
     await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(600);
     // ---------------------------------------------------------------- A. Daily Missions
     const m0 = await ev(() => { const st = __BD.store, s = st.state; return { v: s.version, day: s.missions.day, today: st.dayIndex(), tasks: st.missionList().map((t) => [t.id, t.goal, t.pts]), chests: st.missionChests().map((c) => `${c.at}:${c.tier}`), vis: __BD.ui().rightBtns.missions.visible, done: s.tutorial.done }; });
-    check('new game: save v12 with today\'s missions (local day)', m0.v === 11 && m0.day === m0.today, JSON.stringify(m0));
+    check('new game: save v12 with today\'s missions (local day)', m0.v === 12 && m0.day === m0.today, JSON.stringify(m0));
     check('7 daily tasks worth 110 points in total', m0.tasks.length === 7 && m0.tasks.reduce((a, t) => a + t[2], 0) === 110, JSON.stringify(m0.tasks));
     check('activity chests at 20/40/60/80/100: bronze, bronze, silver, silver, gold', m0.chests.join(',') === '20:bronze,40:bronze,60:silver,80:silver,100:gold', m0.chests.join(','));
     check('Missions stay hidden until the tutorial is done', !m0.vis && !m0.done, JSON.stringify({ vis: m0.vis, done: m0.done }));
@@ -2611,7 +2611,7 @@ async function runStage8(url, label, takeShots) {
     await ev(() => { __BD.store.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 9; delete raw.missions; delete raw.events; delete raw.hints; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
     await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(500);
     const mig = await ev(() => { const s = __BD.store.state; return { v: s.version, day: s.missions.day === __BD.store.dayIndex(), p: Object.keys(s.missions.progress).length, ev: s.events && typeof s.events.marks === 'number', bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v9') || '{}').version, lv: s.buildings.barracks.level, cores: s.resources.cores }; });
-    check('v9 save migrates to v12: missions start fresh today, events added, backup kept', mig.v === 11 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
+    check('v9 save migrates to v12: missions start fresh today, events added, backup kept', mig.v === 12 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
 
     // --- screenshot: missions in progress
     await ev(() => { const st = __BD.store; st.state.missions.progress = { daily: 1, kills: 5, train: 30, build: 1, heal: 4 }; st.state.missions.claimed = ['daily', 'train']; st.state.missions.chests = [20]; st.save(); });

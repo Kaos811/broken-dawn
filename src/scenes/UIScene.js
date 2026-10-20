@@ -728,7 +728,6 @@ export default class UIScene extends Phaser.Scene {
     c.alpha = 0; c.y = 24;
     this.tweens.add({ targets: c, alpha: 1, y: 0, duration: 160, ease: 'Cubic.easeOut' });
     c.panelRect = { x, y, w, h };
-    c.kind = kind ?? null;
     this.modal = c;
     this.activeTab = 'more'; this.drawNav();
     audio.play('open');
