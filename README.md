@@ -76,9 +76,11 @@ The Beacon is anchored: long-pressing it just shows "can't be moved".
 
 Upgrading any building (Command Center, Barracks, Armory **and the Beacon**) now takes time (`CONSTRUCTION` in `src/config.js`):
 
-| Upgrade to | Lv 2 | Lv 3 | Lv 4 | Lv 5 | Lv 6 | Lv 7 | Lv 8 | Lv 9 | then |
-|---|---|---|---|---|---|---|---|---|---|
-| Time | 10 s | 30 s | 2 min | 6 min | 20 min | 1 h | 3 h | 9 h | ×3 per level |
+| Upgrade to | Lv 2 | Lv 3 | Lv 4 | Lv 5 | Lv 6 | Lv 7 | Lv 8 | Lv 9 | Lv 10 | Lv 11 | Lv 12 | Lv 13 | Lv 14 | Lv 15–20 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Time | 10 s | 30 s | 2 min | 6 min | 20 min | 1 h | 3 h | 4h 48m | 7h 41m | 12h 17m | 19h 40m | 31h 28m | 50h 20m | 72 h (cap) |
+
+(Stage 10: ×1.6 per level after Lv 8, no single upgrade over 72 h. Before that it was ×3 per level, which made Lv 12+ take weeks. Rapid Assembly research still shortens all of these.)
 
 - **One builder** (`CONSTRUCTION.builders = 1`): only one upgrade runs at a time; the others say "Builder busy".
 - The Energy cost is **paid up front**. The Beacon still needs a full charge to start, and starting spends it.
@@ -86,7 +88,7 @@ Upgrading any building (Command Center, Barracks, Armory **and the Beacon**) now
 - The new level, its power and its unlocks (lane capacity, squad caps, building cap, Beacon Core reward) apply **only when the timer finishes**.
 - Timers keep running offline (same 8 h cap as income); the welcome-back toast lists upgrades that finished.
 - A gold progress bar and countdown float over the building on the map, and the info panel shows the time left with a bar.
-- Speed-up hook for later (no UI yet): `store.speedUpConstruction(id, seconds)` and `store.speedUpCoreCost(id)` (`CONSTRUCTION.speedUp.secondsPerCore = 300`).
+- Speed-ups: see Stage 10 below.
 - Save version 5: older saves keep their levels with nothing under construction; the v4 save is kept as `brokenDawn.save.v1.backup-v4`.
 
 ## Stage 2: what's built
@@ -475,6 +477,21 @@ missions start fresh, nothing back-dated, backup `brokenDawn.save.v1.backup-v9`)
   - Stamina orb (now also in the World HUD instead of the drawn bolt)
   - Bronze, silver and gold chests, each closed and open
   - Two event banners, cropped to 3:1 and darkened on the left for the title
+
+## Stage 10 (v0.8.0): Speed-ups
+
+Plan: `docs/stage10-plan.md`. Config: `SPEEDUPS` in `src/config.js`; logic: `src/systems/speedups.js` (mixed into the store); UI: `src/ui/speedups.js`.
+
+- **Items:** 1m, 5m, 15m, 1h, 3h, 8h, 24h. Stack, never expire. Work on **construction and research only**.
+- **Free finish:** any timer (construction, research, a training lane, the healing queue) with **5:00 or less** left finishes free. The panel button turns gold **Free**; the Builder/Research side timers read FREE.
+- **Core finish:** construction/research 1 Core per 5 min for the first hour, then 1 per 15 min (8 h = 40); training/healing 1 per 10 min (min 1). A confirm appears at **5+ Cores**. Cores are still earned only.
+- **Picker** (Speed Up button on the building panel and the Archive project): live countdown, **Auto-use** (fewest items that cover the time, at most 5 min wasted, with a preview), one row per item with Use / Use ×N, and Finish now (Free or N Cores).
+- Barracks: tap a busy lane to finish it (its timer turns gold when it's free). Infirmary: **Finish** on the healing queue. Both offer Free/Core only.
+- **More → Items:** the inventory.
+- **Sources:** daily mission chests (20: 5m · 40: 15m · 60: 2× 5m · 80: 1h · 100: 15m), daily login 15m (+3h on every 7th day in a row), event milestones (15m · 2× 15m · 1h · 3h · 8h, both events), Rift Exchange (5m ×10 for 5 Marks, 1h ×3 for 30, 8h ×1 for 120, weekly), Beacon level rewards (1h each, +8h at Lv 5, +24h at Lv 10), and 3× 5m with the first upgrade.
+- **Save v11:** adds an empty inventory. Running timers stay valid: progress is kept, and a running upgrade's total only shrinks to the new flatter time (never grows). The v10 save is kept as `brokenDawn.save.v1.backup-v10`.
+- **Icons:** clean placeholder hourglass tiles drawn in the gold/teal kit (`su-icon-<id>`). Painted art can replace them by loading textures `item-su-m1` … `item-su-h24`.
+- Tests: `ONLY=10 npm test`; layout of the picker, Items, lane finish and the upgrading panel is in the stage 9c 6-size check. Screens: `screens/stage10-*.png` (`node tools/shots10.mjs`).
 
 ## Code layout
 

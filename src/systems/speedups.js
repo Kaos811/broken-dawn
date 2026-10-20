@@ -17,7 +17,8 @@ export function planAuto(left, inv, waste = SPEEDUPS.autoWaste) {
   const items = [...SPEEDUPS.items].sort((a, b) => b.seconds - a.seconds);
   const use = {}; let rem = Math.ceil(left);
   for (const it of items) {
-    let n = Math.min(inv[it.id] ?? 0, Math.floor((rem + waste) / it.seconds));
+    const up = Math.ceil(rem / it.seconds);
+    let n = Math.min(inv[it.id] ?? 0, up * it.seconds - rem <= waste ? up : Math.floor(rem / it.seconds));
     if (n > 0) { use[it.id] = n; rem -= n * it.seconds; }
     if (rem <= 0) break;
   }
