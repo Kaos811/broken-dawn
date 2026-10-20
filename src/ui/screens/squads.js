@@ -40,10 +40,10 @@ function renderDetails(ui, c, a, api, st, y0) {
   const sg = ui.add.graphics(); glyph(sg, 'star', 30, y0 + 22, 8, SKIN.gold); glyph(sg, 'atk', 244, y0 + 22, 8, SKIN.cyan); c.add(sg);
   // Two different numbers, labelled so they can't be confused: Squad Power feeds Base Power;
   // Combat Power (HP/ATK/DEF with leader, gear, research) is what decides World hunts.
-  c.add(text(ui, 44, y0 + 14, 'SQUAD POWER · BASE', 16, '#e8c27a', { fontStyle: 'bold', letterSpacing: 2 }));
+  c.add(text(ui, 44, y0 + 14, 'SQUAD POWER · BASE', 14, '#e8c27a', { fontStyle: 'bold', letterSpacing: 1 }));
   c.add(text(ui, 36, y0 + 36, fmt(store.squadPower(id)), 48, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 }));
   c.add(text(ui, 36, y0 + 92, `${store.squadSoldiers(id)} soldiers + ${sq.level} × ${TROOPS.powerPerSquadLevel}`, 16, PALETTE.textDim));
-  c.add(text(ui, 258, y0 + 14, 'COMBAT POWER · HUNTS', 16, '#8ff8f2', { fontStyle: 'bold', letterSpacing: 2 }));
+  c.add(text(ui, 258, y0 + 14, 'COMBAT POWER · HUNTS', 14, '#8ff8f2', { fontStyle: 'bold', letterSpacing: 1 }));
   c.add(text(ui, 250, y0 + 36, fmt(store.squadCombatPower(id)), 48, PALETTE.textCyan, { fontStyle: 'bold', stroke: '#05282c', strokeThickness: 4 }));
   c.add(text(ui, 250, y0 + 92, 'decides World battles', 16, PALETTE.textDim));
   const stats = store.squadStats(id);
