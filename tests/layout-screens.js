@@ -31,5 +31,11 @@ export const LAYOUT_SCREENS = [
   ['report', "const st = __BD.store; if (!st.state.hunt.reports.length) { const cr = st.creatures().filter((e) => e.level <= Math.max(1, st.maxAttackLevel()))[0]; if (cr) { st.attack('alpha', cr.id); for (let i = 0; i < 300 && st.state.world.marches.length; i++) st.tick(1); } } u.showWorld(); const r = __BD.store.state.hunt.reports[0]; if (r) u.openReportOf(r);"],
   ['reveal x1', "u.playReveal([{ kind: 'leader', id: 'kael', rarity: 'legendary', result: 'new' }]);"],
   ['reveal x10', "u.playReveal(['kael', 'lyra', 'jax', 'seren', 'vex', 'orin', 'nova', 'rook', 'dax', 'mira'].map((id) => ({ kind: 'leader', id, rarity: 'rare', result: 'shards', refund: 10 })));"],
+  // stage 10: speed-ups
+  ['items', 'u.openItems();'],
+  ['speedup build', "const st = __BD.store; if (!st.state.construction.length) { st.state.resources.energy += 1e6; st.state.beacon.charge = 100; st.upgrade('commandCenter'); } Object.assign(st.state.items, { m1: 3, m5: 12, m15: 4, h1: 2, h3: 1, h8: 1, h24: 0 }); u.openSpeedUp({ kind: 'build', id: st.state.construction[0].id });"],
+  ['speedup research', "const st = __BD.store; if (st.researchJob()) { Object.assign(st.state.items, { m5: 2, h1: 1 }); u.openSpeedUp({ kind: 'research' }); }"],
+  ['speedup lane', "const st = __BD.store; st.state.resources.energy += 1e5; st.train('sentinel', 5); u.openSpeedUp({ kind: 'lane', id: 'sentinel' });"],
+  ['panel upgrading', "const st = __BD.store; if (!st.state.construction.length) { st.state.resources.energy += 1e6; st.upgrade('commandCenter'); } __BD.base().select(st.state.construction[0].id === 'beacon' ? 'beacon' : st.state.construction[0].id);"],
   ['reset modal', "u.openModal({ title: 'Reset all progress?', body: 'This permanently erases your base, troops, squads, leaders, gear and all resources. This can\\u2019t be undone.', buttons: [{ label: 'Cancel' }, { label: 'Reset', style: 'danger' }] });"],
 ];

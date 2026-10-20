@@ -1,5 +1,6 @@
 import { PALETTE, TROOP_CLASSES, TROOP_IDS, INFIRMARY, SQUADS, TROOPS, TIERS } from '../../config.js';
 import { store } from '../../state/store.js';
+import { openSpeedUp } from '../speedups.js';
 import { text, button, fmt, fmtClock } from '../widgets.js';
 import { header, card, portrait, sectionHeader } from './common.js';
 import { troopFigure } from './troops.js';
@@ -87,8 +88,13 @@ export function renderInfirmary(ui, c, a, api) {
     c.add([lbl, tm, x]);
     return { ry, lbl, tm, x };
   });
-  const foot = text(ui, 36, qy + qh - 60, '', 17, PALETTE.textDim, { wordWrap: { width: 460 } });
+  const foot = text(ui, 36, qy + qh - 60, '', 17, PALETTE.textDim, { wordWrap: { width: 300 } });
   c.add(foot);
+  // stage 10: finish the whole healing queue (free in the last 5 min, else Beacon Cores)
+  const hJob = { kind: 'heal' };
+  const fin = button(ui, 418, qy + qh - 42, 150, 62, 'Finish', () => openSpeedUp(ui, hJob), { style: 'cyan', size: 21 });
+  fin.chip = 'finish-heal';
+  c.add(fin);
   c.add(button(ui, 598, qy + qh - 42, 190, 62, 'Barracks', () => api.go('troops'), { style: 'cyan', size: 21 }));
   api.dyn(() => {
     const q = store.state.infirmary.queue;
@@ -106,6 +112,7 @@ export function renderInfirmary(ui, c, a, api) {
       drawBar(qg, 40, r.ry + 30, 556, 10, k === 0 ? Math.min(1, b.progress / ut) : 0, { color: 0x2fd27a });
     });
     if (q.length > rowsUi.length) qg.fillStyle(0, 0); // (more batches than rows: they're still processed in order)
-    foot.setText(`Fallen in battle: ${store.state.hunt.dead}. Dead troops are gone; retrain them in the Barracks. Healing keeps going offline.`);
+    { const free = store.canFreeFinish(hJob); fin.setVisible(q.length > 0).setLabel(free ? 'Free' : 'Finish').setStyle(free ? 'gold' : 'cyan'); }
+    foot.setText(`Fallen: ${store.state.hunt.dead} (gone; retrain them in the Barracks). Healing runs offline.`);
   });
 }

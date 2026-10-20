@@ -18,6 +18,8 @@ import { RESEARCH } from '../config.js';
 import { createWorldHud, openReport, openReports } from '../ui/world.js';
 import { createRightColumn, refreshRightColumn, openMissions, openEvents, openExchange } from '../ui/stage8.js';
 import { audio } from '../audio/audio.js';
+import { openSpeedUp, openItems, finishNow, speedupIconKey } from '../ui/speedups.js';
+import { SPEEDUPS } from '../config.js';
 import { Tutorial } from '../tutorial/tutorial.js';
 import { PERF, AUDIO, TUTORIAL } from '../config.js';
 
@@ -131,6 +133,8 @@ export default class UIScene extends Phaser.Scene {
   openMissions() { return openMissions(this); }
   openEvents() { return openEvents(this); }
   openExchange() { return openExchange(this); }
+  openSpeedUp(job) { return openSpeedUp(this, job); }
+  openItems() { return openItems(this); }
   openReportsList() { return openReports(this); }
   openReportOf(r) { return openReport(this, r); }
 
@@ -434,11 +438,12 @@ export default class UIScene extends Phaser.Scene {
       }
     };
     const j = s.construction[0];
-    setQ(this.queueBtns.builder, j ? fmtClock(j.total - j.progress) : 'Idle', j ? j.progress / j.total : null, j ? PALETTE.textGold : PALETTE.textDim);
+    const fr = (left) => (left <= SPEEDUPS.freeSeconds ? 'FREE' : fmtClock(left));
+    setQ(this.queueBtns.builder, j ? fr(j.total - j.progress) : 'Idle', j ? j.progress / j.total : null, j ? PALETTE.textGold : PALETTE.textDim);
     const rj = store.researchJob();
     if (!store.archiveUnlocked()) setQ(this.queueBtns.research, `Beacon ${BUILDINGS.archive.unlockBeacon}`, null, PALETTE.textDim);
     else if (!store.isPlaced('archive')) setQ(this.queueBtns.research, 'Build!', null, PALETTE.textGold);
-    else setQ(this.queueBtns.research, rj ? fmtClock(store.researchLeft()) : 'Idle', rj ? rj.progress / rj.total : null, rj ? '#d9c2ff' : PALETTE.textDim);
+    else setQ(this.queueBtns.research, rj ? fr(store.researchLeft()) : 'Idle', rj ? rj.progress / rj.total : null, rj ? '#d9c2ff' : PALETTE.textDim);
     const q = store.queuedUnits();
     setQ(this.queueBtns.training, q ? fmtClock(store.trainingSecondsLeft()) : 'Idle', null, q ? '#a8c8ff' : PALETTE.textDim);
     const hq = s.infirmary.queue.length;
@@ -663,7 +668,9 @@ export default class UIScene extends Phaser.Scene {
       { id: 'leaders', label: 'Leaders', icon: 'nav-troops', go: () => this.openScreen('armory', { armoryTab: 'leaders' }) },
       { id: 'research', label: 'Research', icon: 'more-research', go: () => { this.closeModal(); this.onQueue('research'); } },
       { id: 'events', label: 'Events', icon: 'more-events', badge: () => store.eventsReady(), go: () => openEvents(this) },
+      { id: 'items', label: 'Items', icon: 'su-icon-h1', go: () => openItems(this) },
     ];
+    speedupIconKey(this, 'h1');
     const c = this.add.container(0, 0).setDepth(100);
     const bottom = H - NAV_H - HERO_RISE - 10;
     const cols = 3, tw = 208, th = 156, gap = 14;
@@ -1118,7 +1125,12 @@ export default class UIScene extends Phaser.Scene {
     this.pMove = button(this, x + w - 22 - 77, by, 154, 80, 'Move', () => {
       const id = this.panelOpenFor; this.closePanel(false); this.game.events.emit('ui:move', id);
     }, { style: 'ghost', size: 27 });
-    c.add([close, this.pUpgrade, this.pMove, this.pOpen]);
+    // stage 10: while upgrading, Upgrade becomes Speed Up (gold Free in the last 5 min) and a small
+    // Cancel sits at the end of the countdown row
+    this.pCancel = button(this, x + w - 22 - 70, y + 388, 140, 50, 'Cancel', () => this.doCancelUpgrade(), { style: 'danger', size: 20 });
+    this.pCancel.chip = 'panel-cancel';
+    this.pCancel.setVisible(false);
+    c.add([close, this.pUpgrade, this.pMove, this.pOpen, this.pCancel]);
   }
 
   openPanel(id) {
@@ -1253,15 +1265,20 @@ export default class UIScene extends Phaser.Scene {
     bar.clear();
     if (info.job) {
       // countdown bar in the panel; the button becomes Cancel (full refund)
-      const pct = Math.min(1, info.job.progress / info.job.total), bx = r.x + 22, by = r.y + 400, bw = r.width - 44;
+      const pct = Math.min(1, info.job.progress / info.job.total), bx = r.x + 22, by = r.y + 404, bw = r.width - 44 - 160;
       drawBar(bar, bx, by, bw, 18, pct, { color: SKIN.gold });
       this.pJob.setText(`Upgrading to Lv ${info.job.toLevel}  ·  ${fmtClock(info.job.total - info.job.progress)} left`).setVisible(true);
       this.pCost.setVisible(false); this.pTime.setVisible(false);
       this.pCap.setVisible(false);
-      this.pUpgrade.setLabel(`Cancel  ·  refund ${fmt(info.job.cost)}`).setStyle('danger').setEnabled(true);
+      const free = store.canFreeFinish({ kind: 'build', id });
+      this.pUpgrade.setLabel(free ? 'Free' : 'Speed Up').setStyle(free ? 'gold' : 'cyan').setEnabled(true);
+      this.pUpgrade.chip = free ? 'panel-free' : 'panel-speedup';
+      this.pCancel.setVisible(true);
       this.pReason.setText('');
     } else {
       this.pJob.setVisible(false);
+      this.pCancel.setVisible(false);
+      this.pUpgrade.chip = 'panel-upgrade';
       this.pCost.setVisible(true); this.pTime.setVisible(true);
       this.pCap.setVisible(true);
       const costStr = `${fmt(info.cost)} Energy${id === BEACON.id ? ' + full charge' : ''}`;
@@ -1274,12 +1291,21 @@ export default class UIScene extends Phaser.Scene {
     }
   }
 
+  doCancelUpgrade() {
+    const id = this.panelOpenFor;
+    if (!id || !store.constructionJob(id)) return;
+    const c = store.cancelUpgrade(id);
+    if (c.ok) this.toast(`Upgrade cancelled. Refunded ${fmt(c.refund)} Energy`);
+    this.refreshPanel();
+  }
+
   doUpgrade() {
     const id = this.panelOpenFor;
     if (!id) return;
     if (store.constructionJob(id)) {
-      const c = store.cancelUpgrade(id);
-      if (c.ok) this.toast(`Upgrade cancelled. Refunded ${fmt(c.refund)} Energy`);
+      const job = { kind: 'build', id };
+      if (store.canFreeFinish(job)) finishNow(this, job, () => this.refreshPanel());
+      else { this.closePanel(true); openSpeedUp(this, job); return; }
     } else {
       const r = store.upgrade(id);
       if (!r.ok) this.toast(r.reason);

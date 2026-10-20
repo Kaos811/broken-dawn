@@ -6,6 +6,7 @@ import { text, button, fmt, fmtDuration } from './widgets.js';
 import { SKIN, drawBar, drawCard } from './skin.js';
 import { sectionHeader } from './kit.js';
 import { audio } from '../audio/audio.js';
+import { speedupIconKey } from './speedups.js';
 import { TOP_H } from './layout.js';
 
 const testFlags = () => (typeof window !== 'undefined' ? window.__BD_TEST ?? {} : {});
@@ -247,7 +248,7 @@ export function openEvents(ui) {
 export function openExchange(ui) {
   const reopen = () => openExchange(ui);
   const c = ui.openOverlay({
-    title: 'Rift Exchange', h: 940,
+    title: 'Rift Exchange', h: 210 + store.shopItems().length * 96 + 96,
     build: (c, r) => {
       const x0 = r.x + 28, xr = r.x + r.w - 28, g = ui.add.graphics(); c.add(g);
       const stall = ui.add.image(xr - 70, r.y + 130, 'exchange'); stall.setScale(120 / stall.height); c.add(stall);
@@ -258,24 +259,26 @@ export function openExchange(ui) {
       c.tick = () => rf.setText(`Stock refreshes in ${fmtShort(store.shopRefreshIn())} (Monday 00:00 UTC)`);
       c.tick();
       store.shopItems().forEach((it, k) => {
-        const y = r.y + 210 + k * 110, w = r.w - 56;
-        drawCard(g, x0, y, w, 98, { accent: it.id === 'core' ? 0xff4f7b : null, cut: 8 });
-        const icon = { energy: 'hud-energy', alloy: 'hud-alloy', stamina: 'hud-stamina', gear: 'hud-shards', core: 'hud-core' }[it.id];
-        const im = ui.add.image(x0 + 48, y + 49, icon); im.setScale(60 / Math.max(im.width, im.height)); c.add(im);
-        c.add(text(ui, x0 + 92, y + 12, it.name, 21, it.id === 'core' ? '#ff9ab3' : PALETTE.text, { fontStyle: 'bold' }));
-        c.add(text(ui, x0 + 92, y + 42, fmtBundle(it.reward), 16, PALETTE.textDim));
-        c.add(text(ui, x0 + 92, y + 66, `${it.left}/${it.limit} left this week`, 15, it.left ? PALETTE.textDim : '#ff8a95'));
-        const b = button(ui, xr - 84, y + 49, 150, 58, `${it.price}`, () => {
+        const y = r.y + 210 + k * 96, w = r.w - 56;
+        drawCard(g, x0, y, w, 86, { accent: it.id === 'core' ? 0xff4f7b : null, cut: 8 });
+        const su = Object.keys(it.reward).find((k2) => k2.startsWith('su_'));
+        const icon = su ? speedupIconKey(ui, su.slice(3)) : { energy: 'hud-energy', alloy: 'hud-alloy', stamina: 'hud-stamina', gear: 'hud-shards', core: 'hud-core' }[it.id];
+        const im = ui.add.image(x0 + 48, y + 43, icon); im.setScale(60 / Math.max(im.width, im.height)); c.add(im);
+        c.add(text(ui, x0 + 92, y + 8, it.name, 21, it.id === 'core' ? '#ff9ab3' : PALETTE.text, { fontStyle: 'bold' }));
+        c.add(text(ui, x0 + 92, y + 36, fmtBundle(it.reward), 16, PALETTE.textDim));
+        c.add(text(ui, x0 + 92, y + 59, `${it.left}/${it.limit} left this week`, 15, it.left ? PALETTE.textDim : '#ff8a95'));
+        const b = button(ui, xr - 84, y + 43, 150, 58, `${it.price}`, () => {
           const res = store.buyShopItem(it.id);
           if (res.ok) { audio.play('reward'); ui.toast(`Bought: ${fmtBundle(res.reward)}`, 2000); } else ui.toast(res.reason);
           reopen();
         }, { style: it.can ? 'gold' : 'ghost', size: 22 });
         b.setEnabled(it.can); b.chip = `shop-${it.id}`; c.add(b);
-        const bm = ui.add.image(xr - 128, y + 49, 'rift-mark'); bm.setScale(28 / bm.width); c.add(bm);
+        const bm = ui.add.image(xr - 128, y + 43, 'rift-mark'); bm.setScale(28 / bm.width); c.add(bm);
       });
-      const back = button(ui, r.x + r.w / 2 - 130, r.y + r.h - 54, 240, 70, 'Events', () => openEvents(ui), { style: 'ghost', size: 24 });
+      const fy = Math.max(r.y + r.h - 54, r.y + 210 + store.shopItems().length * 96 + 50);
+      const back = button(ui, r.x + r.w / 2 - 130, fy, 240, 70, 'Events', () => openEvents(ui), { style: 'ghost', size: 24 });
       back.chip = 'ex-back'; c.add(back);
-      c.add(button(ui, r.x + r.w / 2 + 130, r.y + r.h - 54, 240, 70, 'Close', () => ui.closeModal(true), { style: 'ghost', size: 24 }));
+      c.add(button(ui, r.x + r.w / 2 + 130, fy, 240, 70, 'Close', () => ui.closeModal(true), { style: 'ghost', size: 24 }));
     },
     closeLabel: null,
   });

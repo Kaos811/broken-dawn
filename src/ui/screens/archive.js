@@ -5,6 +5,7 @@ import { text, button, fmt, fmtClock } from '../widgets.js';
 import { drawBar, diamond } from '../skin.js';
 import { header, card, tabRow } from './common.js';
 import { researchEffectText } from '../../systems/research.js';
+import { openSpeedUp, finishNow } from '../speedups.js';
 
 const costText = (c) => [c.energy ? `${fmt(c.energy)} E` : null, c.alloy ? `${fmt(c.alloy)} Alloy` : null, c.shards ? `${fmt(c.shards)} Shards` : null].filter(Boolean).join(' · ');
 
@@ -17,11 +18,18 @@ export function renderArchive(ui, c, a, api, st) {
   const py = a.y + 82, ph = 118;
   card(ui, c, 16, py, 688, ph, { accent: 0xb07cff, stroke: 0x6b5a8f });
   const pTitle = text(ui, 36, py + 14, '', 24, '#d6c2ff', { fontStyle: 'bold' });
-  const pSub = text(ui, 36, py + 48, '', 16, PALETTE.textDim, { wordWrap: { width: 470 } });
-  const pTime = text(ui, 520, py + 16, '', 20, PALETTE.textCyan).setOrigin(1, 0);
+  const pSub = text(ui, 36, py + 46, '', 16, PALETTE.textDim, { wordWrap: { width: 350 }, maxLines: 2 });
+  const pTime = text(ui, 384, py + ph - 38, '', 19, PALETTE.textCyan).setOrigin(1, 0);
   const pBar = ui.add.graphics();
   c.add([pTitle, pSub, pTime, pBar]);
-  const cancel = button(ui, 618, py + ph / 2, 150, 56, 'Cancel', () => {
+  // stage 10: Speed Up (gold Free in the last 5 min) next to Cancel
+  const job = { kind: 'research' };
+  const speed = button(ui, 476, py + ph / 2, 150, 60, 'Speed Up', () => {
+    if (store.canFreeFinish(job)) finishNow(ui, job); else openSpeedUp(ui, job);
+  }, { style: 'cyan', size: 21 });
+  speed.chip = 'speedup-research';
+  c.add(speed);
+  const cancel = button(ui, 628, py + ph / 2, 128, 60, 'Cancel', () => {
     const r = store.cancelResearch();
     if (r.ok) api.toast(`Research cancelled. Refunded ${costText(r.refund)}`);
   }, { style: 'danger', size: 20 });
@@ -33,10 +41,12 @@ export function renderArchive(ui, c, a, api, st) {
     if (!store.archiveUnlocked()) {
       pTitle.setText('The Archive is sealed');
       pSub.setText(`Raise the Beacon to Lv ${BUILDINGS.archive.unlockBeacon} to decode its signal. Until then there's no research and the Archive adds no Power.`);
-      pTime.setText(''); cancel.setVisible(false);
+      pTime.setText(''); cancel.setVisible(false); speed.setVisible(false);
       return;
     }
     cancel.setVisible(!!j).setEnabled(!!j);
+    speed.setVisible(!!j);
+    if (j) { const free = store.canFreeFinish(job); speed.setLabel(free ? 'Free' : 'Speed Up').setStyle(free ? 'gold' : 'cyan'); speed.chip = free ? 'free-research' : 'speedup-research'; }
     if (!j) {
       pTitle.setText('No research running');
       pSub.setText('Pick a project below. One runs at a time, online and offline. Cancel refunds it in full.');
@@ -44,10 +54,11 @@ export function renderArchive(ui, c, a, api, st) {
       return;
     }
     const R = RESEARCH[j.id];
-    pTitle.setText(`${R.name}${R.maxLevel === 1 ? '' : `  →  Lv ${j.toLevel}`}`);
+    pTitle.setScale(1).setText(`${R.name}${R.maxLevel === 1 ? '' : `  →  Lv ${j.toLevel}`}`);
+    if (pTitle.width > 360) pTitle.setScale(360 / pTitle.width);
     pSub.setText(`${R.desc}  ·  paid ${costText(j.cost)}`);
     pTime.setText(`${fmtClock(j.total - j.progress)} left`);
-    const bx = 36, by = py + ph - 26, bw = 480;
+    const bx = 36, by = py + ph - 26, bw = 220;
     drawBar(pBar, bx, by - 2, bw, 16, Math.min(1, j.progress / j.total), { color: 0xb07cff });
   });
 

@@ -2,6 +2,7 @@ import { PALETTE, TROOP_CLASSES, CLASS_IDS, BARRACKS, TIERS, MAX_TIER, PROMOTE, 
 import { store } from '../../state/store.js';
 import { text, button, fmt, fmtClock } from '../widgets.js';
 import { header, card, portrait, tapZone, sectionHeader, statLine, priceTag } from './common.js';
+import { openSpeedUp } from '../speedups.js';
 import { SKIN, drawBar, glyph, diamond, lerpC, TIER_RIM, TIER_TINT } from '../skin.js';
 
 const costStr = (e, a) => `${fmt(e)} Energy${a ? ` + ${fmt(a)} Alloy` : ''}`;
@@ -106,6 +107,9 @@ export function renderTroops(ui, c, a, api, st) {
     }, { style: 'ghost', size: 18 });
     xb.cancelLane = cls;
     c.add(xb);
+    // stage 10: tap a busy lane to finish it (free in the last 5 min, else Beacon Cores)
+    const laneJob = { kind: 'lane', id: cls };
+    const lz = tapZone(ui, c, rx, ly, x + w - 16 - rx - 58, 52, () => { if (store.lane(cls).count) openSpeedUp(ui, laneJob); }, `lane-${cls}`);
     const by = y + CH - 40;
     const mk = (bx, bw, label, n, style) => {
       const b = button(ui, bx + bw / 2, by, bw, 58, label, () => {
@@ -142,7 +146,8 @@ export function renderTroops(ui, c, a, api, st) {
       if (l.count) {
         const what = l.from ? `${TROOP_CLASSES[l.from].name} → ${job.name}` : job.plural;
         laneL.setText(`Training ${l.count}/${cap()} ${what}`).setColor(PALETTE.text);
-        laneT.setText(`next ${fmtClock(store.laneNextSeconds(cls))}  ·  all ${fmtClock(store.laneSecondsLeft(cls))}`);
+        const free = store.canFreeFinish(laneJob);
+        laneT.setText(`next ${fmtClock(store.laneNextSeconds(cls))}  ·  all ${fmtClock(store.laneSecondsLeft(cls))}`).setColor(free ? PALETTE.textGold : PALETTE.textCyan);
         drawBar(laneG, rx + 10, ly + 32, bw, 12, Math.min(1, l.progress / ut), { color: l.from ? SKIN.cyan : SKIN.teal });
         laneG.fillStyle(SKIN.gold, 0.75).fillRect(rx + 12, ly + 46, (bw - 4) * Math.min(1, l.count / cap()), 3);
       } else {
@@ -152,6 +157,7 @@ export function renderTroops(ui, c, a, api, st) {
       }
       { const room = bw - (laneT.text ? laneT.width + 16 : 0); laneL.setScale(laneL.width > room ? Math.max(0.6, room / laneL.width) : 1); }
       xb.setEnabled(l.count > 0);
+      lz.zoneDisabled = !l.count;
       const m = store.maxTrainable(t);
       b1.setEnabled(store.trainInfo(t, 1).can);
       b10.setEnabled(store.trainInfo(t, 10).can);
@@ -160,7 +166,7 @@ export function renderTroops(ui, c, a, api, st) {
     });
   });
   const fy = a.y + 90 + 3 * (CH + GAP);
-  c.add(text(ui, 32, fy + 2, `Lanes run in parallel, offline too (8h cap)  ·  one job per lane  ·  Lv ${lv + 1}: ${BARRACKS.laneCapacity(lv + 1)}/lane`, 15, PALETTE.textDim, { wordWrap: { width: 656 } }));
+  c.add(text(ui, 32, fy + 2, `Lanes run in parallel, offline too (8h cap)  ·  tap a lane to finish it (free when the timer is gold, 5 min or less)  ·  Lv ${lv + 1}: ${BARRACKS.laneCapacity(lv + 1)}/lane`, 15, PALETTE.textDim, { wordWrap: { width: 656 } }));
 }
 
 // Promotion picker: x1 / x10 / Max of the ready troops one tier below.
