@@ -78,7 +78,7 @@ Upgrading any building (Command Center, Barracks, Armory **and the Beacon**) now
 
 | Upgrade to | Lv 2 | Lv 3 | Lv 4 | Lv 5 | Lv 6 | Lv 7 | Lv 8 | Lv 9 | Lv 10 | Lv 11 | Lv 12 | Lv 13 | Lv 14 | Lv 15–20 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Time | 10 s | 30 s | 2 min | 6 min | 20 min | 1 h | 3 h | 4h 48m | 7h 41m | 12h 17m | 19h 40m | 31h 28m | 50h 20m | 72 h (cap) |
+| Time | 10 s | 30 s | 2 min | 6 min | 20 min | 1 h | 3 h | 4h 48m | 7h 41m | 12h 17m | 19h 40m | 31h 27m | 50h 20m | 72 h (cap) |
 
 (Stage 10: ×1.6 per level after Lv 8, no single upgrade over 72 h. Before that it was ×3 per level, which made Lv 12+ take weeks. Rapid Assembly research still shortens all of these.)
 

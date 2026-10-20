@@ -1822,7 +1822,7 @@ async function runStage6(url, label, takeShots) {
     const qIdle = await ev(() => Object.values(__BD.ui().queueBtns).map((b) => b.timer.text));
     check('queue buttons idle on a new game (Research waits for Beacon Lv 3)', qIdle.join('|') === 'Idle|Beacon 3|Idle|Idle', qIdle.join('|'));
     await ev(() => { const st = __BD.store; st.state.resources.energy = 500; st.upgrade('barracks'); });
-    check('Builder button shows the running upgrade timer', await waitTrue(() => /^\d+:\d\d$/.test(__BD.ui().queueBtns.builder.timer.text)));
+    check('Builder button shows the running upgrade timer', await waitTrue(() => /^(\d+:\d\d|FREE)$/.test(__BD.ui().queueBtns.builder.timer.text)));
     await click(null, { meta: 'q-builder' });
     check('tapping Builder opens the building that is under construction', await waitTrue(() => __BD.ui().panelOpenFor === 'barracks'));
     check('construction scaffolding + progress bar drawn on the art sprite', await ev(() => !!__BD.base().scaffolds?.barracks?.visible && __BD.base().buildTexts?.barracks?.visible));
@@ -2629,7 +2629,7 @@ async function runStage8(url, label, takeShots) {
     check('Exchange: 1 Beacon Core for 200 Marks, limit 1 a week', shop.a && shop.dc === 1 && shop.b === 'Sold out this week', JSON.stringify(shop));
     check('Exchange: Energy crates limit 5 a week, Marks spent (400 − 200 − 5×20 = 100)', shop.e.filter(Boolean).length === 5 && !shop.e[5] && shop.marks === 100 && shop.wk === '2026-W44', JSON.stringify(shop));
     await pev(() => __BD.ui().openExchange()); await sleep(400);
-    check('Exchange screen lists 5 items with Mark prices; sold-out items disabled', await pev(() => { const c = __BD.controls().filter((c) => /^shop-/.test(c.meta)); return c.length === 5 && !c.find((x) => x.meta === 'shop-core').enabled && c.find((x) => x.meta === 'shop-alloy').enabled; }));
+    check('Exchange screen lists 8 items (incl. 3 speed-ups) with Mark prices; sold-out items disabled', await pev(() => { const c = __BD.controls().filter((c) => /^shop-/.test(c.meta)); return c.length === 8 && !c.find((x) => x.meta === 'shop-core').enabled && c.find((x) => x.meta === 'shop-alloy').enabled; }));
     await shot('stage8-exchange.png', page);
     await pev(() => __BD.ui().closeModal(true));
     const wk = await pev((t) => { const st = __BD.store; st.clock = () => t; st.eventsTick(); st.state.events.marks = 250; return { week: st.state.events.shop.week, core: st.buyShopItem('core').ok }; }, U(2026, 10, 2, 1));
