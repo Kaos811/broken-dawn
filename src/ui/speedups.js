@@ -36,7 +36,7 @@ export function speedupIconKey(ui, id) {
 
 // icon + its short label ("1h") on a dark plate at the bottom
 export function speedupIcon(ui, c, id, x, y, size) {
-  const im = ui.add.image(x, y, speedupIconKey(ui, id)); im.setScale(size / 96);
+  const im = ui.add.image(x, y - (ui.textures.exists(`item-su-${id}`) ? size * 0.06 : 0), speedupIconKey(ui, id)); im.setScale(size / Math.max(im.width, im.height));
   const t = text(ui, x, y + size * 0.36, itemDef(id).short, Math.round(size * 0.24), '#fff3cf', { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 4 }).setOrigin(0.5);
   c.add([im, t]);
   return { im, t };

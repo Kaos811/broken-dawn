@@ -687,9 +687,8 @@ export default class UIScene extends Phaser.Scene {
       { id: 'leaders', label: 'Leaders', icon: this.leadersIconKey(), go: () => this.openScreen('armory', { armoryTab: 'leaders' }) },
       { id: 'research', label: 'Research', icon: 'more-research', go: () => { this.closeModal(); this.onQueue('research'); } },
       { id: 'events', label: 'Events', icon: 'more-events', badge: () => store.eventsReady(), go: () => openEvents(this) },
-      { id: 'items', label: 'Items', icon: 'su-icon-h1', go: () => openItems(this) },
+      { id: 'items', label: 'Items', icon: speedupIconKey(this, 'h1'), go: () => openItems(this) },
     ];
-    speedupIconKey(this, 'h1');
     const c = this.add.container(0, 0).setDepth(100);
     const bottom = H - NAV_H - HERO_RISE - 10;
     const cols = 3, tw = 208, th = 156, gap = 14;
