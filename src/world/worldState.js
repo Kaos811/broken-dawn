@@ -39,7 +39,7 @@ export function spawnCreature(world, ring, forceLevel = null) {
     }
     const r = Math.sqrt(lo * lo + rng() * (hi * hi - lo * lo));
     // outer zones gather on your side of the Citadel so low levels stay a short march away
-    const spread = ring === 0 ? (forceLevel != null ? 0.3 : 1.1) : ring === 1 ? 1.5 : 2;
+    const spread = ring === 0 ? (forceLevel === 1 ? 0.12 : forceLevel != null ? 0.3 : 1.1) : ring === 1 ? 1.5 : 2;
     const a = BASE_ANGLE + (rng() - 0.5) * Math.PI * spread;
     const x = Math.round(CENTER.x + Math.cos(a) * r), y = Math.round(CENTER.y + Math.sin(a) * r);
     if (x < 1 || y < 1 || x > WORLD.size - 2 || y > WORLD.size - 2) continue;

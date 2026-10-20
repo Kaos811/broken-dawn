@@ -111,6 +111,11 @@ export const STEPS = [
         const d = (p.x - W / 2) ** 2 + (p.y - ui.scale.height / 2) ** 2;
         if (!best || d < best.d) best = { x: p.x, y: p.y, r: 46, d };
       }
+      if (!best && !ws.tutFocused) { // stage 12: nothing attackable on screen: pan to the nearest one once
+        const home = store.world.homeOf('local');
+        const near = store.creatures().filter((e) => e.level <= maxL && !e.busy).sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0];
+        if (near) { ws.tutFocused = true; ws.focusTile(near.x, near.y); }
+      }
       return best;
     },
   },
