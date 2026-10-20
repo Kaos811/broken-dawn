@@ -493,6 +493,14 @@ Plan: `docs/stage10-plan.md`. Config: `SPEEDUPS` in `src/config.js`; logic: `src
 - **Icons:** clean placeholder hourglass tiles drawn in the gold/teal kit (`su-icon-<id>`). Painted art can replace them by loading textures `item-su-m1` … `item-su-h24`.
 - Tests: `ONLY=10 npm test`; layout of the picker, Items, lane finish and the upgrading panel is in the stage 9c 6-size check. Screens: `screens/stage10-*.png` (`node tools/shots10.mjs`).
 
+### Stage 10b: general inventory + item art pipeline
+
+- **More → Items** is now a general inventory with three tabs: **Speed-ups**, **Resources** and **Other**. Empty sections show a clean empty state.
+- **Item registry:** `src/systems/items.js` (`ITEMS`, `ITEM_SECTIONS`). Each entry has `{ id, section, name, short, icon, desc, use? }`. Counts live in `state.items[id]`, and rewards pay `it_<id>: n` (speed-ups still accept `su_<id>`). A `use(store, n)` handler makes an item usable from the Items screen (`store.useItem(id, n)`).
+- **Resource bundles:** 1K/10K Energy, 1K/10K Alloy, 100/1K Shards. Sources: the 7-day login streak (1× 10K Energy + 1× 1K Alloy) and Beacon level rewards (1× 1K Energy, plus 1× 100 Shards every 5th level).
+- **More → Leaders** has its own crest icon (`more-leaders`; placeholder gold laurel and star until painted art lands).
+- **Painted icons:** put `su-m1 … su-h24`, `res-energy|alloy|shards` and `more-leaders` images (magenta background) in `/workspace/artwork/raw/`, then run `python3 tools/process_stage10b.py`. That writes `src/art/ui/item-su-*.webp`, `item-res-*.webp` and `more-leaders.webp`, which load automatically and replace the placeholders.
+
 ## Code layout
 
 ```

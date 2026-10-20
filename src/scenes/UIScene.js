@@ -134,7 +134,7 @@ export default class UIScene extends Phaser.Scene {
   openEvents() { return openEvents(this); }
   openExchange() { return openExchange(this); }
   openSpeedUp(job) { return openSpeedUp(this, job); }
-  openItems() { return openItems(this); }
+  openItems(section) { return openItems(this, section); }
   openReportsList() { return openReports(this); }
   openReportOf(r) { return openReport(this, r); }
 

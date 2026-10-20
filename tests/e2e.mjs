@@ -2195,7 +2195,7 @@ async function runStage10(url, label) {
     const want = [10, 30, 120, 360, 1200, 3600, 10800, 17280, 27648, 44237, 70779, 113246, 181194, 259200, 259200, 259200, 259200, 259200, 259200];
     check('build times: Lv2–8 unchanged (10 s … 3 h), then x1.6 per level, no upgrade over 72 h', JSON.stringify(bt) === JSON.stringify(want), JSON.stringify(bt));
     const fresh = await ev(() => ({ v: __BD.store.state.version, items: __BD.store.state.items, gift: __BD.store.state.firstUpgradeGift }));
-    check('new game: save v11 with an empty speed-up inventory (7 kinds)', fresh.v === 11 && Object.keys(fresh.items).join() === 'm1,m5,m15,h1,h3,h8,h24' && Object.values(fresh.items).every((n) => n === 0) && fresh.gift === false, JSON.stringify(fresh));
+    check('new game: save v11 with an empty inventory (7 speed-up kinds + resource bundles)', fresh.v === 11 && Object.keys(fresh.items).slice(0, 7).join() === 'm1,m5,m15,h1,h3,h8,h24' && Object.keys(fresh.items).some((k) => k.startsWith('res_')) && Object.values(fresh.items).every((n) => n === 0) && fresh.gift === false, JSON.stringify(fresh));
 
     // --- costs + auto plan (pure)
     const cc = await ev(() => { const S = __BD.store; const c = (x) => S.finishCoreCost.call({ jobLeft: () => x, itemsAllowed: () => true }, {}); const q = (x) => S.finishCoreCost.call({ jobLeft: () => x, itemsAllowed: () => false }, {}); return [c(1), c(300), c(301), c(3600), c(8 * 3600), q(30), q(600), q(601)]; });
@@ -2293,6 +2293,25 @@ async function runStage10(url, label) {
     await page.reload(); await ready();
     const mg = await ev(() => { const s = __BD.store.state; return { v: s.version, j: s.construction[0], r: s.research.job, items: Object.values(s.items).every((n) => n === 0), gift: s.firstUpgradeGift, bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v10') || '{}').version }; });
     check('v10 save migrates to v11: running upgrade keeps its progress, its total shrinks to the new 70,779 s; research untouched; empty items; backup kept', mg.v === 11 && mg.j?.id === 'barracks' && mg.j.total === 70779 && mg.j.progress >= 5000 && mg.j.progress < 5100 && mg.r?.progress >= 600 && mg.items && mg.gift === true && mg.bk === 10, JSON.stringify(mg));
+    // --- stage 10b: item registry + Resources section
+    const rb = await ev(() => { const st = __BD.store; const e0 = st.state.resources.energy, a0 = st.state.resources.alloy; st.grantBundle({ it_res_energy_1k: 3, it_res_alloy_10k: 1, it_bogus: 5 }); const u1 = st.useItem('res_energy_1k', 2); const bad = st.useItem('res_energy_1k', 5); const ua = st.useItem('res_alloy_10k', 1); const su = st.useItem('h1', 1); return { e: st.state.resources.energy - e0, a: st.state.resources.alloy - a0, left: st.itemCount('res_energy_1k'), u1: u1.ok, bad: bad.reason, ua: ua.ok, su: su.reason, sec: st.sectionCount('resource'), bogus: 'bogus' in st.state.items }; });
+    check('resource bundles: granted via it_<id>, Use adds the resources (2× 1K Energy, 1× 10K Alloy), overuse refused, unknown ids ignored, speed-ups not usable here', rb.e === 2000 && rb.a === 10000 && rb.left === 1 && rb.u1 && /Not enough/.test(rb.bad) && rb.ua && /timer/.test(rb.su) && rb.sec === 1 && !rb.bogus, JSON.stringify(rb));
+    const streak = await ev(() => { const st = __BD.store; const i0 = { ...st.state.items }; st.state.daily = { lastDay: st.dayIndex() - 1, streak: 13 }; st.claimDaily(); return { e: st.state.items.res_energy_10k - i0.res_energy_10k, a: st.state.items.res_alloy_1k - i0.res_alloy_1k }; });
+    check('7-day login streak also pays 1× 10K Energy + 1× 1K Alloy bundles', streak.e === 1 && streak.a === 1, JSON.stringify(streak));
+    await ev(() => __BD.ui().openItems('resource')); await sleep(500);
+    const iu = await ev(() => __BD.controls().find((c) => c.meta === 'item-use-res_energy_1k'));
+    const ie0 = await ev(() => __BD.store.state.resources.energy);
+    if (iu) await page.mouse.click(iu.x, iu.y);
+    await sleep(500);
+    check('Items → Resources: Use button adds 1,000 Energy', !!iu && (await ev(() => __BD.store.state.resources.energy)) - ie0 >= 1000 && (await ev(() => __BD.store.state.resources.energy)) - ie0 < 1010);
+    await ev(() => { for (const k of Object.keys(__BD.store.state.items)) if (k.startsWith('res_')) __BD.store.state.items[k] = 0; __BD.ui().openItems('resource'); }); await sleep(400);
+    const em = await ev(() => ({ t: __BD.ui().modal?.list.some((o) => o.text === 'No resource bundles'), issues: __BD.layoutIssues() }));
+    check('empty Resources section shows a clean empty state', em.t && em.issues.length === 0, JSON.stringify(em));
+    await ev(() => __BD.ui().openItems('other')); await sleep(400);
+    check('Other section: empty state for future items', await ev(() => __BD.ui().modal?.list.some((o) => o.text === 'Nothing here yet')));
+    await ev(() => { __BD.ui().closeModal(true); __BD.ui().openMore(); }); await sleep(400);
+    check('More → Leaders uses its own crest icon (not the Troops icon)', await ev(() => { const im = __BD.ui().modal.list.filter((o) => o.type === 'Image').map((o) => o.texture.key); return im.some((k) => /^more-leaders/.test(k)) && !im.includes('nav-troops'); }));
+    await ev(() => __BD.ui().closeModal(true));
     check('stage 10: no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
     await ctx.close();
   } finally { await browser.close(); }
