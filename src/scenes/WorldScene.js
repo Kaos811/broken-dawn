@@ -240,16 +240,16 @@ export default class WorldScene extends Phaser.Scene {
         const lf = LAIR_OF[e.type] ?? 'lair-crater';
         const lair = this.add.image(p.x, p.y + 4, 'wmap', lf).setOrigin(0.5, 0.6).setDepth(0.9);
         lair.setScale(LAIR_W[lf] / lair.width);
-        const img = this.add.image(p.x, p.y - 14, `cr-${e.type}`).setScale(elite ? 0.95 : 0.72).setDepth(10 + p.y / SIZE);
+        const img = this.add.image(p.x, p.y - 14, `cr-${e.type}`).setScale(elite ? 0.8 : 0.6).setDepth(10 + p.y / SIZE);
         const badge = this.plaque(p.x, p.y + 30, '', { size: 22, depth: 11, min: 0.33 });
         const lock = this.add.text(p.x + 30, p.y - 54, '', { fontSize: '1px' }).setVisible(false); // lock shown in the plaque
         s = { img, badge, lock, lair, e };
         this.crSprites.set(e.id, s);
-        if (!force) { img.setAlpha(0).setScale(0.2); this.tweens.add({ targets: img, alpha: 1, scale: elite ? 0.95 : 0.72, duration: 500, ease: 'Back.easeOut' }); }
+        if (!force) { img.setAlpha(0).setScale(0.2); this.tweens.add({ targets: img, alpha: 1, scale: elite ? 0.8 : 0.6, duration: 500, ease: 'Back.easeOut' }); }
       }
       const locked = e.level > maxL;
       s.badge.setText(`${locked ? '🔒 ' : ''}Lv ${e.level}${e.busy ? ' ⚔' : ''}`).setColor(locked ? '#9aa6b8' : (CREATURES[e.type].elite ? '#ffb347' : '#ffffff'));
-      s.img.setTint(locked ? 0x777777 : 0xffffff);
+      s.img.setTint(locked ? 0x9a9a9a : 0xffffff);
     }
     for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
   }

@@ -82,7 +82,7 @@ const DRAW = {
 };
 
 export function makeCreatureTextures(scene) {
-  for (const id of Object.keys(CREATURES)) canvasTex(scene, `cr-${id}`, SZ, SZ, (ctx, w, h) => DRAW[id](ctx, w, h));
+  for (const id of Object.keys(CREATURES)) if (!scene.textures.exists(`cr-${id}`)) canvasTex(scene, `cr-${id}`, SZ, SZ, (ctx, w, h) => DRAW[id](ctx, w, h));
   // player's base on the world map: platform + Beacon
   canvasTex(scene, 'world-base', 200, 200, (ctx, w) => {
     const c = w / 2;

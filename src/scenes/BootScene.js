@@ -3,6 +3,12 @@ import { UI_ART_URLS } from '../art/uiArt.js';
 import worldAtlasPng from '../art/world/world-atlas.webp';
 import worldAtlasJson from '../art/world/world-atlas.json?url';
 import worldGround from '../art/world/world-ground.webp';
+import crScuttler from '../art/world/creatures/cr-scuttler.webp';
+import crDrone from '../art/world/creatures/cr-drone.webp';
+import crHound from '../art/world/creatures/cr-hound.webp';
+import crGolem from '../art/world/creatures/cr-golem.webp';
+import crWyrm from '../art/world/creatures/cr-wyrm.webp';
+const CR_ART = { scuttler: crScuttler, drone: crDrone, hound: crHound, golem: crGolem, wyrm: crWyrm };
 import Phaser from 'phaser';
 import { PALETTE, MAP } from '../config.js';
 import { makePortraitTextures } from '../art/portraits.js';
@@ -70,6 +76,7 @@ export default class BootScene extends Phaser.Scene {
     // stage 12: painted world map (one atlas for every prop + base tier + citadel, tools/process_stage12.py)
     this.load.atlas('wmap', worldAtlasPng, worldAtlasJson);
     this.load.image('wmap-ground', worldGround);
+    for (const [id, url] of Object.entries(CR_ART)) this.load.image(`cr-${id}`, url); // painted map monsters (256x256)
   }
 
   create() {

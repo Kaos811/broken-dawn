@@ -149,7 +149,7 @@ function openSheet(ui, hud, id, barY) {
   const g = ui.add.graphics();
   panelBg(g, x, y, w, sh, { accent: T.color, stroke: T.color });
   c.add([g, ui.add.rectangle(x + w / 2, y + sh / 2, w, sh, 0, 0.001).setInteractive()]);
-  const art = ui.add.image(x + 80, y + 82, `cr-${e.type}`).setScale(T.elite ? 1.15 : 1); c.add(art);
+  const art = ui.add.image(x + 80, y + 82, `cr-${e.type}`).setScale(T.elite ? 0.58 : 0.5); c.add(art);
   c.add(text(ui, x + 160, y + 18, `Lv ${e.level}  ·  ${T.name}`, 30, T.hex, { fontStyle: 'bold' }));
   if (T.elite) c.add(text(ui, x + 160, y + 56, 'ELITE', 16, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
   c.add(text(ui, x + 160, y + (T.elite ? 80 : 60), T.desc, 17, PALETTE.textDim, { wordWrap: { width: w - 230 }, lineSpacing: 3 }));
@@ -207,7 +207,7 @@ export function openReport(ui, report) {
       for (let k = 0; k < 5; k++) g.lineStyle(2, col, 0.8 - k * 0.15).lineBetween(cx - 60 - (k + 1) * 50, r.y + 52, cx - 60 - k * 50, r.y + 52).lineBetween(cx + 60 + k * 50, r.y + 52, cx + 60 + (k + 1) * 50, r.y + 52);
       c.add(text(ui, cx, r.y + 22, report.win ? 'VICTORY' : 'DEFEAT', 52, report.win ? '#ffd27f' : '#ff6f7b', { fontStyle: 'bold', letterSpacing: 6, stroke: report.win ? '#2e1e06' : '#2a0508', strokeThickness: 6 }).setOrigin(0.5, 0));
       c.add(text(ui, cx, r.y + 86, `${sqName(report.squadId)} vs Lv ${report.target.level} ${T.name}  ·  ${report.rounds} rounds${report.auto ? '  ·  Auto' : ''}${report.offline ? '  ·  while away' : ''}`, 18, PALETTE.textDim).setOrigin(0.5, 0));
-      c.add(ui.add.image(r.x + 90, r.y + 210, `cr-${report.target.type}`).setScale(0.9));
+      c.add(ui.add.image(r.x + 90, r.y + 210, `cr-${report.target.type}`).setScale(0.45));
       c.add(text(ui, r.x + 170, r.y + 150, 'COMBAT POWER', 16, PALETTE.textDim, { letterSpacing: 2 }));
       c.add(text(ui, r.x + 170, r.y + 172, `${fmt(report.power.squad)}  vs  ${fmt(report.power.enemy)}`, 34, PALETTE.text, { fontStyle: 'bold' }));
       c.add(text(ui, r.x + 170, r.y + 218, `${ago(report.at)}`, 16, PALETTE.textDim));
@@ -268,7 +268,7 @@ export function openReports(ui) {
       list.forEach((rep, i) => {
         const y = r.y + 112 + i * 74, x = r.x + 24, w = r.w - 48;
         const g = ui.add.graphics(); drawCard(g, x, y, w, 66, { state: rep.win ? 'ready' : 'normal', accent: rep.win ? PALETTE.gold : 0xff4d5e, cut: 8 }); c.add(g);
-        c.add(ui.add.image(x + 36, y + 33, `cr-${rep.target.type}`).setScale(0.45));
+        c.add(ui.add.image(x + 36, y + 33, `cr-${rep.target.type}`).setScale(0.225));
         c.add(text(ui, x + 76, y + 8, `${rep.win ? 'Victory' : 'Defeat'} · ${sqName(rep.squadId)} vs Lv ${rep.target.level} ${CREATURES[rep.target.type].short}`, 20, rep.win ? PALETTE.textGold : '#ff8a95', { fontStyle: 'bold' }));
         const lootTxt = rep.win ? `+${fmt(rep.loot.energy)} E  +${fmt(rep.loot.alloy)} A  +${fmt(rep.loot.shards)} S${rep.loot.cores ? `  +${rep.loot.cores} Core` : ''}` : 'no loot';
         c.add(text(ui, x + 76, y + 38, `${lootTxt}  ·  −${rep.casualties.total ?? 0} troops  ·  ${rep.auto ? 'auto · ' : ''}${ago(rep.at)}`, 15, PALETTE.textDim));
@@ -315,7 +315,7 @@ export function playReplay(ui, report) {
       const key = k === 'A' ? `portrait-${l.type}` : `cr-${l.type}`;
       for (let j = 0; j < n; j++) {
         const img = ui.add.image(70 + j * 60, y, key);
-        img.setScale(k === 'A' ? 0.25 : (l.count === 1 ? 0.9 : 0.42));
+        img.setScale(k === 'A' ? 0.25 : (l.count === 1 ? 0.45 : 0.21));
         if (k === 'D' && l.count === 1) img.x = W / 2;
         icons.push(img);
       }
