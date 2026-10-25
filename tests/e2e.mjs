@@ -1181,7 +1181,8 @@ async function runStage3(url, label, takeShots) {
     check('offline Auto: 3 h away = 40 + 30 regen stamina → 7 marches (fought or still out), simulated on load', off.hu?.fights >= 5 && off.hu.fights + off.out === 7 && off.fights - k0 === off.hu.fights && off.stamina < 10 && off.offlineReports === off.hu.fights, JSON.stringify(off));
     check('offline hunt summary (wins, loot, wounded/fallen) is reported', off.hu.wins >= 1 && off.hu.energy > 0 && off.hu.wounded + off.hu.dead > 0);
     await ev(() => { const st = __BD.store; st.state.hunt.stamina = 200; st.save(); });
-    await editSave('s.lastSaved = Date.now() - arg; s.hunt.stamina = 0; s.hunt.staminaCarry = 0;', 30 * 3600e3);
+    // only regen-funded hunts count: drop marches already out from before the save edit
+    await editSave('s.lastSaved = Date.now() - arg; s.hunt.stamina = 0; s.hunt.staminaCarry = 0; if (s.world) s.world.marches = [];', 30 * 3600e3);
     const cap8 = await ev(() => ({ secs: __BD.store.offlineReport.seconds, fights: __BD.store.offlineReport.hunts.fights }));
     check('offline Auto is capped at 8 h (≤ 80 stamina regen → ≤ 8 hunts)', cap8.secs === 8 * 3600 && cap8.fights <= 8 && cap8.fights >= 1, JSON.stringify(cap8));
     await ev(() => __BD.store.setAuto(false));
