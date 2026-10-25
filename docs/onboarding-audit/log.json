@@ -1,0 +1,586 @@
+{
+ "log": [
+  {
+   "f": "01-first-load.png",
+   "note": "what a brand-new player sees",
+   "t": 1,
+   "tut": {
+    "active": true,
+    "step": 0,
+    "visible": true,
+    "title": "The Beacon",
+    "target": {
+     "x": 360,
+     "y": 626
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 60.86498333333269,
+    "shards": 500.00240273148154,
+    "alloy": 0.01729966666665474,
+    "cores": 10
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "02-step1-0.png",
+   "note": "The Beacon",
+   "t": 3,
+   "tut": {
+    "active": true,
+    "step": 0,
+    "visible": true,
+    "title": "The Beacon",
+    "target": {
+     "x": 360,
+     "y": 626
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 61.31472333333267,
+    "shards": 500.00365200925944,
+    "alloy": 0.026294466666654744,
+    "cores": 10
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "03-step2-0.png",
+   "note": "Build & upgrade",
+   "t": 6,
+   "tut": {
+    "active": true,
+    "step": 1,
+    "visible": true,
+    "title": "Build & upgrade",
+    "target": {
+     "x": 357,
+     "y": 493
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 61.79790999999933,
+    "shards": 500.0049941944448,
+    "alloy": 0.03595819999998806,
+    "cores": 10
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "04-step3-0.png",
+   "note": "Train troops",
+   "t": 10,
+   "tut": {
+    "active": true,
+    "step": 2,
+    "visible": true,
+    "title": "Train troops",
+    "target": {
+     "x": 212,
+     "y": 1198
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 302.34992,
+    "shards": 500.01450275000036,
+    "alloy": 0.1044197999999881,
+    "cores": 10
+   },
+   "constr": [
+    "barracks 7s"
+   ],
+   "badges": 36,
+   "modal": false,
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "05-step4-0.png",
+   "note": "Form a squad",
+   "t": 15,
+   "tut": {
+    "active": true,
+    "step": 3,
+    "visible": true,
+    "title": "Form a squad",
+    "target": {
+     "x": 579,
+     "y": 1198
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 245.8479799999998,
+    "shards": 500.02421958333355,
+    "alloy": 0.17438099999998805,
+    "cores": 10
+   },
+   "constr": [
+    "barracks 4s"
+   ],
+   "badges": 36,
+   "modal": false,
+   "screen": "troops",
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "06-step4-3.png",
+   "note": "Form a squad",
+   "t": 19,
+   "tut": {
+    "active": true,
+    "step": 3,
+    "visible": true,
+    "title": "Form a squad",
+    "target": {
+     "x": 532,
+     "y": 1066
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 249.88776999999988,
+    "shards": 500.03544122222246,
+    "alloy": 0.25517679999998794,
+    "cores": 10
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "screen": "squads",
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "07-step5-0.png",
+   "note": "Recruit",
+   "t": 22,
+   "tut": {
+    "active": true,
+    "step": 4,
+    "visible": true,
+    "title": "Recruit",
+    "target": {
+     "x": 485,
+     "y": 1198
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 252.7043599999999,
+    "shards": 500.0432650833336,
+    "alloy": 0.31150859999998787,
+    "cores": 10
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "screen": "squads",
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "08-step6-0.png",
+   "note": "Hunt on the World map",
+   "t": 26,
+   "tut": {
+    "active": true,
+    "step": 5,
+    "visible": false,
+    "title": "Hunt on the World map",
+    "target": {
+     "x": 186,
+     "y": 692
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 256.46743,
+    "shards": 500.0537180555557,
+    "alloy": 0.38676999999998807,
+    "cores": 9
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "screen": "armory",
+   "world": false,
+   "nTexts": 20
+  },
+  {
+   "f": "09-step6-reveal.png",
+   "note": "recruit reveal",
+   "t": 27,
+   "tut": {
+    "active": true,
+    "step": 5,
+    "visible": false,
+    "title": "Hunt on the World map",
+    "target": {
+     "x": 186,
+     "y": 692
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 257.6239699999999,
+    "shards": 500.0569306666668,
+    "alloy": 0.4099007999999881,
+    "cores": 9
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "screen": "armory",
+   "world": false,
+   "nTexts": 20
+  },
+  {
+   "f": "10-step6-3.png",
+   "note": "Hunt on the World map",
+   "t": 32,
+   "tut": {
+    "active": true,
+    "step": 5,
+    "visible": true,
+    "title": "Hunt on the World map",
+    "target": {
+     "x": 190,
+     "y": 826
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 261.11211999999966,
+    "shards": 500.0666199722224,
+    "alloy": 0.4796637999999881,
+    "cores": 9
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": true,
+   "nTexts": 0
+  },
+  {
+   "f": "11-march.png",
+   "note": "squad marching",
+   "t": 33,
+   "tut": {
+    "active": true,
+    "step": 6,
+    "visible": true,
+    "title": "Infirmary",
+    "target": {
+     "x": 360,
+     "y": 1178
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 262.7552899999997,
+    "shards": 500.07118433333346,
+    "alloy": 0.5125271999999883,
+    "cores": 9
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": true,
+   "nTexts": 0
+  },
+  {
+   "f": "12-battle-report.png",
+   "note": "first battle result",
+   "t": 35,
+   "tut": {
+    "active": true,
+    "step": 6,
+    "visible": false,
+    "title": "Infirmary",
+    "target": {
+     "x": 360,
+     "y": 1178
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 301.06034999999974,
+    "shards": 510.0942539444449,
+    "alloy": 4.678628399999988,
+    "cores": 10
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": true,
+   "world": true,
+   "nTexts": 0
+  },
+  {
+   "f": "13-step7-0.png",
+   "note": "Infirmary",
+   "t": 38,
+   "tut": {
+    "active": true,
+    "step": 6,
+    "visible": true,
+    "title": "Infirmary",
+    "target": {
+     "x": 360,
+     "y": 1178
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 303.49520999999964,
+    "shards": 510.10101744444484,
+    "alloy": 4.727325599999985,
+    "cores": 10
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": true,
+   "nTexts": 0
+  },
+  {
+   "f": "14-step8-0.png",
+   "note": "Research",
+   "t": 42,
+   "tut": {
+    "active": true,
+    "step": 7,
+    "visible": true,
+    "title": "Research",
+    "target": {
+     "x": 360,
+     "y": 1178
+    },
+    "cardY": 186
+   },
+   "res": {
+    "energy": 307.4183999999995,
+    "shards": 510.11191519444463,
+    "alloy": 4.805789399999985,
+    "cores": 10
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "screen": "infirmary",
+   "world": false,
+   "nTexts": 17
+  },
+  {
+   "f": "15-tutorial-done.png",
+   "note": "after tutorial",
+   "t": 45,
+   "tut": {
+    "active": false,
+    "step": 8,
+    "visible": false,
+    "title": "Research",
+    "target": {
+     "x": 52,
+     "y": 394
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 810.3816399999994,
+    "shards": 510.1201464166667,
+    "alloy": 4.865054199999983,
+    "cores": 12
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "16-post-base.png",
+   "note": "post tutorial tab",
+   "t": 46,
+   "tut": {
+    "active": false,
+    "step": 8,
+    "visible": false,
+    "title": "Research",
+    "target": {
+     "x": 52,
+     "y": 394
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 811.3898999999986,
+    "shards": 510.12294713888883,
+    "alloy": 4.885219399999984,
+    "cores": 12
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "17-post-troops.png",
+   "note": "post tutorial tab",
+   "t": 47,
+   "tut": {
+    "active": false,
+    "step": 8,
+    "visible": false,
+    "title": "Research",
+    "target": {
+     "x": 52,
+     "y": 394
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 812.5298299999989,
+    "shards": 510.12611361111095,
+    "alloy": 4.908017999999986,
+    "cores": 12
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "screen": "troops",
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "18-post-armory.png",
+   "note": "post tutorial tab",
+   "t": 49,
+   "tut": {
+    "active": false,
+    "step": 8,
+    "visible": false,
+    "title": "Research",
+    "target": {
+     "x": 52,
+     "y": 394
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 814.0413999999993,
+    "shards": 510.1303124166666,
+    "alloy": 4.938249399999987,
+    "cores": 12
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "screen": "armory",
+   "world": false,
+   "nTexts": 19
+  },
+  {
+   "f": "19-post-squads.png",
+   "note": "post tutorial tab",
+   "t": 50,
+   "tut": {
+    "active": false,
+    "step": 8,
+    "visible": false,
+    "title": "Research",
+    "target": {
+     "x": 52,
+     "y": 394
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 815.2313799999995,
+    "shards": 510.1336179166664,
+    "alloy": 4.962048999999987,
+    "cores": 12
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "screen": "squads",
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "20-post-more.png",
+   "note": "post tutorial tab",
+   "t": 52,
+   "tut": {
+    "active": false,
+    "step": 8,
+    "visible": false,
+    "title": "Research",
+    "target": {
+     "x": 52,
+     "y": 394
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 816.6263599999997,
+    "shards": 510.1374928611109,
+    "alloy": 4.989948599999987,
+    "cores": 12
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": true,
+   "screen": "squads",
+   "world": false,
+   "nTexts": 0
+  },
+  {
+   "f": "21-after-10min-sim.png",
+   "note": "10 simulated minutes idle",
+   "t": 53,
+   "tut": {
+    "active": false,
+    "step": 8,
+    "visible": false,
+    "title": "Research",
+    "target": {
+     "x": 52,
+     "y": 394
+    },
+    "cardY": 936
+   },
+   "res": {
+    "energy": 1418.1512399999992,
+    "shards": 511.8083953055652,
+    "alloy": 17.020446199999736,
+    "cores": 12
+   },
+   "constr": [],
+   "badges": 36,
+   "modal": false,
+   "world": false,
+   "nTexts": 0
+  }
+ ],
+ "errs": []
+}
