@@ -2474,8 +2474,9 @@ async function runStage8(url, label, takeShots) {
   console.log(`\n=== stage 8 · ${label}: ${url}`);
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const open = async (viewport, test = {}) => {
-    const { timezoneId, ...tflags } = test;
+    const { timezoneId, clockAt, ...tflags } = test;
     const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, hasTouch: true, isMobile: true, ...(timezoneId ? { timezoneId } : {}) });
+    if (clockAt) await ctx.clock.install({ time: clockAt }); // fixed start time so date-dependent checks don't depend on today
     await ctx.addInitScript((t) => { window.__BD_TEST = { noTutorial: true, ...t }; }, tflags);
     const page = await ctx.newPage();
     const errors = [];
@@ -2650,7 +2651,7 @@ async function runStage8(url, label, takeShots) {
     await ctx.close();
 
     // ---------------------------------------------------------------- B. Events
-    ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { timezoneId: 'America/Denver' }));
+    ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { timezoneId: 'America/Denver', clockAt: Date.UTC(2026, 9, 18, 12) })); // Sun before W43
     const pev = (fn, arg) => page.evaluate(fn, arg);
     const U = (y, mo, d, h = 0) => Date.UTC(y, mo, d, h);
     const sched = await pev((T) => {
