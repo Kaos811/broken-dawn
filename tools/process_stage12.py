@@ -32,20 +32,77 @@ def up(img, scale):
     return img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
 
 pieces = {}
-# --- player-base tiers (Lv1-4 outpost, 5-9 walled camp, 10-14 fortress, 15-19 citadel, 20 stronghold)
-pieces['base-t1'] = up(feather(crop((22, 580, 108, 660))), 1.5)
-pieces['base-t2'] = up(feather(crop((128, 180, 218, 258))), 1.6)
-pieces['base-t3'] = up(feather(crop((352, 836, 448, 940))), 1.6)
-pieces['base-t4'] = up(feather(crop((372, 150, 448, 248)), top_soft=True), 1.8)
-pieces['base-t5'] = up(feather(crop((182, 648, 290, 760)), top_soft=True), 1.8)
-# --- Rift Citadel with its golden dome rings
-pieces['citadel'] = feather(crop((70, 255, 510, 640)), fx=0.5, fy=0.5, soft=0.12)
-# --- crystal nodes, lairs, ruins
+# ---- stage 12b: painted sheets on flat magenta (keyed + despilled, sliced by bounding box, native resolution)
+import sys; sys.path.insert(0, '/workspace/artwork')
+import numpy as np
+from collections import deque
+from keylib import key
+def components(mask):
+    H, W = mask.shape; lab = np.zeros((H, W), int); n = 0; boxes = []
+    for y in range(H):
+        for x in range(W):
+            if mask[y, x] and not lab[y, x]:
+                n += 1; q = deque([(y, x)]); lab[y, x] = n; ys = [y, y]; xs = [x, x]; cnt = 0
+                while q:
+                    cy, cx = q.popleft(); cnt += 1
+                    ys[0] = min(ys[0], cy); ys[1] = max(ys[1], cy); xs[0] = min(xs[0], cx); xs[1] = max(xs[1], cx)
+                    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        ny, nx = cy + dy, cx + dx
+                        if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not lab[ny, nx]: lab[ny, nx] = n; q.append((ny, nx))
+                boxes.append((cnt, n, xs[0], ys[0], xs[1], ys[1]))
+    return lab, boxes
+def slice_sheet(path, count, order, bridge=1):
+    a = np.asarray(key(Image.open(path).convert('RGB'), enclosed=True, gold=False, enc_res=40, enc_k=0.55)).copy()
+    S = 4
+    small = a[::S, ::S, 3] > 60
+    if bridge > 1: small = np.asarray(Image.fromarray((small * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(bridge))) > 0  # bridge thin flag poles
+    lab, boxes = components(small)
+    big = sorted([b for b in boxes if b[0] > 150], key=lambda b: -b[0])[:count]
+    big.sort(key=order)
+    out = []
+    for b in big:
+        _, n, x0, y0, x1, y1 = b
+        X0, Y0, X1, Y1 = max(0, x0 * S), max(0, y0 * S), min(a.shape[1], (x1 + 1) * S), min(a.shape[0], (y1 + 1) * S)
+        crop = a[Y0:Y1, X0:X1].copy()
+        others = np.isin(lab, [o[1] for o in big if o[1] != n])
+        om = np.kron(others, np.ones((S, S), bool))[:a.shape[0], :a.shape[1]][Y0:Y1, X0:X1]
+        crop[om, 3] = 0
+        im2 = Image.fromarray(crop, 'RGBA')
+        bb = im2.getchannel('A').point(lambda v: 255 if v > 20 else 0).getbbox()
+        out.append(im2.crop((max(0, bb[0] - 3), max(0, bb[1] - 3), min(im2.width, bb[2] + 3), min(im2.height, bb[3] + 3))))
+    return out
+def split_flag(img):
+    """White flag cloth -> its own layer (tinted in game); the base keeps the pole."""
+    a = np.asarray(img).astype(np.int16)
+    mn, mx = a[..., :3].min(2), a[..., :3].max(2)
+    H = a.shape[0]
+    cloth = (mn > 175) & (mx - mn < 45) & (a[..., 3] > 30)
+    cloth[int(H * 0.45):] = False  # flags sit on top
+    lab, boxes = components(cloth)  # keep only the flag (largest white blob), not spire highlights
+    if boxes: cloth = lab == max(boxes)[1]
+    cm = np.asarray(Image.fromarray((cloth * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3))) > 0
+    soft = cm & (mn > 120) & (mx - mn < 60)  # anti-aliased cloth edge
+    flag = np.zeros_like(a); base = a.copy()
+    lum = a[..., :3].mean(2)
+    flag[..., :3] = np.clip(lum * 1.08, 0, 255)[..., None]; flag[..., 3] = np.where(soft, a[..., 3], 0)
+    base[..., 3] = np.where(soft, 0, a[..., 3])
+    return Image.fromarray(base.astype(np.uint8), 'RGBA'), Image.fromarray(flag.astype(np.uint8), 'RGBA')
+
+RAW = '/workspace/artwork/raw/'
+tiers = slice_sheet(RAW + 'world-base-tiers.jpg', 5, lambda b: b[2], bridge=3)
+for i, t in enumerate(tiers):
+    base_l, flag_l = split_flag(t)
+    pieces[f'base-t{i + 1}'] = base_l; pieces[f'flag-t{i + 1}'] = flag_l
+a_cl = slice_sheet(RAW + 'world-citadel-lairs.jpg', 5, lambda b: (-(b[4] - b[2]) * (b[5] - b[3]) > -1))  # any order
+a_cl.sort(key=lambda im: -im.width * im.height)
+pieces['citadel'] = a_cl[0]
+# the 4 lairs: rebuild order by their position on the sheet (top-left, top-right, bottom-left, bottom-right)
+lairs = slice_sheet(RAW + 'world-citadel-lairs.jpg', 5, lambda b: (b[2] < 120, (b[3] + b[5]) / 2 > 72, b[2]))[:4]
+for k, im2 in zip(['lair-burrow', 'lair-roost', 'lair-nest', 'lair-tower'], lairs): pieces[k] = im2
+# concept crops still used as decor (crystal nodes, rubble ruins, a crater)
 for i, b in enumerate([(12, 505, 68, 572), (352, 660, 428, 728), (218, 876, 278, 938), (486, 150, 528, 198)]):
     pieces[f'crystal-{i + 1}'] = up(feather(crop(b), soft=0.3), 1.4)
-pieces['lair-1'] = feather(crop((118, 28, 262, 142)), soft=0.3)
-pieces['lair-2'] = feather(crop((335, 58, 497, 152)), soft=0.25)
-pieces['lair-3'] = up(feather(crop((8, 698, 82, 772)), soft=0.3), 1.4)
+pieces['lair-crater'] = up(feather(crop((8, 698, 82, 772)), soft=0.3), 1.4)
 pieces['ruin-1'] = up(feather(crop((488, 812, 562, 882)), soft=0.3), 1.4)
 pieces['ruin-2'] = feather(crop((218, 798, 322, 872)), soft=0.3)
 pieces['ruin-3'] = up(feather(crop((18, 700, 82, 772)), soft=0.3), 1.2)
@@ -127,7 +184,6 @@ def crown():
     for x in (28, 48, 68): d.ellipse((x - 5, 46, x + 5, 56), fill=(60, 230, 210, 255))
     for (x, y) in [(8, 20), (48, 6), (88, 20)]: d.ellipse((x - 5, y - 5, x + 5, y + 5), fill=(255, 226, 150, 255))
     return img
-pieces['crown'] = crown()
 
 def glow(sz=128, col=(255, 200, 100)):
     img = Image.new('RGBA', (sz, sz), (0, 0, 0, 0))
@@ -156,16 +212,21 @@ for k in range(420):
 ground = ImageEnhance.Brightness(ground).enhance(0.92)
 ground.save(f'{OUT}/world-ground.webp', quality=82)
 
-# --- pack the atlas (simple shelf packer)
-items = sorted(pieces.items(), key=lambda kv: -kv[1].height)
+# --- pack the atlas (shelf packer, transparent margins trimmed; Phaser restores them via spriteSourceSize)
+trim = {}
+for k, p in pieces.items():
+    bb = p.getchannel('A').getbbox() or (0, 0, 1, 1)
+    trim[k] = (p.crop(bb), bb, p.size)
+items = sorted(trim.items(), key=lambda kv: -kv[1][0].height)
 AW, x, y, sh, frames = 2048, 0, 0, 0, {}
-for k, p in items:
+for k, (p, bb, full) in items:
     if x + p.width + 2 > AW: x, y, sh = 0, y + sh + 2, 0
     frames[k] = (x, y, p.width, p.height); x += p.width + 2; sh = max(sh, p.height)
 AH = 1 << math.ceil(math.log2(y + sh))
 atlas = Image.new('RGBA', (AW, AH), (0, 0, 0, 0))
-for k, p in items: atlas.paste(p, frames[k][:2])
+for k, (p, bb, full) in items: atlas.paste(p, frames[k][:2])
 atlas.save(f'{OUT}/world-atlas.webp', quality=88, method=6)
-json.dump({'frames': {k: {'frame': dict(zip('xywh', v)), 'rotated': False, 'trimmed': False, 'sourceSize': {'w': v[2], 'h': v[3]}, 'spriteSourceSize': {'x': 0, 'y': 0, 'w': v[2], 'h': v[3]}} for k, v in frames.items()},
+json.dump({'frames': {k: {'frame': dict(zip('xywh', v)), 'rotated': False, 'trimmed': True, 'sourceSize': {'w': trim[k][2][0], 'h': trim[k][2][1]},
+                          'spriteSourceSize': {'x': trim[k][1][0], 'y': trim[k][1][1], 'w': v[2], 'h': v[3]}} for k, v in frames.items()},
            'meta': {'image': 'world-atlas.webp', 'size': {'w': AW, 'h': AH}, 'scale': 1}}, open(f'{OUT}/world-atlas.json', 'w'), indent=0)
 print('atlas', AW, AH, len(frames), 'frames')

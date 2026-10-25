@@ -16,7 +16,10 @@ const tileToWorld = (x, y) => ({ x: (x + 0.5) * T, y: (y + 0.5) * T });
 // Perf: every prop is one image from the 'wmap' atlas (one batch) and off-screen props are culled.
 const TIER_FRAMES = ['base-t1', 'base-t2', 'base-t3', 'base-t4', 'base-t5'];
 const TIER_W = [180, 205, 230, 250, 275]; // on-map width in px (world units)
-const LAIR_OF = { hound: 'lair-3', scuttler: 'lair-1', drone: 'ruin-3', golem: 'ruin-1', wyrm: 'lair-2' };
+// stage 12b painted lairs: sandworm burrow, bat roost, crawler nest, crystal tower (+ a concept crater)
+const LAIR_OF = { wyrm: 'lair-burrow', drone: 'lair-roost', scuttler: 'lair-nest', golem: 'lair-tower', hound: 'lair-crater' };
+const LAIR_W = { 'lair-burrow': 190, 'lair-roost': 150, 'lair-nest': 140, 'lair-tower': 130, 'lair-crater': 120 };
+const FONT = 'system-ui, sans-serif';
 export default class WorldScene extends Phaser.Scene {
   constructor() { super('World'); }
 
@@ -26,6 +29,7 @@ export default class WorldScene extends Phaser.Scene {
     const cam = this.cameras.main;
     cam.setBackgroundColor(0x05070a);
     this.props = [];               // culled decor
+    this.labels = [];              // constant-size plaques
     this.drawWorld();
     this.baseSprites = new Map();  // id -> { parts[], tier, e }
     const b = tileToWorld(WORLD.baseX, WORLD.baseY);
@@ -56,6 +60,24 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   ui() { return this.scene.get('UI'); }
+
+  // Map labels are plaques (dark pill + bold text) that keep a constant on-screen size at any zoom;
+  // `min` hides them when zoomed out past it so the overview stays clean.
+  plaque(x, y, str, o = {}) {
+    const t = this.add.text(x, y, str, { fontFamily: FONT, fontSize: `${o.size ?? 24}px`, fontStyle: o.bold === false ? 'normal' : 'bold', color: o.color ?? '#f2ead8', backgroundColor: o.bg ?? '#07090dcc', padding: { x: 10, y: 4 }, align: 'center' })
+      .setOrigin(0.5, o.oy ?? 0).setDepth(o.depth ?? 41);
+    this.labels.push({ t, min: o.min ?? 0 });
+    this.fitLabel(this.labels[this.labels.length - 1]);
+    return t;
+  }
+  fitLabel(l, z = this.cameras.main.zoom) { l.t.setScale(1 / z); l.t.setVisible(z >= l.min && !l.t.hiddenByGame); }
+  fitLabels(force = false) {
+    const z = this.cameras.main.zoom;
+    if (!force && z === this.labelZoom) return;
+    this.labelZoom = z;
+    this.labels = this.labels.filter((l) => l.t.active);
+    for (const l of this.labels) this.fitLabel(l, z);
+  }
 
   prop(x, y, frame, o = {}) {
     const im = this.add.image(x, y, 'wmap', frame).setDepth(o.depth ?? 1);
@@ -119,17 +141,25 @@ export default class WorldScene extends Phaser.Scene {
       if (Math.hypot(x - c.x, y - c.y) < (WORLD.citadelRadius + 2) * T || !clear(x, y, 50)) continue;
       if (k < 0.32) this.prop(x, y, `crystal-${1 + Math.floor(rnd() * 4)}`, { w: 70 + rnd() * 50, depth: 2 + y / SIZE, flip: rnd() > 0.5 });
       else if (k < 0.62) this.prop(x, y, `ruin-${1 + Math.floor(rnd() * 3)}`, { w: 110 + rnd() * 90, depth: 0.8, alpha: 0.9, flip: rnd() > 0.5 });
-      else if (k < 0.72) this.prop(x, y, 'lair-1', { w: 150 + rnd() * 60, depth: 0.8, alpha: 0.75, flip: rnd() > 0.5 });
+      else if (k < 0.7) this.prop(x, y, 'lair-tower', { w: 110 + rnd() * 40, depth: 2 + y / SIZE, flip: rnd() > 0.5 });
     }
     // Rift Citadel + golden contested dome (LOCKED)
-    const cw = (WORLD.citadelRadius * 2 + 2.4) * T;
-    this.domeGlow = this.add.image(c.x, c.y, 'wmap', 'glow-gold').setBlendMode('ADD').setScale(cw * 1.15 / 128).setAlpha(0.5).setDepth(2.4);
-    this.citadel = this.add.image(c.x, c.y - 0.4 * T, 'wmap', 'citadel').setScale(cw / 550).setDepth(2.5);
-    this.coreGlow = this.add.image(c.x - 0.15 * T, c.y - 2.9 * T, 'wmap', 'glow-teal').setBlendMode('ADD').setScale(2.6).setDepth(2.6);
-    this.tweens.add({ targets: this.domeGlow, alpha: 0.85, scale: cw * 1.22 / 128, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    const cw = WORLD.citadelRadius * 2 * T;
+    this.domeGlow = this.add.image(c.x, c.y, 'wmap', 'glow-gold').setBlendMode('ADD').setScale(cw * 1.5 / 128).setAlpha(0.45).setDepth(2.4);
+    this.citadel = this.add.image(c.x, c.y - 0.6 * T, 'wmap', 'citadel').setDepth(2.5);
+    this.citadel.setScale(cw / this.citadel.width);
+    const ctop = this.citadel.y - this.citadel.displayHeight / 2;
+    this.coreGlow = this.add.image(c.x, ctop + this.citadel.displayHeight * 0.09, 'wmap', 'glow-teal').setBlendMode('ADD').setScale(2.4).setDepth(2.6);
+    // golden contested dome: crackling rings over the Citadel (static graphics, one draw)
+    const dome = this.add.graphics().setDepth(2.7).setBlendMode('ADD');
+    const R = (WORLD.citadelRadius + 0.6) * T;
+    for (let k = 0; k < 3; k++) { dome.lineStyle(18 - k * 5, PALETTE.gold, 0.08 + k * 0.05).strokeEllipse(c.x, c.y + 0.4 * T, R * 2, R * 1.25); }
+    dome.lineStyle(4, 0xffd27f, 0.75).strokeEllipse(c.x, c.y + 0.4 * T, R * 2, R * 1.25);
+    for (let k = 0; k < 4; k++) { const sx = 2 - k * 0.35; dome.lineStyle(3, 0xffd27f, 0.45).beginPath(); dome.arc(c.x, c.y + 0.4 * T, R, Math.PI * (1 + 0.04 * k), Math.PI * (2 - 0.04 * k), false); dome.strokePath(); dome.lineStyle(2, 0xffd27f, 0.3).strokeEllipse(c.x, c.y + 0.4 * T - R * 0.15 * k, R * sx * 0.98, R * 0.3 * (4 - k) / 2); }
+    this.tweens.add({ targets: [this.domeGlow, dome], alpha: { from: 0.45, to: 0.85 }, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.tweens.add({ targets: this.coreGlow, alpha: 0.4, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    this.add.text(c.x, c.y + WORLD.citadelRadius * T + 30, '🔒  RIFT CITADEL', { fontFamily: 'system-ui, sans-serif', fontSize: '34px', fontStyle: 'bold', color: PALETTE.textGold, stroke: '#05070a', strokeThickness: 7, letterSpacing: 3 }).setOrigin(0.5).setDepth(40);
-    this.add.text(c.x, c.y + WORLD.citadelRadius * T + 72, 'contested dome · alliance war coming', { fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffd27fcc', stroke: '#05070a', strokeThickness: 6 }).setOrigin(0.5).setDepth(40);
+    this.plaque(c.x, c.y + R * 0.62 + 20, '🔒 RIFT CITADEL', { size: 28, color: PALETTE.textGold, depth: 42 });
+    this.plaque(c.x, c.y + R * 0.62 + 20, 'contested dome · alliance war coming', { size: 19, bold: false, color: '#ffd27f', depth: 42, min: 0.4 }).setData('below', 1);
     // fog over the unexplored edges (+ darkness past the border): soft black falloff over the map's edge
     for (let t = -350; t <= SIZE + 350; t += 300) for (const [x, y] of [[t, -40], [t, SIZE + 40], [-40, t], [SIZE + 40, t]]) this.prop(x, y, 'shadow', { w: 900, alpha: 0.95, depth: 59 });
     for (let i = 0; i < 200; i++) {
@@ -141,6 +171,14 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   tierFor(level) { return baseTier(level); }
+  // second-line plaques sit right under their first line at the current zoom
+  stackLabels() {
+    for (const l of this.labels) {
+      const up = l.t.getData('stackUnder');
+      if (up?.active) l.t.setY(up.y + up.displayHeight + 2);
+      else if (l.t.getData('below')) { const top = this.labels.find((m) => m.t.text === '🔒 RIFT CITADEL'); if (top) l.t.setY(top.t.y + top.t.displayHeight + 2); }
+    }
+  }
 
   // Player bases (yours + neighbours) from the WorldService; rebuilt when the Beacon tier changes.
   syncBases() {
@@ -158,19 +196,18 @@ export default class WorldScene extends Phaser.Scene {
       const d = 3 + p.y / SIZE;
       parts.push(this.add.image(p.x, p.y + 30, 'wmap', 'shadow').setScale(TIER_W[tier] * 1.4 / 96, TIER_W[tier] * 0.6 / 96).setAlpha(0.7).setDepth(d - 0.01));
       if (local) { const gl = this.add.image(p.x, p.y, 'glow').setBlendMode('ADD').setScale(1.6).setAlpha(0.45).setDepth(d - 0.005); this.tweens.add({ targets: gl, scale: 2, alpha: 0.75, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); parts.push(gl); }
-      const img = this.add.image(p.x, p.y, 'wmap', TIER_FRAMES[tier]).setDepth(d);
+      const img = this.add.image(p.x, p.y, 'wmap', TIER_FRAMES[tier]).setOrigin(0.5, 0.62).setDepth(d);
       img.setScale(TIER_W[tier] / img.width);
-      if (tier === 4) img.setTint(0xfff0c8);
       parts.push(img);
-      const top = p.y - img.displayHeight * 0.3;
-      if (tier === 3) parts.push(this.add.image(p.x + 4, top + 22, 'wmap', 'glow-teal').setBlendMode('ADD').setScale(1.3).setDepth(d + 0.001));
-      if (tier === 4) parts.push(this.add.image(p.x, top - 8, 'wmap', 'crown').setScale(0.9).setDepth(d + 0.002));
-      const flag = this.add.image(p.x + img.displayWidth * 0.3, top + 4, 'wmap', 'banner').setOrigin(0.15, 1).setScale(0.85).setTint(color).setDepth(d + 0.003);
+      // the painted white flag, tinted to the alliance colour (yours: teal)
+      const flag = this.add.image(p.x, p.y, 'wmap', `flag-t${tier + 1}`).setOrigin(0.5, 0.62).setScale(img.scale).setTint(color).setDepth(d + 0.003);
       parts.push(flag);
-      this.tweens.add({ targets: flag, scaleX: 0.75, duration: 900 + (e.x * 37) % 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      const label = local ? 'YOUR BASE' : `${e.tag ? `[${e.tag}] ` : ''}${e.name}`;
-      parts.push(this.add.text(p.x, p.y + img.displayHeight / 2 + 4, label, { fontFamily: 'system-ui, sans-serif', fontSize: local ? '24px' : '19px', fontStyle: 'bold', color: local ? PALETTE.textGold : '#e8e1d0', stroke: '#05070a', strokeThickness: 6 }).setOrigin(0.5, 0).setDepth(41));
-      parts.push(this.add.text(p.x, p.y + img.displayHeight / 2 + (local ? 32 : 27), `Lv ${level} · ${BASE_TIERS[tier].name}`, { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: local ? '#7ff6ee' : '#a9b3c2', stroke: '#05070a', strokeThickness: 5 }).setOrigin(0.5, 0).setDepth(41));
+      const below = p.y + img.displayHeight * 0.38 + 2;
+      const name = local ? 'YOUR BASE' : `${e.tag ? `[${e.tag}] ` : ''}${e.name}`;
+      const nt = this.plaque(p.x, below, name, { size: local ? 26 : 22, color: local ? PALETTE.textGold : '#f2ead8', min: local ? 0 : 0.42, bg: local ? '#2a1b06dd' : '#07090dcc' });
+      const lt = this.plaque(p.x, below, `Lv ${level} · ${BASE_TIERS[tier].name}`, { size: 18, bold: false, color: local ? '#7ff6ee' : '#c3ccd8', min: 0.42 });
+      lt.setData('stackUnder', nt);
+      parts.push(nt, lt);
       s = { parts, tier, color, key, e };
       this.baseSprites.set(e.id, s);
     }
@@ -200,19 +237,19 @@ export default class WorldScene extends Phaser.Scene {
       const p = tileToWorld(e.x, e.y);
       if (!s) {
         const elite = !!CREATURES[e.type].elite;
-        const lair = this.add.image(p.x, p.y + 6, 'wmap', LAIR_OF[e.type] ?? 'lair-3').setAlpha(0.8).setDepth(0.9);
-        lair.setScale((elite ? 170 : 120) / lair.width);
+        const lf = LAIR_OF[e.type] ?? 'lair-crater';
+        const lair = this.add.image(p.x, p.y + 4, 'wmap', lf).setOrigin(0.5, 0.6).setDepth(0.9);
+        lair.setScale(LAIR_W[lf] / lair.width);
         const img = this.add.image(p.x, p.y - 14, `cr-${e.type}`).setScale(elite ? 0.95 : 0.72).setDepth(10 + p.y / SIZE);
-        const badge = this.add.text(p.x, p.y + 30, '', { fontFamily: 'system-ui, sans-serif', fontSize: '22px', fontStyle: 'bold', color: '#ffffff', stroke: '#05070a', strokeThickness: 6, align: 'center' }).setOrigin(0.5, 0).setDepth(11);
-        const lock = this.add.text(p.x + 30, p.y - 54, '🔒', { fontSize: '24px' }).setOrigin(0.5).setDepth(12);
+        const badge = this.plaque(p.x, p.y + 30, '', { size: 22, depth: 11, min: 0.33 });
+        const lock = this.add.text(p.x + 30, p.y - 54, '', { fontSize: '1px' }).setVisible(false); // lock shown in the plaque
         s = { img, badge, lock, lair, e };
         this.crSprites.set(e.id, s);
         if (!force) { img.setAlpha(0).setScale(0.2); this.tweens.add({ targets: img, alpha: 1, scale: elite ? 0.95 : 0.72, duration: 500, ease: 'Back.easeOut' }); }
       }
       const locked = e.level > maxL;
-      s.badge.setText(`Lv ${e.level}${e.busy ? ' ⚔' : ''}`).setColor(locked ? '#8a96a8' : (CREATURES[e.type].elite ? '#ffb347' : '#ffffff'));
+      s.badge.setText(`${locked ? '🔒 ' : ''}Lv ${e.level}${e.busy ? ' ⚔' : ''}`).setColor(locked ? '#9aa6b8' : (CREATURES[e.type].elite ? '#ffb347' : '#ffffff'));
       s.img.setTint(locked ? 0x777777 : 0xffffff);
-      s.lock.setVisible(locked);
     }
     for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
   }
@@ -237,7 +274,7 @@ export default class WorldScene extends Phaser.Scene {
       }
       let s = this.marchSprites.get(m.id);
       if (!s) {
-        s = { img: this.add.image(x, y, 'world-squad').setDepth(20), label: this.add.text(x, y - 46, '', { fontFamily: 'system-ui, sans-serif', fontSize: '22px', fontStyle: 'bold', color: '#3ff0ff', stroke: '#05070a', strokeThickness: 6 }).setOrigin(0.5, 1).setDepth(21) };
+        s = { img: this.add.image(x, y, 'world-squad').setDepth(20), label: this.plaque(x, y - 46, '', { size: 22, color: '#3ff0ff', depth: 21, oy: 1 }) };
         this.marchSprites.set(m.id, s);
       }
       const left = m.phase === 'out' ? m.travel - m.t : m.back - m.t;
@@ -355,6 +392,8 @@ export default class WorldScene extends Phaser.Scene {
 
   update() {
     this.cull();
+    this.fitLabels();
+    this.stackLabels();
     if (!this.lastSync || this.time.now - this.lastSync > 250) { this.lastSync = this.time.now; this.syncAll(); }
     this.drawMarches();
     this.drawSelection();
