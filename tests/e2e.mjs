@@ -2476,7 +2476,11 @@ async function runStage8(url, label, takeShots) {
   const open = async (viewport, test = {}) => {
     const { timezoneId, clockAt, ...tflags } = test;
     const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, hasTouch: true, isMobile: true, ...(timezoneId ? { timezoneId } : {}) });
-    if (clockAt) await ctx.clock.install({ time: clockAt }); // fixed start time so date-dependent checks don't depend on today
+    if (clockAt) await ctx.addInitScript((t0) => { // shift Date so date-dependent checks start at a fixed instant (timers stay real)
+      const off = t0 - Date.now(), RD = Date;
+      class FD extends RD { constructor(...a) { super(...(a.length ? a : [RD.now() + off])); } static now() { return RD.now() + off; } }
+      globalThis.Date = FD;
+    }, clockAt);
     await ctx.addInitScript((t) => { window.__BD_TEST = { noTutorial: true, ...t }; }, tflags);
     const page = await ctx.newPage();
     const errors = [];
