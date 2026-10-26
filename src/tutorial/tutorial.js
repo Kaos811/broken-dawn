@@ -81,7 +81,7 @@ export const STEPS = [
     body: "Commander, the Beacon is our last light. Tap it to wake it up.",
     done: (ui) => ui.panelOpenFor === BEACON.id,
     target: (ui) => goBase(ui) ?? (ui.panelOpenFor ? null : buildingPos(ui, BEACON.id)),
-    after: (ui) => { ui.scene.get('Base')?.relightFx?.(); ui.tutorial.celebrate({ art: 'ob-victory-banner', title: 'The Beacon burns again', sub: 'It makes Energy and charges your upgrades.', quick: true }); },
+    after: (ui) => { ui.closePanel?.(true); ui.scene.get('Base')?.relightFx?.(); ui.tutorial.celebrate({ art: 'ob-victory-banner', title: 'The Beacon burns again', sub: 'It makes Energy and charges your upgrades.', quick: true }); },
   },
   {
     id: 'rebuild', face: 'determined', title: 'Rebuild the Barracks',
@@ -319,7 +319,7 @@ export class Tutorial {
     const topY = TOP_H + 34, botY = H - NAV_H - HERO_RISE - this.cardH - 10;
     let y = topY;
     if (target && target.y < H * 0.5) y = botY;
-    if (this.ui.panel.visible && y === botY) y = topY;
+    if (this.ui.panel.visible && y === botY) y = target ? Math.min(target.y + 90, botY) : topY; // keep clear of the open panel and the target
     if (this.ui.worldMode && y === botY) y = botY - 96;
     this.rect.y = y;
     this.card.y = y;
@@ -471,8 +471,8 @@ export class Tutorial {
       for (let k = 0; k < STORY.length; k++) dots.fillStyle(k === i ? PALETTE.gold : 0x4a5260, 1).fillCircle(W / 2 + (k - 1) * 28, H - 66, k === i ? 8 : 6);
       audio.play('tap');
     };
-    c.next = () => { if (c.page + 1 >= STORY.length) this.finishStory(); else show(c.page + 1); };
-    bg.on('pointerup', () => c.next());
+    c.advance = () => { if (c.page + 1 >= STORY.length) this.finishStory(); else show(c.page + 1); };
+    bg.on('pointerup', () => c.advance());
     show(0);
   }
   closeStory() {
