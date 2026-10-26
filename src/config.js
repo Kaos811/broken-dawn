@@ -587,7 +587,7 @@ export const TUTORIAL = {
   fast: { barracks: { 2: 10 }, beacon: { 2: 30 } }, // seconds for upgrades started during the tutorial
   trainSpeed: 3,          // training runs 3x while the tutorial waits on it (10 Sentinels ~13 s)
   firstPull: 'kael',      // the first recruit is guaranteed
-  trainGift: { m1: 3 },
+  trainGift: { su_m1: 3 },
 };
 
 // ---- Stage 8: Daily Missions --------------------------------------------------------------------
