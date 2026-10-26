@@ -380,7 +380,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let m = await state();
-    check('v2 save migrates to version 12 (via v3 … v8)', m.version === 12);
+    check('v2 save migrates to version 13 (via v3 … v8)', m.version === 13);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
@@ -401,7 +401,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v3 save migrates to v12: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 12 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 save migrates to v13: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 13 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
     check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload(); await ready(); return (await state()).resources.cores === 10; })());
 
@@ -417,7 +417,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     m = await state();
-    check('v4 save migrates to v12: levels, Cores, claims kept; no construction', m.version === 12 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
+    check('v4 save migrates to v13: levels, Cores, claims kept; no construction', m.version === 13 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
     check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
 
     // --- 1. Save migration from a stage-1 (v1) save
@@ -433,7 +433,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v1 save migrates to version 12', s.version === 12);
+    check('v1 save migrates to version 13', s.version === 13);
     // the Barracks sat off its default tile (8,15): on the v9 map it keeps its direction from the Beacon
     const bOff = await ev(() => { const b = __BD.store.state.buildings.barracks, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('barracks', b.gx, b.gy), def: b.gx === 23 && b.gy === 30 }; });
     check('migration keeps buildings (moved Barracks keeps its direction from the Beacon), levels, Energy and Beacon', bOff.ok && !bOff.def && bOff.dx < -200 && Math.abs(bOff.dy) < 220 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
@@ -909,7 +909,7 @@ async function runStage3(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v5 save migrates to v6 (and on to v12)', s.version === 12);
+    check('v5 save migrates to v6 (and on to v13)', s.version === 13);
     // the Armory sat on the old Infirmary tile (16,8), right of the Beacon: it stays to the right on the v9 map
     const aOff = await ev(() => { const b = __BD.store.state.buildings.armory, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('armory', b.gx, b.gy) }; });
     check('v6 keeps buildings (Armory stays right of the Beacon), levels, resources, troops and squads', aOff.ok && aOff.dx > 200 && Math.abs(aOff.dy) < 250 && s.buildings.commandCenter.level === 3 && s.beacon.level === 3 && s.resources.cores === 6 && s.troops.sentinel === 8 && s.squads.alpha.level === 2 && s.squads.alpha.lines[0].count === 6, JSON.stringify(s.buildings));
@@ -1268,7 +1268,7 @@ async function runStage4(url, label, takeShots) {
     });
     await page.reload(); await ready();
     let s = await state();
-    check('v6 save migrates to v7 (and v12)', s.version === 12);
+    check('v6 save migrates to v7 (and v13)', s.version === 13);
     check('v7 keeps every troop as T1 (sentinel/bearer ids unchanged), no higher tiers', s.troops.sentinel === 12 && s.troops.bearer === 5 && s.troops.bulwark === 0 && s.troops.lancer === 0 && s.troops.aegis === 0, JSON.stringify(s.troops));
     check('v7 keeps the training lane (3 Sentinels, progress 1.5) as a T1 job', s.training.sentinel.count === 3 && near(s.training.sentinel.progress, 1.5, 0.6) && s.training.sentinel.unit === 'sentinel' && s.training.sentinel.from === null, JSON.stringify(s.training.sentinel));
     check('v7 keeps formations, wounded and hunt progress', s.squads.alpha.lines[0].type === 'sentinel' && s.squads.alpha.lines[0].count === 6 && s.squads.alpha.lines[0].full === 8 && s.infirmary.wounded.sentinel.alpha === 2 && s.hunt.bestKill === 3 && s.hunt.stamina === 70 && s.resources.cores === 12);
@@ -1554,71 +1554,63 @@ async function runStage5(url, label, takeShots) {
     await page.goto(url); await ready();
     await ev(() => localStorage.clear()); await page.reload(); await ready();
 
-    // --- 0. loading screen, fresh save v8, defaults
+    // --- 0. loading screen, fresh save, defaults (stage 13 onboarding)
     check('loading screen fades out and is removed once the game is ready', await waitTrue(() => !document.getElementById('boot')));
     let s = await state();
-    check('new game: save v12 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 12 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
+    check('new game: save v13 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 13 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
     let t = await tut();
-    check('new game: tutorial starts at step 1 (The Beacon) with a coach card and a pointer', t.active && t.step === 0 && t.visible && t.title === 'The Beacon' && !!t.target, JSON.stringify(t));
+    check('new game: the 3-panel story intro opens first (page 1, Skip intro chip)', t.active && t.step === 0 && t.story === 0 && !!(await ctl(null, { meta: 'story-skip' })), JSON.stringify(t));
+    check('new game: HUD is gated (only Base; Troops/World/Armory/Squads/More/Cores/Missions locked)', ['troops', 'world', 'armory', 'squads', 'more', 'cores', 'missions'].every((k) => t.locked.includes(k)) && await ev(() => __BD.ui().tabs.filter((x) => !x.hero && x.icon.visible).length === 0), JSON.stringify(t.locked));
     let a = await au();
     check('no audio before the first tap (browser autoplay rule)', a.unlocked === false && a.ctx === 'none', JSON.stringify(a));
     await shot('stage5-tutorial-step.png', { wait: 500 });
+    // Drive the onboarding like a player: story taps, celebration taps, reveal buttons, the pointer, Continue.
+    const act = async () => {
+      const t = await tut();
+      if (t.story != null) { await page.mouse.click(195, 500); await sleep(500); return t; }
+      if (t.celebrating) { const b = await ctl(null, { meta: 'celebrate-btn' }); if (b) await page.mouse.click(b.x, b.y); else await page.mouse.click(195, 800); await sleep(500); return t; }
+      if (!t.visible && await ev(() => !!(__BD.ui().reveal || __BD.ui().replay))) { const b = (await ev(() => __BD.controls())).filter((c) => /^(Continue|Reveal All|Skip)$/.test(c.label) && c.enabled).pop(); if (b) await page.mouse.click(b.x, b.y); await sleep(500); return t; }
+      if (t.target) { const p = await ev((g) => __BD.gameToPage(g.x, g.y), t.target); await page.mouse.click(p.x, p.y); await frames(4); await sleep(450); return t; }
+      const c = t.visible ? await ctl(null, { meta: 'tutorial-continue' }) : null;
+      if (c) { await page.mouse.click(c.x, c.y); await sleep(450); return t; }
+      await sleep(400); return t;
+    };
+    const walkTo = async (id, max = 80) => { for (let k = 0; k < max; k++) { const t = await tut(); if (t.id === id && t.visible && !t.celebrating) return true; if (!t.active && id === 'done' && !t.celebrating) return true; await act(); } return false; };
 
-    // --- 1. Beacon (tap it for real) -> also unlocks audio
-    check('tutorial 1/8: tapping the Beacon advances', await follow(0));
+    // --- story -> Beacon (the first tap unlocks audio)
+    check('story: 3 panels, then Lyra asks to relight the Beacon', await walkTo('beacon', 12));
+    t = await tut();
+    check('Lyra coach card: LYRA kicker, title, a pointer target', t.title === 'Relight the Beacon' && !!t.target && await ev(() => __BD.ui().tutorial.kicker.text === 'LYRA'), JSON.stringify(t));
     a = await au();
     check('first tap unlocks audio (AudioContext running) and base music plays', a.unlocked && a.ctx === 'running' && a.track === 'base' && a.playing.includes('base'), JSON.stringify({ u: a.unlocked, c: a.ctx, t: a.track, p: a.playing }));
-    check('Beacon panel is open after step 1', await ev(() => __BD.ui().panelOpenFor === 'beacon'));
-
-    // --- 2. Build: Barracks -> Upgrade
+    check('Barracks shows as a ruin before it is rebuilt', await ev(() => __BD.base().sprites.barracks.img.texture.key === 'ob-barracks-ruin'));
     const played0 = (await au()).played;
-    check('tutorial 2/8: Barracks upgrade started via the pointer', await follow(1));
-    s = await state();
-    a = await au();
+    check('onboarding 1→2: tapping the Beacon relights it (celebration), then Rebuild the Barracks', await walkTo('rebuild', 20));
+    check('onboarding 2→3: Barracks rebuild started via the pointer', await walkTo('finish', 20));
+    s = await state(); a = await au();
     check('upgrade start plays the build sound; button taps play click sounds', s.construction.some((j) => j.id === 'barracks') && a.byName.build >= 1 && a.byName.tap >= 1 && a.played > played0, JSON.stringify(a.byName));
     check('construction shows scaffolding on the building', await waitTrue(() => __BD.base().scaffolds?.barracks?.visible === true));
+    check('rebuild is quick during the tutorial (≤10 s job, free-finish eligible)', await ev(() => { const j = __BD.store.state.construction.find((x) => x.id === 'barracks'); return !!j && j.total <= 10 && __BD.store.canFreeFinish({ kind: 'build', id: 'barracks' }); }));
     await ev(() => { __BD.ui().closePanel(true); const b = __BD.base(); const img = b.sprites.barracks.img; b.cameras.main.setZoom(1.25); b.cameras.main.centerOn(img.x, img.y - 120); });
     await shot('stage5-construction-scaffolding.png', { wait: 700 });
-    const fx0 = await ev(() => __BD.base().fxCount ?? 0);
-    await ev(() => { const st = __BD.store; const j = st.state.construction.find((x) => x.id === 'barracks'); st.tick(j.total - j.progress + 0.1); });
-    check('upgrade finishing: level-up burst + level-up sound, scaffolding removed', await waitTrue(() => (__BD.base().fxCount ?? 0) > 0 && __BD.audioState().byName.levelup >= 1 && !__BD.base().scaffolds.barracks.visible) && fx0 === 0);
-
-    // --- 3. Train
-    check('tutorial 3/8: training started from the Troops screen', await follow(2));
-    // --- 4. Squad (first batch rushed for you)
-    check('tutorial 4/8: formation saved in Squads', await follow(3, 9));
+    check('onboarding 3→4: Free finish, Barracks rebuilt (level-up sound), Troops unlocked', await walkTo('train', 30) && (await state()).buildings.barracks.level >= 2 && ((await au()).byName.levelup ?? 0) >= 1 && !(await tut()).locked.includes('troops'));
+    check('Barracks ruin swaps back to the real building once rebuilt', await waitTrue(() => __BD.base().sprites.barracks.img.texture.key === 'art-barracks'));
+    check('onboarding 4→5: 10 Sentinels trained (gift of 3 speed-ups)', await walkTo('squad', 120) && (await state()).items.su_m1 >= 1);
+    check('onboarding 5→6: Squad Alpha filled, Continue', await walkTo('hunt', 30));
     s = await state();
-    check('squad step rushed the first batch so the formation has troops', s.squads.alpha.lines.some((l) => l.type && l.count > 0), JSON.stringify(s.squads.alpha.lines));
-    check('Squads shows Squad Power (Base) and Combat Power (Hunts) as separate labelled numbers', await ev(() => { const L = __BD.ui().screen?.container.list.map((o) => o.text).filter(Boolean) ?? []; return L.includes('SQUAD POWER · BASE') && L.includes('COMBAT POWER · HUNTS'); }));
-    // --- 5. Recruit
-    check('tutorial 5/8: Pull x1 in the Armory', await follow(4));
-    check('recruit reveal plays reveal sounds per card', await waitTrue(() => __BD.audioState().byName.reveal >= 1));
-    await ev(() => __BD.ui().closeReveal());
-    // --- 6. Hunt
-    check('tutorial 6/8: squad sent to hunt from the World map', await follow(5, 9));
-    a = await au();
-    check('World map switches music to the world track (crossfade) + march sound', await waitTrue(() => __BD.audioState().track === 'world') && a.byName.march >= 1, JSON.stringify({ t: a.track, m: a.byName.march }));
-    const fl0 = await ev(() => __BD.ui().fx.floats);
-    await ev(() => { for (let i = 0; i < 120 && !__BD.store.state.hunt.reports.length; i++) __BD.store.tick(1); });
-    check('battle result pops the report card with reward pop-ups + win/lose sound', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'VICTORY' || o.text === 'DEFEAT')) && await waitTrue((f) => __BD.ui().fx.floats > f || !__BD.store.state.hunt.reports[0].win, fl0) && ((await au()).byName.win ?? 0) + ((await au()).byName.lose ?? 0) >= 1);
-    await shot('stage5-reward-popup.png', { wait: 250 });
-    await click('▶ Watch Replay', { wait: 100 });
-    check('battle replay switches music to the battle track', await waitTrue(() => __BD.audioState().track === 'battle'));
-    check('replay: hit numbers pop with impact sparks and hit sounds', await waitTrue(() => __BD.ui().fx.hits >= 2 && __BD.audioState().byName.hit + (__BD.audioState().byName.crit ?? 0) >= 1, null, 60));
-    await shot('stage5-battle-replay.png', { wait: 120 });
-    await click('Skip');
-    check('replay finish: result banner + victory/defeat sting', await waitTrue(() => __BD.ui().replayState().done));
-    await ev(() => __BD.ui().closeReplay());
-    check('closing the replay returns to the world track', await waitTrue(() => __BD.audioState().track === 'world'));
-    // --- 7. Infirmary  --- 8. Research
-    const f7 = await follow(6, 9);
-    check('tutorial 7/8: Infirmary opened from the Base', f7, f7 ? '' : JSON.stringify(await ev(() => ({ t: __BD.tutorial(), scr: __BD.ui().screen?.id, panel: __BD.ui().panelOpenFor, world: __BD.ui().worldMode, modal: !!__BD.ui().modal, inf: (() => { const b = __BD.base(), i = b.sprites.infirmary.img; return b.worldToScreen(i.x, i.y); })() }))));
-    check('back on the Base the music returns to the base track', await waitTrue(() => __BD.audioState().track === 'base'));
+    check('Squad Alpha has troops for the hunt', s.squads.alpha.lines.some((l) => l.type && l.count > 0), JSON.stringify(s.squads.alpha.lines));
+    const huntT0 = Date.now();
+    check('onboarding 6→7: first hunt from the World map (world track + march sound)', await walkTo('recruit', 120) && ((await au()).byName.march ?? 0) >= 1 && (await state()).hunt.reports.length >= 1);
+    check('first hunt resolves fast (under ~40 s of play)', Date.now() - huntT0 < 40000, `${Date.now() - huntT0} ms`);
+    check('onboarding 7→8: first pull is a guaranteed Kael, assigned to Alpha (reveal sound)', await walkTo('beacon2', 40) && !!(await state()).leaders.kael && (await state()).squads.alpha.leader === 'kael' && ((await au()).byName.reveal ?? 0) >= 1);
+    check('onboarding 8→9: Beacon Lv 2', await walkTo('missions', 40) && (await state()).beacon.level >= 2);
     const res0 = (await state()).resources;
-    check('tutorial 8/8: Archive tapped', await follow(7, 9));
+    check('onboarding 9→done: Missions opened, chest celebration', await walkTo('done', 40));
     s = await state(); t = await tut();
-    check('tutorial complete: marked done, reward paid once (+500 Energy, +2 Cores), coach hidden', s.tutorial.done && !s.tutorial.skipped && s.tutorial.rewarded && s.resources.cores === res0.cores + 2 && s.resources.energy >= res0.energy + 499 && !t.visible, JSON.stringify({ tu: s.tutorial, c0: res0.cores, c1: s.resources.cores }));
+    check('tutorial complete: marked done, reward paid once (+500 Energy, +2 Cores), coach hidden, nothing locked', s.tutorial.done && !s.tutorial.skipped && s.tutorial.rewarded && s.resources.cores >= res0.cores + 2 && s.resources.energy >= res0.energy + 499 && !t.visible && t.locked.length === 0, JSON.stringify({ tu: s.tutorial, c0: res0.cores, c1: s.resources.cores }));
     check('completion toast mentions replaying from More → Settings', await waitTrue(() => (__BD.ui().toastLog ?? []).some((m) => /Tutorial complete/.test(m) && /More → Settings/.test(m))), JSON.stringify(await ev(() => __BD.ui().toastLog)));
+    await ev(() => __BD.ui().closeModal());
+    check('after onboarding: a "Next goal" chip appears on the Base', await waitTrue(() => { const u = __BD.ui(); u.modal?.close?.(); return !!__BD.tutorial().goal; }, null, 40));
 
     // --- 9. Settings: audio panel
     await ev(() => { const u = __BD.ui(); u.closePanel(true); u.closeScreen(); });
@@ -1648,8 +1640,12 @@ async function runStage5(url, label, takeShots) {
     // --- 10. Replay + Skip
     await click(null, { meta: 'replay-tutorial' });
     t = await tut();
-    check('Replay Tutorial restarts at step 1 with the coach card', t.active && t.step === 0 && await waitTrue(() => __BD.tutorial().visible), JSON.stringify(t));
+    check('Replay Tutorial restarts with the story intro', t.active && t.step === 0 && await waitTrue(() => __BD.tutorial().story === 0), JSON.stringify(t));
+    await click(null, { meta: 'story-skip' });
+    check('Skip intro goes straight to Lyra\'s first step', await waitTrue(() => __BD.tutorial().id === 'beacon' && __BD.tutorial().visible));
     await click(null, { meta: 'tutorial-skip' });
+    check('Skip asks to confirm first (tutorial still running)', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'Skip the tutorial?')) && (await tut()).active);
+    await click('Skip', { kind: 'button' });
     s = await state(); t = await tut();
     check('Skip ends the tutorial (done + skipped) and hides the coach; no second reward', s.tutorial.done && s.tutorial.skipped && !t.visible && s.resources.cores === (await ev(() => __BD.store.state.resources.cores)));
 
@@ -1723,7 +1719,7 @@ async function runStage5(url, label, takeShots) {
     await ev(() => { const k = 'brokenDawn.save.v1'; __BD.store.save = () => {}; const st = JSON.parse(localStorage.getItem(k)); st.version = 7; delete st.settings; delete st.tutorial; localStorage.setItem(k, JSON.stringify(st)); });
     await page.reload(); await ready();
     s = await state(); t = await tut();
-    check('v7 save migrates to v12: tutorial marked done (no coach), default audio settings, backup kept', s.version === 12 && s.tutorial.done && !s.tutorial.skipped && !t.visible && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
+    check('v7 save migrates to v13: tutorial marked done (no coach), default audio settings, backup kept', s.version === 13 && s.tutorial.done && !s.tutorial.skipped && !t.visible && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
     check('existing players get a one-time "replay the tutorial from Settings" toast', await waitTrue(() => /Replay the tutorial/.test(__BD.ui().toastText.text) && __BD.ui().toastBox.visible, null, 40));
     await ev(() => { delete __BD.store.save; __BD.store.save(); });
     await page.reload(); await ready(); await sleep(800);
@@ -1797,7 +1793,7 @@ async function runStage6(url, label, takeShots) {
 
     // --- 1. full-screen painted base, art sprites, level badges
     let s = await state();
-    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 12 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
+    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 13 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
     const art = await ev(() => { const b = __BD.base(); return { cc: b.sprites.commandCenter.img.texture.key, beacon: b.beaconSprite.texture.key, ground: b.ground.texture.key, decos: b.decos.length, inner: b.innerDecos.length }; });
     check('painted art: building + Beacon sprites, baked ground, scattered crystals/plants/rocks', art.cc === 'art-commandCenter' && art.beacon === 'art-beacon' && art.ground === 'ground-baked' && art.decos >= 60 && art.inner >= 10, JSON.stringify(art));
     const fill = await ev(() => { const c = __BD.base().cameras.main, v = c.worldView, G = __BD.grid.GROUND; return { ok: v.x >= G.x - 1 && v.y >= G.y - 1 && v.right <= G.x + G.w + 1 && v.bottom <= G.y + G.h + 1, bigger: G.w > v.width && G.h > v.height }; });
@@ -1937,7 +1933,7 @@ async function runStage6(url, label, takeShots) {
       const off = (id) => { const c = __BD.grid.isoToWorld(B[id].gx + 1.5, B[id].gy + 1.5); return { dx: c.x - o.x, dy: c.y - o.y }; };
       return { valid: ids.every((id) => st.canPlace(id, B[id].gx, B[id].gy)), cc: [B.commandCenter.gx, B.commandCenter.gy], arch: [B.archive.gx, B.archive.gy, B.archive.placed], br: off('barracks'), levels: ids.map((id) => B[id].level).join(',') };
     });
-    check('v8 save migrates to v9', s.version === 12);
+    check('v8 save migrates to v9', s.version === 13);
     check('v9: buildings on their old default tiles move to the new defaults (CC 12,8 -> 11,11; Archive 8,8 -> 12,19)', mig.cc.join() === '11,11' && mig.arch.join() === '12,19,true', JSON.stringify(mig));
     check('v9: a moved building keeps its direction from the Beacon (Barracks 9,15 stays lower-left)', mig.br.dx < -150 && mig.br.dy > -100, JSON.stringify(mig.br));
     check('v9: every migrated position is valid (inside the base, no overlaps), levels kept', mig.valid && mig.levels === '4,3,2,2,2', JSON.stringify(mig));
@@ -2254,7 +2250,7 @@ async function runStage12(url, label) {
     });
     await page.reload(); await ready();
     const m2 = await ev(() => { const s = __BD.store.state; return { v: s.version, seed: s.world.seed, base: s.world.entities.find((e) => e.id === 'base-local'), cit: !!s.world.entities.find((e) => e.kind === 'citadel'), marches: s.world.marches.length, stamina: s.hunt.stamina, best: s.hunt.bestKill, bots: s.world.entities.filter((e) => e.bot).length }; });
-    check('v11 save migrates to v12: world rebuilt from the same seed around the Citadel, base moved, squads home, stamina refunded, hunt progress kept', m2.v === 12 && m2.seed === 4242 && m2.base.x === 43 && m2.base.y === 78 && m2.cit && m2.marches === 0 && m2.stamina >= 50 && m2.best === 7 && m2.bots === 14, JSON.stringify(m2));
+    check('v11 save migrates to v13: world rebuilt from the same seed around the Citadel, base moved, squads home, stamina refunded, hunt progress kept', m2.v === 13 && m2.seed === 4242 && m2.base.x === 43 && m2.base.y === 78 && m2.cit && m2.marches === 0 && m2.stamina >= 50 && m2.best === 7 && m2.bots === 14, JSON.stringify(m2));
     check('stage 12: no page errors', errors.length === 0, errors.join(' | '));
   } finally { await browser.close(); }
 }
@@ -2278,7 +2274,7 @@ async function runStage10(url, label) {
     const want = [10, 30, 120, 360, 1200, 3600, 10800, 17280, 27648, 44237, 70779, 113246, 181194, 259200, 259200, 259200, 259200, 259200, 259200];
     check('build times: Lv2–8 unchanged (10 s … 3 h), then x1.6 per level, no upgrade over 72 h', JSON.stringify(bt) === JSON.stringify(want), JSON.stringify(bt));
     const fresh = await ev(() => ({ v: __BD.store.state.version, items: __BD.store.state.items, gift: __BD.store.state.firstUpgradeGift }));
-    check('new game: save v12 with an empty inventory (7 speed-up kinds + resource bundles)', fresh.v === 12 && Object.keys(fresh.items).slice(0, 7).join() === 'm1,m5,m15,h1,h3,h8,h24' && Object.keys(fresh.items).some((k) => k.startsWith('res_')) && Object.values(fresh.items).every((n) => n === 0) && fresh.gift === false, JSON.stringify(fresh));
+    check('new game: save v13 with an empty inventory (7 speed-up kinds + resource bundles)', fresh.v === 13 && Object.keys(fresh.items).slice(0, 7).join() === 'm1,m5,m15,h1,h3,h8,h24' && Object.keys(fresh.items).some((k) => k.startsWith('res_')) && Object.values(fresh.items).every((n) => n === 0) && fresh.gift === false, JSON.stringify(fresh));
 
     // --- costs + auto plan (pure)
     const cc = await ev(() => { const S = __BD.store; const c = (x) => S.finishCoreCost.call({ jobLeft: () => x, itemsAllowed: () => true }, {}); const q = (x) => S.finishCoreCost.call({ jobLeft: () => x, itemsAllowed: () => false }, {}); return [c(1), c(300), c(301), c(3600), c(8 * 3600), q(30), q(600), q(601)]; });
@@ -2375,7 +2371,7 @@ async function runStage10(url, label) {
     await ev(() => { __BD.ui().closeModal(true); const st = __BD.store; st.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 10; delete raw.items; delete raw.firstUpgradeGift; raw.construction = [{ id: 'barracks', toLevel: 12, cost: 500, total: 1200 * 3 ** 6, progress: 5000 }]; raw.research.job = { id: 'shardYield', toLevel: 1, cost: { energy: 1, alloy: 1, shards: 1 }, total: 1800, progress: 600 }; raw.buildings.barracks.level = 11; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
     await page.reload(); await ready();
     const mg = await ev(() => { const s = __BD.store.state; return { v: s.version, j: s.construction[0], r: s.research.job, items: Object.values(s.items).every((n) => n === 0), gift: s.firstUpgradeGift, bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v10') || '{}').version }; });
-    check('v10 save migrates to v12: running upgrade keeps its progress, its total shrinks to the new 70,779 s; research untouched; empty items; backup kept', mg.v === 12 && mg.j?.id === 'barracks' && mg.j.total === 70779 && mg.j.progress >= 5000 && mg.j.progress < 5100 && mg.r?.progress >= 600 && mg.items && mg.gift === true && mg.bk === 10, JSON.stringify(mg));
+    check('v10 save migrates to v13: running upgrade keeps its progress, its total shrinks to the new 70,779 s; research untouched; empty items; backup kept', mg.v === 13 && mg.j?.id === 'barracks' && mg.j.total === 70779 && mg.j.progress >= 5000 && mg.j.progress < 5100 && mg.r?.progress >= 600 && mg.items && mg.gift === true && mg.bk === 10, JSON.stringify(mg));
     // --- stage 10b: item registry + Resources section
     const rb = await ev(() => { const st = __BD.store; const e0 = st.state.resources.energy, a0 = st.state.resources.alloy; st.grantBundle({ it_res_energy_1k: 3, it_res_alloy_10k: 1, it_bogus: 5 }); const u1 = st.useItem('res_energy_1k', 2); const bad = st.useItem('res_energy_1k', 5); const ua = st.useItem('res_alloy_10k', 1); const su = st.useItem('h1', 1); return { e: st.state.resources.energy - e0, a: st.state.resources.alloy - a0, left: st.itemCount('res_energy_1k'), u1: u1.ok, bad: bad.reason, ua: ua.ok, su: su.reason, sec: st.sectionCount('resource'), bogus: 'bogus' in st.state.items }; });
     check('resource bundles: granted via it_<id>, Use adds the resources (2× 1K Energy, 1× 10K Alloy), overuse refused, unknown ids ignored, speed-ups not usable here', rb.e === 2000 && rb.a === 10000 && rb.left === 1 && rb.u1 && /Not enough/.test(rb.bad) && rb.ua && /timer/.test(rb.su) && rb.sec === 1 && !rb.bogus, JSON.stringify(rb));
@@ -2397,6 +2393,89 @@ async function runStage10(url, label) {
     await ev(() => __BD.ui().closeModal(true));
     check('stage 10: no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
     await ctx.close();
+  } finally { await browser.close(); }
+}
+
+// Stage 13: new-player onboarding. Layout at 6 phone sizes, Skip, Kael guarantee, v12 -> v13 migration.
+async function runStage13(url, label) {
+  console.log(`\n=== stage 13 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const SIZES = [[390, 844], [360, 740], [375, 667], [430, 932], [390, 664], [375, 560]];
+  const KEY = 'brokenDawn.save.v1';
+  const open = async (w, h) => {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    const page = await ctx.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    const ev = (fn, arg) => page.evaluate(fn, arg);
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(600); };
+    await page.goto(url); await ready(); await ev(() => localStorage.clear()); await page.reload(); await ready();
+    const ctl = async (meta, lbl) => { for (let i = 0; i < 15; i++) { const c = (await ev(() => __BD.controls())).filter((c) => (meta == null || c.meta === meta) && (lbl == null || c.label === lbl) && c.enabled).pop(); if (c) return c; await sleep(200); } return null; };
+    const tap = async (meta, lbl) => { const c = await ctl(meta, lbl); if (!c) throw new Error(`no control ${meta} ${lbl}`); await page.mouse.click(c.x, c.y); await sleep(500); };
+    const waitTrue = async (fn, arg, n = 30) => { for (let i = 0; i < n; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
+    return { ctx, page, ev, ready, ctl, tap, waitTrue, errors };
+  };
+  try {
+    // --- layout of every onboarding step at 6 sizes
+    for (const [w, h] of SIZES) {
+      const P = await open(w, h);
+      const issues = [];
+      const card = async (name) => {
+        const r = await P.ev(() => { const t = __BD.tutorial(), u = __BD.ui(), tu = u.tutorial, H = u.scale.height; const y = tu.rect.y, ch = tu.cardH; const tg = t.target; const covered = !!tg && tg.y > y + 4 && tg.y < y + ch - 4 && tg.x > 16 && tg.x < u.scale.width - 16; return { vis: t.visible, top: y, bot: y + ch, H, covered, issues: __BD.layoutIssues() }; });
+        if (!r.vis) return;
+        if (r.top < 0 || r.bot > r.H) issues.push(`${name}: card off screen (${r.top}..${r.bot} of ${r.H})`);
+        if (r.covered) issues.push(`${name}: card covers its own pointer target`);
+        r.issues.forEach((x) => issues.push(`${name}: ${x}`));
+      };
+      if ((await P.ev(() => __BD.tutorial().story)) !== 0) issues.push('story did not open');
+      for (const id of ['beacon', 'rebuild', 'finish', 'train', 'squad', 'hunt', 'recruit', 'beacon2', 'missions']) {
+        await P.ev((id) => { const u = __BD.ui(); u.tutorial.closeStory?.(); u.tutorial.closeCelebrate(); u.closeModal(true); u.closeScreen(); u.closePanel(true); if (u.worldMode) u.hideWorld(); const st = __BD.store.state.tutorial; st.step = __BD.tutorialIds.indexOf(id); }, id);
+        await sleep(700);
+        await card(id);
+      }
+      await P.ev(() => __BD.ui().tutorial.celebrate({ art: 'ob-chest-open', title: 'Training complete!', sub: '+500 Energy, +2 Beacon Cores', chest: true }));
+      await sleep(500);
+      const cb = await P.ev(() => { const c = __BD.ui().tutorial.celebrating, H = __BD.ui().scale.height; const b = c.getBounds ? c.list.filter((o) => o.type === 'Text').map((o) => o.getBounds()) : []; return b.every((r) => r.top >= 0 && r.bottom <= H && r.left >= -2 && r.right <= 1082); });
+      if (!cb) issues.push('celebration text off screen');
+      check(`stage 13 layout ${w}x${h}: story, Lyra card at every step and the chest celebration fit (no overlap, pointer target visible)`, issues.length === 0, issues.slice(0, 8).join(' | '));
+      check(`stage 13 layout ${w}x${h}: no console errors`, P.errors.length === 0, P.errors.slice(0, 3).join(' | '));
+      await P.ctx.close();
+    }
+
+    // --- Skip (with confirm) pays the reward and unlocks everything
+    {
+      const P = await open(390, 844);
+      const c0 = await P.ev(() => __BD.store.state.resources.cores);
+      await P.tap('story-skip');
+      check('stage 13: Skip intro jumps to Lyra\'s first step', await P.waitTrue(() => __BD.tutorial().id === 'beacon' && __BD.tutorial().visible));
+      await P.tap('tutorial-skip');
+      check('stage 13: Skip opens a confirm', await P.waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'Skip the tutorial?')));
+      await P.tap(undefined, 'Skip');
+      await P.waitTrue(() => __BD.ui().tabs.filter((x) => !x.hero && x.icon.visible).length >= 5, null, 40);
+      const r = await P.ev(() => ({ tu: __BD.store.state.tutorial, cores: __BD.store.state.resources.cores, t: __BD.tutorial(), tabs: __BD.ui().tabs.filter((x) => !x.hero && x.icon.visible).length }));
+      check('stage 13: confirmed Skip → done + skipped + rewarded (+2 Cores), everything unlocked, all tabs visible', r.tu.done && r.tu.skipped && r.tu.rewarded && r.cores === c0 + 2 && r.t.locked.length === 0 && r.tabs >= 5, JSON.stringify(r));
+      // Kael guarantee: replay, then pull during the tutorial (fresh pity)
+      const k = await P.ev(() => { const st = __BD.store; st.state.tutorial.done = false; st.state.tutorial.step = __BD.tutorialIds.indexOf('recruit'); delete st.state.leaders.kael; st.state.resources.cores = 1; const r = st.pull ? st.pull(1) : st.pullOne(); return { owned: !!st.state.leaders.kael, r: JSON.stringify(r).slice(0, 120) }; });
+      check('stage 13: the first pull during the tutorial is always Kael', k.owned, JSON.stringify(k));
+      await P.ctx.close();
+    }
+
+    // --- v12 -> v13 migration
+    const migrate = async (patch) => {
+      const P = await open(390, 844);
+      await P.ev(({ KEY, patch }) => { __BD.store.save = () => {}; const st = JSON.parse(localStorage.getItem(KEY)); st.version = 12; Object.assign(st.tutorial, patch.tutorial); if (patch.beacon) st.beacon.level = patch.beacon; if (patch.energy != null) st.resources.energy = patch.energy; localStorage.setItem(KEY, JSON.stringify(st)); }, { KEY, patch });
+      await P.page.reload(); await P.ready();
+      const r = await P.ev(() => ({ v: __BD.store.state.version, tu: __BD.store.state.tutorial, e: __BD.store.state.resources.energy, t: __BD.tutorial() }));
+      await P.ctx.close();
+      return r;
+    };
+    let m = await migrate({ tutorial: { done: false, step: 4, rewarded: false, skipped: false }, energy: 100 });
+    check('stage 13 migration: v12 save partway through the old tutorial → v13, marked done and paid (+500 Energy), no coach', m.v === 13 && m.tu.done && m.tu.rewarded && m.e >= 599 && !m.t.visible && m.t.locked.length === 0, JSON.stringify(m));
+    m = await migrate({ tutorial: { done: true, step: 8, rewarded: true, skipped: false }, energy: 100 });
+    check('stage 13 migration: finished v12 save stays done, not paid twice', m.v === 13 && m.tu.done && m.e < 200, JSON.stringify(m));
+    m = await migrate({ tutorial: { done: false, step: 0, rewarded: false, skipped: false } });
+    check('stage 13 migration: untouched v12 save gets the new onboarding (story at step 0)', m.v === 13 && !m.tu.done && m.tu.step === 0 && m.t.active, JSON.stringify(m));
+  } catch (e) {
+    check('stage 13 suite ran without exceptions', false, e.message);
   } finally { await browser.close(); }
 }
 
@@ -2541,7 +2620,7 @@ async function runStage8(url, label, takeShots) {
     await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(600);
     // ---------------------------------------------------------------- A. Daily Missions
     const m0 = await ev(() => { const st = __BD.store, s = st.state; return { v: s.version, day: s.missions.day, today: st.dayIndex(), tasks: st.missionList().map((t) => [t.id, t.goal, t.pts]), chests: st.missionChests().map((c) => `${c.at}:${c.tier}`), vis: __BD.ui().rightBtns.missions.visible, done: s.tutorial.done }; });
-    check('new game: save v12 with today\'s missions (local day)', m0.v === 12 && m0.day === m0.today, JSON.stringify(m0));
+    check('new game: save v13 with today\'s missions (local day)', m0.v === 13 && m0.day === m0.today, JSON.stringify(m0));
     check('7 daily tasks worth 110 points in total', m0.tasks.length === 7 && m0.tasks.reduce((a, t) => a + t[2], 0) === 110, JSON.stringify(m0.tasks));
     check('activity chests at 20/40/60/80/100: bronze, bronze, silver, silver, gold', m0.chests.join(',') === '20:bronze,40:bronze,60:silver,80:silver,100:gold', m0.chests.join(','));
     check('Missions stay hidden until the tutorial is done', !m0.vis && !m0.done, JSON.stringify({ vis: m0.vis, done: m0.done }));
@@ -2617,7 +2696,7 @@ async function runStage8(url, label, takeShots) {
     await ev(() => { __BD.store.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 9; delete raw.missions; delete raw.events; delete raw.hints; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
     await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(500);
     const mig = await ev(() => { const s = __BD.store.state; return { v: s.version, day: s.missions.day === __BD.store.dayIndex(), p: Object.keys(s.missions.progress).length, ev: s.events && typeof s.events.marks === 'number', bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v9') || '{}').version, lv: s.buildings.barracks.level, cores: s.resources.cores }; });
-    check('v9 save migrates to v12: missions start fresh today, events added, backup kept', mig.v === 12 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
+    check('v9 save migrates to v13: missions start fresh today, events added, backup kept', mig.v === 13 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
 
     // --- screenshot: missions in progress
     await ev(() => { const st = __BD.store; st.state.missions.progress = { daily: 1, kills: 5, train: 30, build: 1, heal: 4 }; st.state.missions.claimed = ['daily', 'train']; st.state.missions.chests = [20]; st.save(); });
@@ -2825,6 +2904,7 @@ try {
   if (!process.env.QUICK && (!process.env.ONLY || process.env.ONLY === '8')) await runStage8(`http://localhost:${srv.address().port}/`, 'dist/ build', false);
   if (!process.env.ONLY || process.env.ONLY === '10') await runStage10(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '12') await runStage12(`http://localhost:${srv.address().port}/`, 'dist/ build');
+  if (!process.env.ONLY || process.env.ONLY === '13') await runStage13(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '9c') await runStage9c(`http://localhost:${srv.address().port}/`, 'dist/ build');
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);

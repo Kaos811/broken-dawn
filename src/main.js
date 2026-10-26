@@ -11,7 +11,7 @@ import { createWorld, ringLevel, dist, BASE_POS, CENTER, seedBotBases } from './
 import { audio } from './audio/audio.js';
 import * as gridMath from './systems/grid.js';
 import * as layout from './ui/layout.js';
-import { BUILDINGS, BEACON, MAP } from './config.js';
+import { BUILDINGS, BEACON, MAP, TUTORIAL } from './config.js';
 
 store.load();
 
@@ -181,6 +181,7 @@ window.__BD = {
   audio,
   audioState: () => audio.state(),
   tutorial: () => game.scene.getScene('UI')?.tutorial?.stateForTest(),
+  tutorialIds: TUTORIAL.ids,
   layout: () => ({ ...layout }),
   perf: () => ({ capped: !!game.scene.getScene('UI')?.idleCapped, limitRate: game.loop._limitRate, fps: Math.round(game.loop.actualFps), layoutH: GAME_HEIGHT }),
   gameToPage(gx, gy) {

@@ -277,10 +277,11 @@ export class Tutorial {
   }
 
   skipNow() {
+    const paid = store.state.tutorial.rewarded;
     this.closeStory();
     store.skipTutorial();
     this.hide();
-    this.ui.toast(`Tutorial skipped: everything is unlocked. +${fmt(TUTORIAL.reward.energy)} Energy, +${TUTORIAL.reward.cores} Beacon Cores.`, 3000);
+    this.ui.toast(paid ? 'Tutorial skipped: everything is unlocked.' : `Tutorial skipped: everything is unlocked. +${fmt(TUTORIAL.reward.energy)} Energy, +${TUTORIAL.reward.cores} Beacon Cores.`, 3000);
   }
 
   onContinue() {
@@ -440,6 +441,7 @@ export class Tutorial {
     this.hide();
     S?.after?.(this.ui);
     if (next >= TUTORIAL.steps) {
+      this.ui.toast('Tutorial complete! Replay it any time from More → Settings.', 3200);
       this.celebrate({ art: 'ob-chest-open', title: 'Training complete!', sub: `Supply chest: +${fmt(TUTORIAL.reward.energy)} Energy, +${TUTORIAL.reward.cores} Beacon Cores`, loot: true, chest: true });
     }
   }
