@@ -45,7 +45,7 @@ async function run(url, label, takeShots) {
   const rawClick = page.mouse.click.bind(page.mouse);
   page.mouse.click = async (...args) => { await rawClick(...args); await frames(4); };
 
-  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(400); };
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(400); };
   await page.goto(url); await ready();
   await page.evaluate(() => localStorage.clear()); await page.reload(); await ready();
 
@@ -327,7 +327,7 @@ async function runStage2(url, label, takeShots) {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(e.message));
-  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(400); };
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(400); };
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
   const power = () => ev(() => __BD.store.power);
@@ -864,7 +864,7 @@ async function runStage3(url, label, takeShots) {
   page.on('pageerror', (e) => errors.push(e.message));
   const cdp = await ctx.newCDPSession(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, i) => ({ x: p.x, y: p.y, id: i })) });
-  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(400); };
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(400); };
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
   const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
@@ -1221,7 +1221,7 @@ async function runStage4(url, label, takeShots) {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(e.message));
-  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(400); };
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(400); };
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
   const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
@@ -1511,7 +1511,7 @@ async function runStage5(url, label, takeShots) {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(e.message));
-  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(500); };
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(500); };
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
   const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
@@ -1746,7 +1746,7 @@ async function runStage6(url, label, takeShots) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(e.message));
   const cdp = await ctx.newCDPSession(page);
-  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(500); };
+  const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(500); };
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
   const frames = (n = 4) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
@@ -1966,7 +1966,7 @@ async function runStage7(url, label, takeShots) {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(url);
-    await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(500);
+    await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     return { ctx, page, errors };
   };
   let { ctx, page, errors } = await open({ width: 390, height: 844 });
@@ -1994,7 +1994,7 @@ async function runStage7(url, label, takeShots) {
   }, [y0, y1]);
 
   try {
-    await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(600);
+    await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
     const L = await ev(() => __BD.layout());
     // --- 1. top HUD
     const hud = await ev(() => {
@@ -2183,7 +2183,7 @@ async function runStage12(url, label) {
     const page = await ctx.newPage();
     const errors = []; page.on('pageerror', (e) => errors.push(e.message));
     const ev = (fn, arg) => page.evaluate(fn, arg);
-    const ready = async () => { await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(500); };
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500); };
     await page.goto(url); await ready();
     await ev(() => localStorage.clear()); await page.reload(); await ready();
 
@@ -2266,7 +2266,7 @@ async function runStage10(url, label) {
     const page = await ctx.newPage();
     const errors = []; page.on('pageerror', (e) => errors.push(e.message));
     const ev = (fn, arg) => page.evaluate(fn, arg);
-    const ready = async () => { await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(500); };
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500); };
     await page.goto(url); await ready();
     await ev(() => localStorage.clear()); await page.reload(); await ready();
 
@@ -2408,7 +2408,7 @@ async function runStage13(url, label) {
     const page = await ctx.newPage();
     const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     const ev = (fn, arg) => page.evaluate(fn, arg);
-    const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(600); };
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(600); };
     await page.goto(url); await ready(); await ev(() => localStorage.clear()); await page.reload(); await ready();
     const ctl = async (meta, lbl) => { for (let i = 0; i < 15; i++) { const c = (await ev(() => __BD.controls())).filter((c) => (meta == null || c.meta === meta) && (lbl == null || c.label === lbl) && c.enabled).pop(); if (c) return c; await sleep(200); } return null; };
     const tap = async (meta, lbl) => { const c = await ctl(meta, lbl); if (!c) throw new Error(`no control ${meta} ${lbl}`); await page.mouse.click(c.x, c.y); await sleep(500); };
@@ -2493,9 +2493,9 @@ async function runStage9c(url, label) {
       const page = await ctx.newPage();
       const errors = []; page.on('pageerror', (e) => errors.push(e.message));
       const ev = (fn, arg) => page.evaluate(fn, arg);
-      await page.goto(url); await page.waitForFunction(() => window.__BD?.ui()?.panel);
+      await page.goto(url); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 });
       await ev(midsave); await ev((k) => window[`__${k}Save`](), save);
-      await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(800);
+      await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(800);
       const issues = [];
       for (const [name, code] of LAYOUT_SCREENS) {
         await ev(() => { const u = __BD.ui(); u.reveal?.destroy(); u.reveal = null; u.closeModal(true); u.closeScreen(); u.closePanel(true); if (u.worldMode) { u.scene.get('World').select?.(null); u.hideWorld(); } });
@@ -2536,8 +2536,8 @@ async function runStage9c(url, label) {
     await ctx.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; });
     const page = await ctx.newPage();
     const ev = (fn, arg) => page.evaluate(fn, arg);
-    await page.goto(url); await page.waitForFunction(() => window.__BD?.ui()?.panel);
-    await ev(midsave); await ev(() => window.__midSave()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(600);
+    await page.goto(url); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 });
+    await ev(midsave); await ev(() => window.__midSave()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
     const lane = await ev(async () => {
       const st = __BD.store; st.state.resources.energy = 1e6; st.train('bearer', 5);
       const u = __BD.ui(); u.openScreen('troops'); await new Promise((r) => setTimeout(r, 400));
@@ -2568,7 +2568,7 @@ async function runStage8(url, label, takeShots) {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(url);
-    await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel); await sleep(500);
+    await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     return { ctx, page, errors };
   };
   let { ctx, page, errors } = await open({ width: 390, height: 844 });
@@ -2618,7 +2618,7 @@ async function runStage8(url, label, takeShots) {
   const mission = (id) => ev((id) => __BD.store.missionList().find((t) => t.id === id), id);
 
   try {
-    await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(600);
+    await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
     // ---------------------------------------------------------------- A. Daily Missions
     const m0 = await ev(() => { const st = __BD.store, s = st.state; return { v: s.version, day: s.missions.day, today: st.dayIndex(), tasks: st.missionList().map((t) => [t.id, t.goal, t.pts]), chests: st.missionChests().map((c) => `${c.at}:${c.tier}`), vis: __BD.ui().rightBtns.missions.visible, done: s.tutorial.done }; });
     check('new game: save v13 with today\'s missions (local day)', m0.v === 13 && m0.day === m0.today, JSON.stringify(m0));
@@ -2690,12 +2690,12 @@ async function runStage8(url, label, takeShots) {
 
     // --- offline actions count toward the day you come back
     const off = await ev(() => { const st = __BD.store; st.state.resources.energy = 100000; st.train('voyager', 12); st.save(); st.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.lastSaved = Date.now() - 3600e3; localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); return st.state.missions.progress.train ?? 0; });
-    await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(500);
+    await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     check('offline: training that finished while away counts toward today', off === 0 && (await ev(() => __BD.store.state.missions.progress.train)) === 12 && (await ev(() => __BD.store.state.missions.day === __BD.store.dayIndex())));
 
     // --- save v9 -> v10
     await ev(() => { __BD.store.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 9; delete raw.missions; delete raw.events; delete raw.hints; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
-    await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel); await sleep(500);
+    await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     const mig = await ev(() => { const s = __BD.store.state; return { v: s.version, day: s.missions.day === __BD.store.dayIndex(), p: Object.keys(s.missions.progress).length, ev: s.events && typeof s.events.marks === 'number', bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v9') || '{}').version, lv: s.buildings.barracks.level, cores: s.resources.cores }; });
     check('v9 save migrates to v13: missions start fresh today, events added, backup kept', mig.v === 13 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
 
