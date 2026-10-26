@@ -386,7 +386,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 12; // v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 13; // v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -578,7 +578,17 @@ export const AUDIO = { music: 0.7, sfx: 0.9, muted: false, haptics: true, crossf
 // Idle frame cap: after this long without input (and nothing animating) the game drops to ~30 fps.
 export const PERF = { idleMs: 8000, idleFps: 30 };
 // First-time tutorial: number of steps and the completion reward.
-export const TUTORIAL = { steps: 8, reward: { energy: 500, cores: 2 } };
+// Stage 13: the new-player first 10 minutes. Ten action-driven steps narrated by Lyra; HUD parts unlock as
+// they're introduced (unlockAt = the step index from which they show). Tutorial-only fast timers.
+export const TUTORIAL = {
+  steps: 10, reward: { energy: 500, cores: 2 },
+  ids: ['story', 'beacon', 'rebuild', 'finish', 'train', 'squad', 'hunt', 'recruit', 'beacon2', 'missions'],
+  unlockAt: { troops: 4, items: 4, training: 4, world: 6, armory: 7, cores: 7, squads: 9, more: 9, builder: 9, missions: 9, research: 10, healing: 10, events: 10 },
+  fast: { barracks: { 2: 10 }, beacon: { 2: 30 } }, // seconds for upgrades started during the tutorial
+  trainSpeed: 3,          // training runs 3x while the tutorial waits on it (10 Sentinels ~13 s)
+  firstPull: 'kael',      // the first recruit is guaranteed
+  trainGift: { su_m1: 3 },
+};
 
 // ---- Stage 8: Daily Missions --------------------------------------------------------------------
 // Reset at the player's local midnight. Tasks are counted from real game actions (offline ones too) and

@@ -12,6 +12,8 @@ const CR_ART = { scuttler: crScuttler, drone: crDrone, hound: crHound, golem: cr
 import Phaser from 'phaser';
 import { PALETTE, MAP } from '../config.js';
 import { makePortraitTextures } from '../art/portraits.js';
+// stage 13: onboarding art (story panels, Lyra, gauntlet pointer, ruined Barracks, chest, victory banner)
+const OB_ART = import.meta.glob('../art/onboarding/*.webp', { eager: true, import: 'default' });
 import { makeCreatureTextures } from '../art/creatures.js';
 
 // Generates all placeholder art procedurally (no external assets), so the
@@ -76,6 +78,7 @@ export default class BootScene extends Phaser.Scene {
     // stage 12: painted world map (one atlas for every prop + base tier + citadel, tools/process_stage12.py)
     this.load.atlas('wmap', worldAtlasPng, worldAtlasJson);
     this.load.image('wmap-ground', worldGround);
+    for (const [path, url] of Object.entries(OB_ART)) this.load.image(`ob-${path.split('/').pop().replace('.webp', '')}`, url);
     for (const [id, url] of Object.entries(CR_ART)) this.load.image(`cr-${id}`, url); // painted map monsters (256x256)
   }
 

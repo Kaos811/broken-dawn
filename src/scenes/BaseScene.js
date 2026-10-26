@@ -772,7 +772,24 @@ export default class BaseScene extends Phaser.Scene {
     for (const [id, sc] of Object.entries(this.scaffolds)) if (!live.has(id) && sc.visible) sc.setVisible(false).clear();
   }
 
+  // stage 13: the Barracks shows as a ruin until the onboarding rebuilds it
+  syncRuin() {
+    const sp = this.sprites?.barracks; if (!sp) return;
+    const ruin = store.tutorialActive() && store.state.buildings.barracks.level < 2 && !store.constructionJob('barracks') && this.textures.exists('ob-barracks-ruin');
+    const key = ruin ? 'ob-barracks-ruin' : 'art-barracks';
+    if (sp.img.texture.key === key) return;
+    sp.img.setTexture(key);
+    sp.img.setScale(SPRITE.barracks.w / sp.img.width * (ruin ? 0.92 : 1));
+  }
+  relightFx() {
+    const c = this.beaconCenter; if (!c) return;
+    const g = this.add.image(c.x, c.y, 'glow').setBlendMode('ADD').setTint(0xffd27f).setDepth(5000).setScale(1).setAlpha(0.9);
+    this.tweens.add({ targets: g, scale: 9, alpha: 0, duration: 1100, ease: 'Cubic.easeOut', onComplete: () => g.destroy() });
+    this.cameras.main.shake(180, 0.004);
+  }
+
   update(_t, dtMs) {
+    this.syncRuin();
     this.drawConstruction(dtMs);
     // Beacon energy rings + orbiting motes
     this.shardT += dtMs / 1000;

@@ -61,7 +61,7 @@ function markHint(id) { if (!store.state.hints[id]) { store.state.hints[id] = tr
 
 // Called with the side columns (every 200 ms).
 export function refreshRightColumn(ui) {
-  const vis = ui.sideVisible() && store.missionsUnlocked();
+  const vis = ui.sideVisible() && store.missionsUnlocked() && ui.unlocked('missions');
   const m = ui.rightBtns.missions;
   m.setVisible(vis);
   if (vis) {
@@ -71,8 +71,9 @@ export function refreshRightColumn(ui) {
   }
   // live event (or the next one) with its countdown
   const e = ui.rightBtns.event;
-  e.setVisible(vis);
-  if (vis) {
+  const ev = vis && ui.unlocked('events');
+  e.setVisible(ev);
+  if (ev) {
     const live = store.liveEvent(), info = store.eventInfo(live ?? store.nextEvent());
     e.labelText.setText(live ? info.def.name : 'Event');
     e.timer.setText(live ? fmtShort(info.endsIn) : `in ${fmtShort(info.startsIn)}`).setColor(live ? PALETTE.textGold : PALETTE.textDim);
@@ -83,7 +84,7 @@ export function refreshRightColumn(ui) {
   // one-time pointers (after the tutorial): pulse a ring on the Missions button, then (the first time an
   // event is live) on the Event button, until each is tapped
   const f = testFlags();
-  const free = (!f.noTutorial || f.hints) && !ui.modal && !ui.screen;
+  const free = (!f.noTutorial || f.hints) && !ui.modal && !ui.screen && !ui.tutorial?.active;
   const hintId = !vis || !free ? null : !store.state.hints.missions ? 'missions' : (!store.state.hints.events && store.liveEvent() ? 'event' : null);
   const hint = hintId ? ui.rightBtns[hintId] : null;
   ui.hintTarget = hintId;

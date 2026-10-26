@@ -141,7 +141,7 @@ export default class UIScene extends Phaser.Scene {
 
   // Lets BaseScene know a screen point belongs to the UI.
   blocksPointer(x, y) {
-    if (this.modal || this.screen || this.reveal || this.replay) return true;
+    if (this.modal || this.screen || this.reveal || this.replay || this.tutorial?.story || this.tutorial?.celebrating) return true;
     if (y < TOP_H || y > H - NAV_H) return true;
     if (this.hero && (x - this.hero.x) ** 2 + (y - this.hero.y) ** 2 <= (HERO_R + 10) ** 2) return true;
     if (this.tip && this.tipBox.visible && x >= this.tipBox.x && x <= this.tipBox.x + 420 && y >= this.tipBox.y - 12 && y <= this.tipBox.y + 200) return true;
@@ -251,6 +251,7 @@ export default class UIScene extends Phaser.Scene {
     this.powerHit = powerHit;
 
     // Beacon Cores pill with "+" (tap either -> Beacon Core Rewards)
+    const coreN0 = this.children.list.length;
     this.add.image(516, T + 62, 'hud-core').setDisplaySize(46, 54);
     text(this, 548, T + 34, 'Beacon Cores', 16, '#e7c8ff', { fontStyle: 'bold' });
     this.coreText = text(this, 548, T + 54, '0', 28, CORES.hex, { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 3 });
@@ -263,6 +264,7 @@ export default class UIScene extends Phaser.Scene {
     this.corePlus.labelText.setText('+').setVisible(false);
     this.coreBadge = this.add.graphics().setDepth(7);
     this.coreBadgeText = text(this, 0, 0, '', 14, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5).setDepth(7);
+    this.coreEls = this.children.list.slice(coreN0);
 
     // Resource capsules: Energy (+rate), Alloy, Shards, Troops (+ training). Tap -> source tooltip.
     const [en, al, sh, tr] = this.capsuleSlots();
@@ -397,6 +399,25 @@ export default class UIScene extends Phaser.Scene {
     this.queueTaps = {};
   }
   sideVisible() { return !this.worldMode; }
+  // stage 13: HUD parts appear as the onboarding introduces them
+  unlocked(id) { return this.tutorial?.unlocked(id) ?? true; }
+  applyUnlocks() {
+    if (!this.tabs) return;
+    for (const t of this.tabs) {
+      if (t.hero) continue;
+      const on = this.unlocked(t.id);
+      if (t.icon.visible === on) continue;
+      t.icon.setVisible(on); t.label.setVisible(on); t.badgeText.setVisible(on);
+      if (t.hit) t.hit.input.enabled = on;
+      if (on && this.tutorial?.active) { // pop in
+        t.icon.setScale(t.icon.baseScale * 0.2);
+        this.tweens.add({ targets: t.icon, scale: t.icon.baseScale, duration: 500, ease: 'Back.easeOut' });
+        this.floatText(t.cx, t.cy - 60, 'NEW', PALETTE.textGold, 24);
+      }
+    }
+    const cores = this.unlocked('cores');
+    for (const o of this.coreEls ?? []) o.setVisible(cores);
+  }
   sideBlocks(x, y) {
     if (!this.sideVisible()) return false;
     return this.sideBtns.some((b) => b.visible && (x - b.x) ** 2 + (y - b.y) ** 2 <= (b.r + 8) ** 2);
@@ -428,6 +449,8 @@ export default class UIScene extends Phaser.Scene {
   refreshSide() {
     const vis = this.sideVisible();
     for (const b of this.sideBtns) b.setVisible(vis);
+    for (const [k, b] of Object.entries(this.queueBtns)) b.setVisible(vis && (this.tutorial?.unlocked(k) ?? true));
+    this.applyUnlocks();
     if (!vis) return;
     const s = store.state;
     const setQ = (b, label, pct, color = '#ffffff') => {
@@ -539,7 +562,7 @@ export default class UIScene extends Phaser.Scene {
       const hit = this.add.rectangle(cx, y0 + NAV_H / 2, sl.x1 - sl.x0, NAV_H, 0, 0.001).setInteractive({ useHandCursor: true });
       hit.on('pointerdown', () => { audio.play('tap'); audio.haptic(8); });
       hit.on('pointerup', () => this.onTab(sl.id));
-      return { ...sl, cx, cy: iconY, icon, label, badgeText, badge: '' };
+      return { ...sl, cx, cy: iconY, icon, label, badgeText, badge: '', hit };
     });
     // Base hero emblem (centre)
     const hc = this.hero = this.add.container(W / 2, hy).setDepth(2);
@@ -615,6 +638,7 @@ export default class UIScene extends Phaser.Scene {
   navBadgeValues() {
     const n = (v) => (v > 99 ? '99+' : v > 0 ? String(v) : '');
     const pulls = Math.floor(store.state.resources.cores / store.pullCost(1));
+    if (this.tutorial?.active) return { base: '', troops: '', armory: '', squads: '', world: '', more: '' }; // stage 13: no badge noise during onboarding
     return {
       base: this.activeTab !== 'base' && store.pendingPlacements().length ? '!' : '',
       troops: n(this.navNew.troops),
@@ -649,6 +673,7 @@ export default class UIScene extends Phaser.Scene {
 
   onTab(id) {
     if (this.reveal) return;
+    if (id !== 'base' && id !== 'settings' && this.tutorial && !this.tutorial.unlocked(id)) return; // stage 13: not introduced yet
     this.closeReplay?.();
     this.hideTip();
     if (id === 'base') { this.closeModal(); this.closeScreen(); this.hideWorld(); return; }

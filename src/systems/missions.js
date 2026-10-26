@@ -2,7 +2,7 @@
 // Day logic: local calendar days (same dayIndex as the daily login claim). Missions roll over only when
 // the day number goes UP, so setting the clock back never gives a second reset. On rollover, finished
 // tasks that weren't claimed and chests that were reached but not opened are paid automatically.
-import { MISSIONS, STAMINA } from '../config.js';
+import { MISSIONS, STAMINA, TUTORIAL } from '../config.js';
 
 export const defaultMissions = () => ({ day: null, progress: {}, claimed: [], chests: [] });
 
@@ -21,7 +21,7 @@ export function sanitizeMissions(raw) {
 }
 
 export const missionMethods = {
-  missionsUnlocked() { return this.state.tutorial.done === true; },
+  missionsUnlocked() { const t = this.state.tutorial; return t.done === true || t.step >= TUTORIAL.unlockAt.missions; },
 
   // Rolls missions over to today if the local day number went up. Returns the auto-paid bundle (or null).
   missionsRoll() {

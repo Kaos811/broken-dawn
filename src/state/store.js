@@ -213,6 +213,22 @@ export function migrate(raw) {
     raw.world = raw.world && Number.isFinite(raw.world.seed) ? createWorld(raw.world.seed >>> 0) : undefined;
     raw.version = 12;
   }
+  if (num(raw.version, 1) < 13) {
+    // v13 (stage 13): new-player onboarding. Anyone who has already played (old tutorial finished or
+    // partway, Beacon 2+, any hunt or recruit) is marked done with everything unlocked; a partway old
+    // tutorial is paid its completion reward. Only an untouched save starts the new onboarding.
+    raw = { ...raw };
+    const tu = raw.tutorial ?? {};
+    const played = tu.done === true || num(tu.step, 0) > 0 || num(raw.beacon?.level, 1) >= 2 || num(raw.gacha?.total, 0) > 0
+      || num(raw.hunt?.kills, 0) + num(raw.hunt?.losses, 0) > 0;
+    if (played) {
+      if (!tu.rewarded && tu.done !== true && raw.resources) {
+        raw.resources = { ...raw.resources, energy: num(raw.resources.energy, 0) + TUTORIAL.reward.energy, cores: num(raw.resources.cores, 0) + TUTORIAL.reward.cores };
+      }
+      raw.tutorial = { done: true, step: TUTORIAL.steps, skipped: tu.skipped === true, rewarded: true };
+    } else raw.tutorial = { done: false, step: 0, skipped: false, rewarded: false };
+    raw.version = 13;
+  }
   return raw;
 }
 
@@ -357,6 +373,7 @@ function sanitize(raw) {
   s.missions = sanitizeMissions(raw.missions);
   s.events = sanitizeEvents(raw.events);
   s.hints = { missions: raw.hints?.missions === true, events: raw.hints?.events === true };
+  for (const [k, v] of Object.entries(raw.hints ?? {})) if (/^(tip_|tut)/.test(k) && v === true) s.hints[k] = true; // stage 13 one-time tips
   // Stage 10
   s.items = sanitizeSpeedups(raw.items);
   s.firstUpgradeGift = raw.firstUpgradeGift === true;
@@ -457,7 +474,7 @@ class Store extends Emitter {
     return { ok: true, value: st[key] };
   }
 
-  tutorialActive() { return !this.state.tutorial.done; }
+  tutorialActive() { return !this.state.tutorial.done && !(typeof window !== 'undefined' && window.__BD_TEST?.noTutorial); }
 
   // Advance to `step` (never backwards). Finishing the last step pays the small completion reward once.
   tutorialAdvance(step) {
@@ -482,7 +499,14 @@ class Store extends Emitter {
     const t = this.state.tutorial;
     if (t.done) return false;
     t.done = true; t.skipped = true;
+    if (!t.rewarded) { // stage 13: skipping unlocks everything and still pays the completion reward
+      t.rewarded = true;
+      this.state.resources.energy += TUTORIAL.reward.energy;
+      this.state.resources.cores += TUTORIAL.reward.cores;
+    }
+    t.step = TUTORIAL.steps;
     this.save();
+    this.emit('change');
     this.emit('tutorial', t.step, true);
     return true;
   }
@@ -572,13 +596,15 @@ class Store extends Emitter {
     if (!info.can) return { ok: false, reason: info.reason };
     this.state.resources.energy -= info.cost;
     if (id === BEACON.id) this.state.beacon.charge = 0; // the full charge is spent to start the upgrade
-    this.state.construction.push({ id, toLevel: info.level + 1, cost: info.cost, total: info.seconds, progress: 0 });
+    const fast = this.tutorialActive() ? TUTORIAL.fast[id]?.[info.level + 1] : null; // stage 13: quick first upgrades
+    const total = fast ? Math.min(fast, info.seconds) : info.seconds;
+    this.state.construction.push({ id, toLevel: info.level + 1, cost: info.cost, total, progress: 0 });
     if (!this.state.firstUpgradeGift) { this.state.firstUpgradeGift = true; this.grantItems(SPEEDUPS.firstUpgrade); this.emit('gift', SPEEDUPS.firstUpgrade); }
     this.track('upgradeStart');
     this.save();
     this.emit('upgradeStart', id);
     this.emit('change');
-    return { ok: true, started: true, seconds: info.seconds, cost: info.cost, toLevel: info.level + 1 };
+    return { ok: true, started: true, seconds: total, cost: info.cost, toLevel: info.level + 1 };
   }
 
   // Cancels a running upgrade: full Energy refund (and the Beacon gets its charge back).
@@ -1164,13 +1190,16 @@ class Store extends Emitter {
 
   pullOne() {
     const g = this.state.gacha;
-    const { rarity, pity } = this.rollRarity();
+    let { rarity, pity } = this.rollRarity();
     g.total += 1;
     g.sinceEpic = rarity === 'epic' || rarity === 'legendary' ? 0 : g.sinceEpic + 1;
     g.sinceLegendary = rarity === 'legendary' ? 0 : g.sinceLegendary + 1;
-    const isLeader = this.rng() < GACHA.leaderChance;
-    const pool = (isLeader ? LEADER_IDS.filter((id) => LEADERS[id].rarity === rarity) : GEAR_IDS.filter((id) => GEAR[id].rarity === rarity));
-    const id = pool[Math.floor(this.rng() * pool.length) % pool.length];
+    let isLeader = this.rng() < GACHA.leaderChance;
+    let pool = (isLeader ? LEADER_IDS.filter((id) => LEADERS[id].rarity === rarity) : GEAR_IDS.filter((id) => GEAR[id].rarity === rarity));
+    let id = pool[Math.floor(this.rng() * pool.length) % pool.length];
+    // stage 13: the first recruit during onboarding is always the tutorial leader (Kael)
+    const forced = this.tutorialActive() && g.total === 1 && !this.state.leaders[TUTORIAL.firstPull] ? TUTORIAL.firstPull : null;
+    if (forced) { isLeader = true; id = forced; rarity = LEADERS[forced].rarity; g.sinceEpic = 0; g.sinceLegendary = 0; }
     const res = { id, kind: isLeader ? 'leader' : 'gear', rarity, pity, at: Date.now() };
     if (isLeader) {
       const owned = this.state.leaders[id];
@@ -1368,7 +1397,9 @@ class Store extends Emitter {
     if (!info.can) return { ok: false, reason: info.reason };
     this.refillSquad(squadId, { silent: true });
     const army = squadArmy(this.state, squadId);
-    const r = this.world.sendMarch({ owner: LOCAL_OWNER, squadId, army, targetId, speed: this.mods.march, meta: { auto, power: info.power, enemy: info.enemy, stamina: STAMINA.perAttack } });
+    let speed = this.mods.march;
+    if (this.tutorialActive() && info.travel > 5) speed *= info.travel / 5; // stage 13: the first hunt marches fast (~10 s out and back)
+    const r = this.world.sendMarch({ owner: LOCAL_OWNER, squadId, army, targetId, speed, meta: { auto, power: info.power, enemy: info.enemy, stamina: STAMINA.perAttack } });
     if (!r.ok) return r;
     this.state.hunt.stamina -= STAMINA.perAttack;
     if (!this.simulating) { this.save(); this.emit('march', r.march); this.emit('change'); }
