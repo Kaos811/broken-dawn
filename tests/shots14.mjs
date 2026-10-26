@@ -1,0 +1,18 @@
+import { chromium } from 'playwright-core';
+import { createServer } from 'http'; import { readFile } from 'fs/promises'; import { join, extname } from 'path';
+const ROOT='/workspace/broken-dawn/dist', T={'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.json':'application/json','.webp':'image/webp','.jpg':'image/jpeg','.mp3':'audio/mpeg','.ogg':'audio/ogg'};
+const srv=createServer(async(q,r)=>{try{const p=join(ROOT,q.url==='/'?'index.html':decodeURIComponent(q.url.split('?')[0]));const b=await readFile(p);r.writeHead(200,{'content-type':T[extname(p)]??'application/octet-stream'});r.end(b);}catch{r.writeHead(404);r.end();}});
+await new Promise(r=>srv.listen(0,r)); const url=`http://localhost:${srv.address().port}/`;
+const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const ctx=await b.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,hasTouch:true,isMobile:true});
+await ctx.addInitScript(()=>{window.__BD_TEST={noTutorial:true};});
+const p=await ctx.newPage(); await p.goto(url,{waitUntil:'domcontentloaded'});
+await p.waitForFunction(()=>window.__BD?.controls?.().some(c=>c.meta==='q-goal'),null,{timeout:60000});
+const s=(n)=>p.screenshot({path:`/workspace/broken-dawn/screens/stage14-${n}.png`}); const w=(ms)=>p.waitForTimeout(ms);
+await w(1500); await s('goal-chip');
+await p.evaluate(()=>{const st=__BD.store;st.state.resources.energy=1e6;st.state.resources.alloy=1e6;st.state.buildings.commandCenter.level=3;st.emit('change');}); await p.waitForFunction(()=>__BD.ui().rightBtns.goal.timer.text==='Claim!',null,{timeout:15000}).catch(()=>console.log('noclaim')); await w(300); console.log(await p.evaluate(()=>JSON.stringify([__BD.store.currentGoal(),__BD.ui().rightBtns.goal.timer.text,__BD.store.state.buildings.commandCenter])));await s('goal-claim-ready');
+await p.evaluate(()=>{const c=__BD.controls().find(c=>c.meta==='q-goal');window.__c=c;}); const c=await p.evaluate(()=>window.__c);
+await p.touchscreen.tap(c.x,c.y); await w(400); await s('goal-claimed-toast');
+await p.evaluate(()=>{const st=__BD.store;st.state.beacon.level=10;st.state.buildings.barracks.level=6;st.upgrade('barracks');}); await w(800); await s('help-button');
+const h=await p.evaluate(()=>__BD.controls().find(c=>c.meta==='q-help')); await p.touchscreen.tap(h.x,h.y); await w(2900); await s('help-requested');
+await b.close(); srv.close(); console.log('done');
