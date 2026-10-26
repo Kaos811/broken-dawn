@@ -366,6 +366,7 @@ export class Tutorial {
       return;
     }
     this.goal.setVisible(false);
+    if (this.tip) this.endTip(); // a replay starts clean
     if (this.step === 0) { this.hide(); if (!this.story) this.openStory(); return; }
     if (this.celebrating) { this.hide(); return; }
     if (this.entered !== this.step) { this.entered = this.step; this.t = {}; STEPS[this.step]?.enter?.(ui, this.t); this.refreshCard(true); }
