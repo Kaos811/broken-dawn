@@ -39,3 +39,9 @@ Screens: `screens/icon-audit-{base,more,settings,troops,leaders,squads,infirmary
 - Name the files `src/art/ui/<key>.webp`. Suggested keys: `q-builder`, `q-training`, `q-healing`, `hud-goal`, `hud-help`, `hud-plus`, `ic-place`, `ic-star`, `ic-star-empty`, `ic-hp`, `ic-atk`, `ic-def`, `ic-clock`, `ic-lock`, `ic-squad`, `ic-beds`, `ic-sound-on`, `ic-sound-off`, `ic-haptics-on`, `ic-haptics-off`, `ic-attack`, `ic-warn`.
 - Queue icons: `roundButton` already accepts a texture key, as Research does with `more-research`.
 - Glyphs: in `skin.glyph()`, draw `ic-<kind>` as an image when that texture exists. Emoji inside text strings need an inline image beside the text.
+
+## Stage 15 status (painted icons wired)
+Done: queue buttons (Builder/Training/Healing), Goal, Help, Cores "+", skin glyphs (clock, beds/heal, squad/troops, def/shield, atk/sword, hp, lock, star + empty star),
+leading-emoji labels via `attachLeadIcon` (🔒 🏗 🔊 🔇 📳 📴 ⚠ ⚔ ★), Armory star row, world Lv badges and RIFT CITADEL plaque.
+Kept as text: ✓ ✕ → ↩, and ★ inside sentences / counts ("5★", "★ Up" button keeps leading icon). Sheet D skipped.
+After shots: screens/icons-after-*.png.
