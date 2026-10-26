@@ -100,7 +100,31 @@ export function drawBadge(g, x, y, r = 14) {
 }
 
 // Small vector glyphs for stat rows (s = half size).
+// Stage 15: painted icons (src/art/ui/ic-*.webp) replace the drawn glyphs when the texture is loaded.
+const GLYPH_ART = { clock: 'ic-clock', speed: 'ic-clock', beds: 'ic-beds', heal: 'ic-beds', squad: 'ic-squad', troops: 'ic-squad', def: 'ic-def', shield: 'ic-def', atk: 'ic-atk', sword: 'ic-atk', hp: 'ic-hp', lock: 'ic-lock', star: 'ic-star' };
+const GLYPH_SCALE = { atk: 2.5, sword: 2.5, lock: 2.4, star: 2.3 };
+export function paintedGlyph(g, kind, x, y, s, color) {
+  let key = GLYPH_ART[kind];
+  if (kind === 'star' && color !== SKIN.gold && color !== 0x3fd9d2) key = 'ic-star-empty';
+  const scene = g.scene;
+  if (!key || !scene?.textures?.exists(key)) return false;
+  const img = scene.add.image(x + (g.x || 0), y + (g.y || 0), key);
+  img.setDisplaySize(s * (GLYPH_SCALE[kind] ?? 2.3), s * (GLYPH_SCALE[kind] ?? 2.3));
+  if (kind === 'lock' && color !== undefined && color !== SKIN.gold) img.setTint(0xe6e9ef);
+  const attach = () => {
+    if (!img.scene || !g.scene) return;
+    const c = g.parentContainer;
+    if (c) { if (img.parentContainer !== c) { scene.children.remove(img); c.addAt(img, c.getIndex(g) + 1); } }
+    else img.setDepth(g.depth).setScrollFactor(g.scrollFactorX, g.scrollFactorY);
+    img.setVisible(true);
+  };
+  if (g.parentContainer) attach(); else { img.setVisible(false); scene.events.once('postupdate', attach); }
+  g.once('destroy', () => img.destroy());
+  (g.paintedIcons ??= []).push(img);
+  return true;
+}
 export function glyph(g, kind, x, y, s = 14, color = SKIN.gold) {
+  if (paintedGlyph(g, kind, x, y, s, color)) return;
   const hi = lerpC(color, 0xffffff, 0.5);
   g.lineStyle(Math.max(2, s * 0.2), color, 1);
   switch (kind) {

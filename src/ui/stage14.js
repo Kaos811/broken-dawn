@@ -18,8 +18,8 @@ const helpIcon = (g, col) => { // two clasped hands, simplified: two arcs + a sp
 };
 
 export function createStage14Buttons(ui, mk, xr, y) {
-  ui.rightBtns.goal = mk(y, 'Goal', 'q-goal', goalIcon, () => onGoal(ui), PALETTE.gold).setVisible(false);
-  ui.rightBtns.help = mk(y + 114, 'Help', 'q-help', helpIcon, () => onHelp(ui), PALETTE.cyan).setVisible(false);
+  ui.rightBtns.goal = mk(y, 'Goal', 'q-goal', 'ic-goal', () => onGoal(ui), PALETTE.gold).setVisible(false);
+  ui.rightBtns.help = mk(y + 114, 'Help', 'q-help', 'ic-help', () => onHelp(ui), PALETTE.cyan).setVisible(false);
   ui.sideBtns.push(ui.rightBtns.goal, ui.rightBtns.help);
   ui.unsubs.push(store.on('crewHelp', (h) => { if (!store.simulating && h.n === 1) ui.toast(`The crew is helping: ${h.name} −${fmtDuration(h.cut)} per help`, 1800); }));
 }

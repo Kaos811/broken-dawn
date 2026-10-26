@@ -3,6 +3,7 @@ import { WORLD, PALETTE, CREATURES, SQUADS, BASE_TIERS, baseTier } from '../conf
 import { store } from '../state/store.js';
 import { mulberry32 } from '../world/battle.js';
 import { LOCAL_OWNER, BASE_ID, CENTER, dist } from '../world/worldState.js';
+import { attachLeadIcon } from '../ui/widgets.js';
 
 const T = WORLD.tile;
 const SIZE = WORLD.size * T;
@@ -66,6 +67,7 @@ export default class WorldScene extends Phaser.Scene {
   plaque(x, y, str, o = {}) {
     const t = this.add.text(x, y, str, { fontFamily: FONT, fontSize: `${o.size ?? 24}px`, fontStyle: o.bold === false ? 'normal' : 'bold', color: o.color ?? '#f2ead8', backgroundColor: o.bg ?? '#07090dcc', padding: { x: 10, y: 4 }, align: 'center' })
       .setOrigin(0.5, o.oy ?? 0).setDepth(o.depth ?? 41);
+    attachLeadIcon(t);
     this.labels.push({ t, min: o.min ?? 0 });
     this.fitLabel(this.labels[this.labels.length - 1]);
     return t;
@@ -176,7 +178,7 @@ export default class WorldScene extends Phaser.Scene {
     for (const l of this.labels) {
       const up = l.t.getData('stackUnder');
       if (up?.active) l.t.setY(up.y + up.displayHeight + 2);
-      else if (l.t.getData('below')) { const top = this.labels.find((m) => m.t.text === '🔒 RIFT CITADEL'); if (top) l.t.setY(top.t.y + top.t.displayHeight + 2); }
+      else if (l.t.getData('below')) { const top = this.labels.find((m) => m.t.rawText === '🔒 RIFT CITADEL'); if (top) l.t.setY(top.t.y + top.t.displayHeight + 2); }
     }
   }
 
@@ -248,7 +250,7 @@ export default class WorldScene extends Phaser.Scene {
         if (!force) { img.setAlpha(0).setScale(0.2); this.tweens.add({ targets: img, alpha: 1, scale: elite ? 0.8 : 0.6, duration: 500, ease: 'Back.easeOut' }); }
       }
       const locked = e.level > maxL;
-      s.badge.setText(`${locked ? '🔒 ' : ''}Lv ${e.level}${e.busy ? ' ⚔' : ''}`).setColor(locked ? '#9aa6b8' : (CREATURES[e.type].elite ? '#ffb347' : '#ffffff'));
+      s.badge.setText(`${locked ? '🔒 ' : e.busy ? '⚔ ' : ''}Lv ${e.level}`).setColor(locked ? '#9aa6b8' : (CREATURES[e.type].elite ? '#ffb347' : '#ffffff'));
       s.img.setTint(locked ? 0x9a9a9a : 0xffffff);
     }
     for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }

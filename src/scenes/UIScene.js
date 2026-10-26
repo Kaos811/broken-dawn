@@ -258,9 +258,7 @@ export default class UIScene extends Phaser.Scene {
     const coreHit = this.add.rectangle(594, T + 62, 232, 80, 0, 0.001).setInteractive({ useHandCursor: true });
     coreHit.on('pointerup', () => this.openRewards());
     this.coreHit = coreHit;
-    this.corePlus = this.roundButton(676, T + 62, 21, '', 'cores-plus', (g) => {
-      g.fillStyle(0xffe2a6, 1).fillRect(-10, -3, 20, 6).fillRect(-3, -10, 6, 20);
-    }, () => this.openRewards(), PALETTE.gold);
+    this.corePlus = this.roundButton(676, T + 62, 21, '', 'cores-plus', 'ic-plus', () => this.openRewards(), PALETTE.gold);
     this.corePlus.labelText.setText('+').setVisible(false);
     this.coreBadge = this.add.graphics().setDepth(7);
     this.coreBadgeText = text(this, 0, 0, '', 14, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5).setDepth(7);
@@ -380,10 +378,10 @@ export default class UIScene extends Phaser.Scene {
   createSideColumns() {
     const r = 36, xl = 52, y0 = TOP_H + 104, dy = 114;
     const ic = {
-      builder: (g, col) => { g.fillStyle(col, 1).fillRect(-14, -16, 22, 10).fillRect(-4, -8, 6, 26); g.fillRect(8, -14, 6, 6); },
+      builder: 'ic-q-builder',
       research: 'more-research',
-      training: (g, col) => { g.lineStyle(3, col, 1).strokeCircle(0, -10, 7); g.strokePoints([{ x: -13, y: 14 }, { x: -9, y: 2 }, { x: 9, y: 2 }, { x: 13, y: 14 }], false); },
-      healing: (g, col) => { g.fillStyle(col, 1).fillRect(-5, -16, 10, 28).fillRect(-14, -7, 28, 10); },
+      training: 'ic-q-training',
+      healing: 'ic-q-healing',
       hunt: (g, col) => { g.lineStyle(3, col, 1).strokeCircle(0, -2, 16); g.lineBetween(-22, -2, -10, -2); g.lineBetween(10, -2, 22, -2); g.lineBetween(0, -24, 0, -12); g.lineBetween(0, 8, 0, 20); g.fillStyle(col, 1).fillCircle(0, -2, 4); },
       rewards: (g) => { drawCoreIcon(g, 0, -2, 16); },
       armory: (g, col) => { g.lineStyle(3, col, 1).strokePoints([{ x: 0, y: -22 }, { x: 14, y: -4 }, { x: 0, y: 16 }, { x: -14, y: -4 }], true); g.fillStyle(col, 0.5).fillPoints([{ x: 0, y: -14 }, { x: 7, y: -4 }, { x: 0, y: 7 }, { x: -7, y: -4 }], true); },

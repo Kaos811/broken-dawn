@@ -142,7 +142,8 @@ export function leaderDetail(ui, api, lid) {
       const tc = TROOP_CLASSES[L.affinity];
       const nextBuff = own.stars < GACHA.maxStars ? `\nNext ★: ${fmtBuff(L.buff, 1 + GACHA.starBonus * own.stars)}` : '\nMax stars';
       c.add(text(ui, r.x + 272, r.y + 88, R.name.toUpperCase(), 22, R.hex, { fontStyle: 'bold', letterSpacing: 2 }));
-      c.add(text(ui, r.x + 272, r.y + 120, `${'★'.repeat(own.stars)}${'☆'.repeat(GACHA.maxStars - own.stars)}`, 28, PALETTE.textGold));
+      if (ui.textures.exists('ic-star')) for (let k = 0; k < GACHA.maxStars; k++) c.add(ui.add.image(r.x + 288 + k * 34, r.y + 137, k < own.stars ? 'ic-star' : 'ic-star-empty').setDisplaySize(32, 32));
+      else c.add(text(ui, r.x + 272, r.y + 120, `${'★'.repeat(own.stars)}${'☆'.repeat(GACHA.maxStars - own.stars)}`, 28, PALETTE.textGold));
       c.add(text(ui, r.x + 272, r.y + 162, `Affinity: ${tc.plural}`, 22, tc.colorHex, { fontStyle: 'bold' }));
       c.add(text(ui, r.x + 272, r.y + 200, `Buff: ${fmtBuff(L.buff, mult)}${nextBuff}`, 20, PALETTE.textCyan, { wordWrap: { width: r.w - 300 }, lineSpacing: 4 }));
       c.add(text(ui, r.x + 272, r.y + 268, L.debuff ? `Debuff: ${fmtBuff(L.debuff)}` : 'No debuff', 20, L.debuff ? '#ff8a95' : PALETTE.textDim));

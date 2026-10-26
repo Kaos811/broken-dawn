@@ -6,7 +6,51 @@ import { SKIN, drawFrame, lerpC, bake, drawButtonSkin, BUTTON_STYLES } from './s
 export const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 export function text(scene, x, y, str, size = 24, color = PALETTE.text, opts = {}) {
-  return scene.add.text(x, y, str, { fontFamily: FONT, fontSize: `${size}px`, color, ...opts });
+  return attachLeadIcon(scene.add.text(x, y, str, { fontFamily: FONT, fontSize: `${size}px`, color, ...opts }));
+}
+
+// Stage 15: a leading emoji in a label is drawn as a painted icon (src/art/ui/ic-*.webp) instead.
+// t.rawText keeps the original string (tests and lookups match on it).
+export const LEAD_ICONS = { '🔒': 'ic-lock', '🏗': 'ic-place', '🔊': 'ic-sound-on', '🔇': 'ic-sound-off', '📳': 'ic-haptics-on', '📴': 'ic-haptics-off', '⚠': 'ic-warn', '⚔': 'ic-attack', '★': 'ic-star' };
+const LEAD_RE = /^(🔒|🏗️?|🔊|🔇|📳|📴|⚠️?|⚔️?|★)\s*/u;
+const ICON_GAP = '\u2002\u2002 ';
+export function attachLeadIcon(t) {
+  if (t.leadIconAttached) return t;
+  t.leadIconAttached = true;
+  const scene = t.scene, base = t.setText.bind(t);
+  let img = null;
+  const sync = () => {
+    if (!img) return;
+    if (!t.active) { drop(); return; }
+    const c = t.parentContainer;
+    if (c) { if (img.parentContainer !== c) { if (img.parentContainer) img.parentContainer.remove(img); else scene.children.remove(img); c.addAt(img, c.getIndex(t) + 1); } }
+    else img.setDepth(t.depth).setScrollFactor(t.scrollFactorX, t.scrollFactorY);
+    const sc = t.scaleX, f = parseFloat(t.style.fontSize) || 20, pad = t.padding || {};
+    const lines = Math.max(1, t.getWrappedText ? t.getWrappedText().length : 1);
+    const lh = (t.height - (pad.top || 0) - (pad.bottom || 0)) / lines;
+    const left = t.x - t.width * sc * t.originX + (pad.left || 0) * sc;
+    const top = t.y - t.height * t.scaleY * t.originY + (pad.top || 0) * t.scaleY;
+    // for centered multi-line text the first line starts further right; good enough for single-line labels
+    const sz = f * 1.15 * sc;
+    img.setDisplaySize(sz, sz).setPosition(left + sz / 2 - f * 0.05 * sc, top + (lh * t.scaleY) / 2).setAlpha(t.alpha);
+    img.setVisible(t.visible && !!t.text);
+  };
+  const drop = () => { if (img) { scene.events.off('postupdate', sync); img.destroy(); img = null; } };
+  t.setText = (v) => {
+    const str = Array.isArray(v) ? v.join('\n') : String(v ?? '');
+    t.rawText = str;
+    const m = str.match(LEAD_RE);
+    const key = m && LEAD_ICONS[m[1].replace('\ufe0f', '')];
+    if (key && scene.textures.exists(key)) {
+      base(ICON_GAP + str.slice(m[0].length));
+      if (!img) { img = scene.add.image(0, 0, key); scene.events.on('postupdate', sync); t.once('destroy', drop); }
+      else img.setTexture(key);
+      t.leadIcon = img; sync();
+    } else { base(str); drop(); t.leadIcon = null; }
+    return t;
+  };
+  t.setText(t.text);
+  return t;
 }
 
 export function fmt(n) {
@@ -73,7 +117,7 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
     pressed = false;
   });
   c.setEnabled = (v) => { if (enabled !== !!v) { enabled = !!v; draw(); } return c; };
-  c.setLabel = (s) => { if (t.text !== s) { t.setText(s); fit(); } return c; };
+  c.setLabel = (s) => { if (t.rawText !== s) { t.setText(s); fit(); } return c; };
   c.setStyle = (s) => { if (current !== s) { current = s; draw(); } return c; };
   c.hit = hit;
   c.isButton = true;
