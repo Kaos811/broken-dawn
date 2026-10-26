@@ -748,7 +748,7 @@ async function runStage2(url, label, takeShots) {
     await tab(3);
     await click('Bravo', { kind: 'tab' });
     await click('slot-leader', { kind: 'zone' });
-    const pk = await ev(() => { const c = __BD.controls(); const z = (n) => c.find((b) => b.kind === 'zone' && b.label === n); return { kael: z('pick-kael')?.enabled, none: z('pick-none')?.enabled, tag: !!__BD.ui().modal?.list.some((o) => o.text === '🔒 In Alpha') }; });
+    const pk = await ev(() => { const c = __BD.controls(); const z = (n) => c.find((b) => b.kind === 'zone' && b.label === n); return { kael: z('pick-kael')?.enabled, none: z('pick-none')?.enabled, tag: !!__BD.ui().modal?.list.some((o) => (o.rawText ?? o.text) === '🔒 In Alpha') }; });
     check('Bravo picker: Kael shown locked "In Alpha", No-leader selectable', pk.kael === false && pk.none === true && pk.tag, JSON.stringify(pk));
     await shot('leader-picker-locked.png');
     { const z = await ev(() => __BD.controls().find((b) => b.kind === 'zone' && b.label === 'pick-kael')); await page.mouse.click(z.x, z.y); await sleep(400); }
