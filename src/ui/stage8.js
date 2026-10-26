@@ -9,6 +9,7 @@ import { audio } from '../audio/audio.js';
 import { speedupIconKey } from './speedups.js';
 import { itemById } from '../systems/items.js';
 import { TOP_H } from './layout.js';
+import { createStage14Buttons, refreshStage14 } from './stage14.js';
 
 const testFlags = () => (typeof window !== 'undefined' ? window.__BD_TEST ?? {} : {});
 
@@ -44,6 +45,7 @@ export function createRightColumn(ui) {
   };
   ui.rightBtns.event = mk(y0 + dy, 'Event', 'q-event', 'more-events', () => { markHint('events'); ui.hintTarget = null; ui.hintG.clear().setVisible(false); openEvents(ui); }, PALETTE.gold).setVisible(false);
   ui.sideBtns.push(ui.rightBtns.missions, ui.rightBtns.event);
+  createStage14Buttons(ui, mk, xr, y0 + dy * 2);
   ui.hintG = ui.add.graphics().setDepth(7).setVisible(false);
   const toast = (msg, ms) => { if (!store.simulating && store.missionsUnlocked()) ui.toast(msg, ms); };
   ui.unsubs.push(
@@ -79,6 +81,7 @@ export function refreshRightColumn(ui) {
     e.timer.setText(live ? fmtShort(info.endsIn) : `in ${fmtShort(info.startsIn)}`).setColor(live ? PALETTE.textGold : PALETTE.textDim);
     drawBadge(e, store.eventsReady());
   }
+  refreshStage14(ui, vis, drawBadge);
   if (ui.modal?.tick) ui.modal.tick();
   if (store.eventSummaries?.length && !ui.modal && !ui.screen && !ui.reveal) showEventSummaries(ui);
   // one-time pointers (after the tutorial): pulse a ring on the Missions button, then (the first time an

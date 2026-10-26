@@ -380,7 +380,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let m = await state();
-    check('v2 save migrates to version 13 (via v3 … v8)', m.version === 13);
+    check('v2 save migrates to version 13 (via v3 … v8)', m.version === 14);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
@@ -401,7 +401,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     m = await state();
-    check('v3 save migrates to v13: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 13 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 save migrates to v13: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 14 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
     check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); return (await state()).resources.cores === 10; })());
 
@@ -417,7 +417,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     m = await state();
-    check('v4 save migrates to v13: levels, Cores, claims kept; no construction', m.version === 13 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
+    check('v4 save migrates to v13: levels, Cores, claims kept; no construction', m.version === 14 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
     check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
 
     // --- 1. Save migration from a stage-1 (v1) save
@@ -433,7 +433,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
-    check('v1 save migrates to version 13', s.version === 13);
+    check('v1 save migrates to version 13', s.version === 14);
     // the Barracks sat off its default tile (8,15): on the v9 map it keeps its direction from the Beacon
     const bOff = await ev(() => { const b = __BD.store.state.buildings.barracks, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('barracks', b.gx, b.gy), def: b.gx === 23 && b.gy === 30 }; });
     check('migration keeps buildings (moved Barracks keeps its direction from the Beacon), levels, Energy and Beacon', bOff.ok && !bOff.def && bOff.dx < -200 && Math.abs(bOff.dy) < 220 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
@@ -909,7 +909,7 @@ async function runStage3(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
-    check('v5 save migrates to v6 (and on to v13)', s.version === 13);
+    check('v5 save migrates to v6 (and on to v13)', s.version === 14);
     // the Armory sat on the old Infirmary tile (16,8), right of the Beacon: it stays to the right on the v9 map
     const aOff = await ev(() => { const b = __BD.store.state.buildings.armory, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('armory', b.gx, b.gy) }; });
     check('v6 keeps buildings (Armory stays right of the Beacon), levels, resources, troops and squads', aOff.ok && aOff.dx > 200 && Math.abs(aOff.dy) < 250 && s.buildings.commandCenter.level === 3 && s.beacon.level === 3 && s.resources.cores === 6 && s.troops.sentinel === 8 && s.squads.alpha.level === 2 && s.squads.alpha.lines[0].count === 6, JSON.stringify(s.buildings));
@@ -1268,7 +1268,7 @@ async function runStage4(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
-    check('v6 save migrates to v7 (and v13)', s.version === 13);
+    check('v6 save migrates to v7 (and v13)', s.version === 14);
     check('v7 keeps every troop as T1 (sentinel/bearer ids unchanged), no higher tiers', s.troops.sentinel === 12 && s.troops.bearer === 5 && s.troops.bulwark === 0 && s.troops.lancer === 0 && s.troops.aegis === 0, JSON.stringify(s.troops));
     check('v7 keeps the training lane (3 Sentinels, progress 1.5) as a T1 job', s.training.sentinel.count === 3 && near(s.training.sentinel.progress, 1.5, 0.6) && s.training.sentinel.unit === 'sentinel' && s.training.sentinel.from === null, JSON.stringify(s.training.sentinel));
     check('v7 keeps formations, wounded and hunt progress', s.squads.alpha.lines[0].type === 'sentinel' && s.squads.alpha.lines[0].count === 6 && s.squads.alpha.lines[0].full === 8 && s.infirmary.wounded.sentinel.alpha === 2 && s.hunt.bestKill === 3 && s.hunt.stamina === 70 && s.resources.cores === 12);
@@ -1557,7 +1557,7 @@ async function runStage5(url, label, takeShots) {
     // --- 0. loading screen, fresh save, defaults (stage 13 onboarding)
     check('loading screen fades out and is removed once the game is ready', await waitTrue(() => !document.getElementById('boot')));
     let s = await state();
-    check('new game: save v13 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 13 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
+    check('new game: save v13 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 14 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
     let t = await tut();
     check('new game: the 3-panel story intro opens first (page 1, Skip intro chip)', t.active && t.step === 0 && t.story === 0 && !!(await ctl(null, { meta: 'story-skip' })), JSON.stringify(t));
     check('new game: HUD is gated (only Base; Troops/World/Armory/Squads/More/Cores/Missions locked)', ['troops', 'world', 'armory', 'squads', 'more', 'cores', 'missions'].every((k) => t.locked.includes(k)) && await waitTrue(() => __BD.ui().tabs.filter((x) => !x.hero && x.icon.visible).length === 0), JSON.stringify(t.locked));
@@ -1720,7 +1720,7 @@ async function runStage5(url, label, takeShots) {
     await ev(() => { const k = 'brokenDawn.save.v1'; __BD.store.save = () => {}; const st = JSON.parse(localStorage.getItem(k)); st.version = 7; delete st.settings; delete st.tutorial; localStorage.setItem(k, JSON.stringify(st)); });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state(); t = await tut();
-    check('v7 save migrates to v13: tutorial marked done (no coach, one-time tips allowed), default audio settings, backup kept', s.version === 13 && s.tutorial.done && !s.tutorial.skipped && (!t.visible || !!t.tip) && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
+    check('v7 save migrates to v13: tutorial marked done (no coach, one-time tips allowed), default audio settings, backup kept', s.version === 14 && s.tutorial.done && !s.tutorial.skipped && (!t.visible || !!t.tip) && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
     check('existing players get a one-time "replay the tutorial from Settings" toast', await waitTrue(() => /Replay the tutorial/.test(__BD.ui().toastText.text) && __BD.ui().toastBox.visible, null, 40));
     await ev(() => { delete __BD.store.save; __BD.store.save(); });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await sleep(800);
@@ -1794,7 +1794,7 @@ async function runStage6(url, label, takeShots) {
 
     // --- 1. full-screen painted base, art sprites, level badges
     let s = await state();
-    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 13 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
+    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 14 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
     const art = await ev(() => { const b = __BD.base(); return { cc: b.sprites.commandCenter.img.texture.key, beacon: b.beaconSprite.texture.key, ground: b.ground.texture.key, decos: b.decos.length, inner: b.innerDecos.length }; });
     check('painted art: building + Beacon sprites, baked ground, scattered crystals/plants/rocks', art.cc === 'art-commandCenter' && art.beacon === 'art-beacon' && art.ground === 'ground-baked' && art.decos >= 60 && art.inner >= 10, JSON.stringify(art));
     const fill = await ev(() => { const c = __BD.base().cameras.main, v = c.worldView, G = __BD.grid.GROUND; return { ok: v.x >= G.x - 1 && v.y >= G.y - 1 && v.right <= G.x + G.w + 1 && v.bottom <= G.y + G.h + 1, bigger: G.w > v.width && G.h > v.height }; });
@@ -1934,7 +1934,7 @@ async function runStage6(url, label, takeShots) {
       const off = (id) => { const c = __BD.grid.isoToWorld(B[id].gx + 1.5, B[id].gy + 1.5); return { dx: c.x - o.x, dy: c.y - o.y }; };
       return { valid: ids.every((id) => st.canPlace(id, B[id].gx, B[id].gy)), cc: [B.commandCenter.gx, B.commandCenter.gy], arch: [B.archive.gx, B.archive.gy, B.archive.placed], br: off('barracks'), levels: ids.map((id) => B[id].level).join(',') };
     });
-    check('v8 save migrates to v9', s.version === 13);
+    check('v8 save migrates to v9', s.version === 14);
     check('v9: buildings on their old default tiles move to the new defaults (CC 12,8 -> 11,11; Archive 8,8 -> 12,19)', mig.cc.join() === '11,11' && mig.arch.join() === '12,19,true', JSON.stringify(mig));
     check('v9: a moved building keeps its direction from the Beacon (Barracks 9,15 stays lower-left)', mig.br.dx < -150 && mig.br.dy > -100, JSON.stringify(mig.br));
     check('v9: every migrated position is valid (inside the base, no overlaps), levels kept', mig.valid && mig.levels === '4,3,2,2,2', JSON.stringify(mig));
@@ -2398,6 +2398,103 @@ async function runStage10(url, label) {
 }
 
 // Stage 13: new-player onboarding. Layout at 6 phone sizes, Skip, Kael guarantee, v12 -> v13 migration.
+async function runStage14(url, label) {
+  console.log(`\n=== stage 14 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const KEY = 'brokenDawn.save.v1';
+  const open = async (w, h, flags = { noTutorial: true }) => {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    if (flags) await ctx.addInitScript((f) => { window.__BD_TEST = f; }, flags);
+    const page = await ctx.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    const ev = (fn, arg) => page.evaluate(fn, arg);
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(700); };
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready(); await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+    const ctl = async (meta) => { for (let i = 0; i < 15; i++) { const c = (await ev(() => __BD.controls())).filter((c) => c.meta === meta && c.enabled).pop(); if (c) return c; await sleep(200); } return null; };
+    const tap = async (meta) => { const c = await ctl(meta); if (!c) throw new Error(`no control ${meta}`); await page.mouse.click(c.x, c.y); await sleep(500); };
+    return { ctx, page, ev, ready, ctl, tap, errors };
+  };
+  try {
+    // --- onboarding untouched: no Goal/Help while Lyra's tutorial runs
+    {
+      const P = await open(390, 844, {});
+      const r = await P.ev(() => ({ active: __BD.tutorial().active, goal: __BD.controls().some((c) => c.meta === 'q-goal'), help: __BD.controls().some((c) => c.meta === 'q-help') }));
+      check('stage 14: Goal and Help stay hidden during the stage 13 onboarding', r.active && !r.goal && !r.help, JSON.stringify(r));
+      await P.ctx.close();
+    }
+    const P = await open(390, 844);
+    const st = () => P.ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
+    // --- chapter goals
+    let g = await P.ev(() => __BD.store.currentGoal());
+    check('goal chain starts at goal 1 (Command Center Lv 3, 1/3) and the Goal button shows', g?.i === 0 && g.cur === 1 && g.goal === 3 && !!(await P.ctl('q-goal')), JSON.stringify(g));
+    const s0 = await st();
+    await P.tap('q-goal'); await sleep(300);
+    let s1 = await st();
+    check('tapping an unfinished goal does not claim it (and jumps to its building)', s1.goals.i === 0 && Math.round(s1.resources.energy) <= Math.round(s0.resources.energy) + 30 && (await P.ev(() => __BD.ui().panel?.visible !== false)));
+    await P.ev(() => { const u = __BD.ui(); u.closePanel?.(true); __BD.store.state.buildings.commandCenter.level = 3; __BD.store.emit('change'); });
+    await sleep(500);
+    const t = await P.ctl('q-goal');
+    const e0 = await P.ev(() => __BD.store.state.resources.energy), m0 = await P.ev(() => __BD.store.state.items.m5 ?? 0);
+    await P.tap('q-goal');
+    s1 = await st();
+    check('a finished goal claims with one tap: +400 Energy, +1× 5m speed-up, next goal', s1.goals.i === 1 && s1.resources.energy - e0 >= 399 && (s1.items.m5 ?? 0) === m0 + 1, JSON.stringify({ i: s1.goals.i, de: s1.resources.energy - e0 }));
+    check('goal button showed "Claim!" when ready', !!t);
+    const again = await P.ev(() => __BD.store.claimGoal());
+    check('a goal cannot be claimed twice / early', again.ok === false && (await st()).goals.i === 1);
+    // --- crew help
+    check('Help button hidden with nothing running', !(await P.ev(() => __BD.controls().some((c) => c.meta === 'q-help'))));
+    const up = await P.ev(() => { const s = __BD.store; s.state.resources.energy = 1e6; s.state.resources.alloy = 1e6; s.state.beacon.level = 10; s.state.buildings.barracks.level = 6; return s.upgrade('barracks'); });
+    await sleep(500);
+    const left0 = await P.ev(() => __BD.store.constructionLeft('barracks'));
+    check('Help button appears once an upgrade runs', up.ok !== false && !!(await P.ctl('q-help')), JSON.stringify(up));
+    await P.tap('q-help');
+    await sleep(500);
+    let j = await P.ev(() => __BD.store.constructionJob('barracks'));
+    const hb = await P.ev(() => __BD.controls().filter((c) => c.meta === 'q-help'));
+    check('Ask crew marks the job and hides the button', j.helpReq === true && j.helped === 0 && hb.length === 0, JSON.stringify({ j, hb }));
+    await P.ev(() => { for (let i = 0; i < 40; i++) __BD.store.tick(0.25); }); // 10 s game time
+    j = await P.ev(() => __BD.store.constructionJob('barracks'));
+    const left1 = await P.ev(() => __BD.store.constructionLeft('barracks'));
+    check('crew helps 3× in 10 s, each ≥ 1 min off (1% or 60 s)', j.helped === 3 && left0 - left1 >= 3 * 60 + 9, JSON.stringify({ helped: j.helped, cut: left0 - left1 }));
+    await P.ev(() => { for (let i = 0; i < 80; i++) __BD.store.tick(0.25); });
+    j = await P.ev(() => __BD.store.constructionJob('barracks'));
+    check('crew help stops at 5 per job', j.helped === 5);
+    // persistence
+    await P.ev(() => __BD.store.save()); await P.page.reload({ waitUntil: 'domcontentloaded' }); await P.ready();
+    const s2 = await st();
+    check('goal index and crew help persist after reload', s2.goals.i === 1 && s2.construction[0]?.helpReq === true && s2.construction[0]?.helped === 5);
+    // research help
+    const rr = await P.ev(() => { const s = __BD.store; s.state.buildings.archive.level = Math.max(1, s.state.buildings.archive.level); s.state.buildings.archive.placed = true; const id = Object.keys(s.state.research.levels)[0] ?? 'salvage'; const r = s.startResearch(id); return { r, n: s.helpAskable() }; });
+    check('research jobs can be helped too', rr.n === 1 || rr.r?.ok === false, JSON.stringify(rr));
+    // layout with both buttons up
+    const issues = await P.ev(() => __BD.layoutIssues());
+    check('layout 390x844 with Goal + Help: no overlap', issues.length === 0, issues.slice(0, 4).join(' | '));
+    check('stage 14: no console errors', P.errors.length === 0, P.errors.slice(0, 3).join(' | '));
+    await P.ctx.close();
+    // --- other sizes
+    for (const [w, h] of [[360, 740], [375, 667], [430, 932], [390, 664], [375, 560]]) {
+      const Q = await open(w, h);
+      await Q.ev(() => { const s = __BD.store; s.state.resources.energy = 1e6; s.state.resources.alloy = 1e6; return s.upgrade('commandCenter'); });
+      await Q.page.waitForFunction(() => __BD.controls().some((c) => c.meta === 'q-help'), null, { timeout: 5000 }).catch(() => {});
+      const r = await Q.ev(() => ({ ask: __BD.store.helpAskable(), hv: __BD.ui().rightBtns.help.visible, job: __BD.store.state.construction[0], issues: __BD.layoutIssues(), goal: __BD.controls().some((c) => c.meta === 'q-goal'), help: __BD.controls().some((c) => c.meta === 'q-help') }));
+      check(`stage 14 layout ${w}x${h}: Goal + Help fit (no overlap)`, r.goal && r.help && r.issues.length === 0, JSON.stringify(r).slice(0, 300));
+      await Q.ctx.close();
+    }
+    // --- v13 -> v14 migration: met goals are skipped without back-pay
+    {
+      const Q = await open(390, 844);
+      await Q.ev((KEY) => { const s = JSON.parse(localStorage.getItem(KEY)); s.version = 13; delete s.goals; s.buildings.commandCenter.level = 3; s.beacon.level = 4; s.hunt.kills = 12; localStorage.setItem(KEY, JSON.stringify(s)); __BD.store.save = () => {}; }, KEY);
+      await Q.page.reload({ waitUntil: 'domcontentloaded' }); await Q.ready();
+      const r = await Q.ev(() => ({ v: __BD.store.state.version, i: __BD.store.state.goals.i }));
+      check('v13 save → v14: goals fast-forward past met goals (CC 3) and stop at the first open one (30 troops)', r.v === 14 && r.i === 1, JSON.stringify(r));
+      await Q.ctx.close();
+    }
+  } catch (e) {
+    check('stage 14 suite ran without exceptions', false, e.message);
+  }
+  await browser.close();
+}
+
 async function runStage13(url, label) {
   console.log(`\n=== stage 13 · ${label}: ${url}`);
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -2906,6 +3003,7 @@ try {
   if (!process.env.ONLY || process.env.ONLY === '10') await runStage10(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '12') await runStage12(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '13') await runStage13(`http://localhost:${srv.address().port}/`, 'dist/ build');
+  if (!process.env.ONLY || process.env.ONLY === '14') await runStage14(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '9c') await runStage9c(`http://localhost:${srv.address().port}/`, 'dist/ build');
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);

@@ -386,7 +386,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 13; // v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 14; // v14: chapter goals + crew help (stage 14); v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 

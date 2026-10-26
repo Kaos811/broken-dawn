@@ -17,6 +17,7 @@ import { createWorld, sanitizeWorld, dist, marchSeconds, LOCAL_OWNER } from '../
 import { squadArmy } from '../world/armies.js';
 import { combatPower, resolveBattle, odds } from '../world/battle.js';
 import { defaultMissions, sanitizeMissions, missionMethods } from '../systems/missions.js';
+import { defaultGoals, sanitizeGoals, fastForwardGoals, goalMethods } from '../systems/goals.js';
 import { defaultEvents, sanitizeEvents, eventMethods } from '../systems/events.js';
 import { emptySpeedups, sanitizeSpeedups, speedupMethods } from '../systems/speedups.js';
 import { LocalEventService } from '../events/eventService.js';
@@ -68,6 +69,7 @@ function defaultState() {
     tutorial: { done: false, step: 0, skipped: false }, // stage 5: first-time guided tutorial
     missions: defaultMissions(),               // stage 8: daily missions (local day, progress, claims, chests)
     events: defaultEvents(),                   // stage 8: event progress by id, Rift Marks, Exchange purchases
+    goals: defaultGoals(),  // stage 14: chapter goal chain index
     hints: { missions: false, events: false }, // stage 8: one-time pointers already shown
     items: emptySpeedups(),                    // stage 10: speed-up items { m1, m5, m15, h1, h3, h8, h24 }
     firstUpgradeGift: false,                   // stage 10: one-time 3x 5m with the first upgrade
@@ -91,6 +93,9 @@ const V9_SCALE = 1.75; // old offsets from the Beacon -> new map (bigger buildin
 
 // v1 (stage 1) -> v2 (stage 2). Never drops progress: buildings, levels, Energy and
 // Beacon carry over; new resources start at their defaults.
+// stage 14: Crew Help progress rides on the job
+const keepHelp = (j) => (j?.helpReq === true ? { helpReq: true, helped: Math.max(0, Math.min(5, Math.floor(Number(j.helped) || 0))), helpCd: Math.max(0, Math.min(10, Number(j.helpCd) || 0)) } : {});
+
 export function migrate(raw) {
   if (!raw || typeof raw !== 'object') return raw;
   const v = num(raw.version, 1);
@@ -325,7 +330,7 @@ function sanitize(raw) {
     const cost = Math.max(0, num(j?.cost, 0));
     if (cur == null || s.construction.some((x) => x.id === id) || s.construction.length >= CONSTRUCTION.builders) { s.resources.energy += cost; continue; }
     const total = num(j.total, 0) > 0 ? j.total : CONSTRUCTION.seconds(cur + 1);
-    s.construction.push({ id, toLevel: cur + 1, cost, total, progress: Math.min(total, Math.max(0, num(j.progress, 0))) });
+    s.construction.push({ id, toLevel: cur + 1, cost, total, progress: Math.min(total, Math.max(0, num(j.progress, 0))), ...keepHelp(j) });
   }
   // Stage 3: hunt progress, infirmary, world
   const h = raw.hunt ?? {};
@@ -359,7 +364,7 @@ function sanitize(raw) {
     const cost = { energy: Math.max(0, num(rj.cost?.energy, 0)), alloy: Math.max(0, num(rj.cost?.alloy, 0)), shards: Math.max(0, num(rj.cost?.shards, 0)) };
     const R = RESEARCH[rj.id], cur = s.research.levels[rj.id] ?? 0;
     if (R && rj.toLevel === cur + 1 && cur < (R.maxLevel ?? RESEARCH_TUNING.maxLevel) && num(rj.total, 0) > 0) {
-      s.research.job = { id: rj.id, toLevel: rj.toLevel, cost, total: rj.total, progress: Math.min(rj.total, Math.max(0, num(rj.progress, 0))) };
+      s.research.job = { id: rj.id, toLevel: rj.toLevel, cost, total: rj.total, progress: Math.min(rj.total, Math.max(0, num(rj.progress, 0))), ...keepHelp(rj) };
     } else { s.resources.energy += cost.energy; s.resources.alloy += cost.alloy; s.resources.shards += cost.shards; }
   }
   // Stage 5: settings + tutorial
@@ -371,6 +376,7 @@ function sanitize(raw) {
   s.tutorial = { done: tu.done === true || step >= TUTORIAL.steps, step, skipped: tu.skipped === true, rewarded: tu.rewarded === true };
   // Stage 8: missions + events
   s.missions = sanitizeMissions(raw.missions);
+  s.goals = raw.goals ? sanitizeGoals(raw.goals) : fastForwardGoals(s);
   s.events = sanitizeEvents(raw.events);
   s.hints = { missions: raw.hints?.missions === true, events: raw.hints?.events === true };
   for (const [k, v] of Object.entries(raw.hints ?? {})) if (/^(tip_|tut)/.test(k) && v === true) s.hints[k] = true; // stage 13 one-time tips
@@ -532,6 +538,7 @@ class Store extends Emitter {
     }
     if (s.construction.length) this.processConstruction(dt);
     if (s.research.job) this.processResearch(dt);
+    if (s.construction.length || s.research.job) this.processHelp(dt);
     this.tickStamina(dt);
     if (s.infirmary.queue.length) { const healed = this.processHealing(dt); if (Object.keys(healed).length) { this.save(); this.emit('healed', healed); this.emit('change'); } }
     this.processWorld(dt);
@@ -1548,5 +1555,5 @@ class Store extends Emitter {
   }
 }
 
-Object.assign(Store.prototype, missionMethods, eventMethods, speedupMethods);
+Object.assign(Store.prototype, goalMethods, missionMethods, eventMethods, speedupMethods);
 export const store = new Store();
