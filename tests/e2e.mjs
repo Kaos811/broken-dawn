@@ -46,8 +46,8 @@ async function run(url, label, takeShots) {
   page.mouse.click = async (...args) => { await rawClick(...args); await frames(4); };
 
   const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(400); };
-  await page.goto(url); await ready();
-  await page.evaluate(() => localStorage.clear()); await page.reload(); await ready();
+  await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
+  await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
 
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const cam = () => ev(() => { const c = __BD.base().cameras.main; return { zoom: c.zoom, x: c.scrollX, y: c.scrollY }; });
@@ -233,7 +233,7 @@ async function run(url, label, takeShots) {
 
   // --- Persistence across reload
   const saved = await state();
-  await page.reload(); await ready();
+  await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
   const restored = await state();
   check('building positions persist after reload', JSON.stringify(restored.buildings) === JSON.stringify(saved.buildings), JSON.stringify(restored.buildings));
   const spritePos = await ev(() => { const b = __BD.base(); return [b.sprites.barracks.img.x, b.sprites.barracks.img.y]; });
@@ -245,11 +245,11 @@ async function run(url, label, takeShots) {
   // (disable the live page's save-on-unload so it doesn't overwrite the edited save)
   const editSave = (agoMs) => ev((agoMs) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); s.resources.energy = 0; s.lastSaved = Date.now() - agoMs; localStorage.setItem(k, JSON.stringify(s)); }, agoMs);
   await editSave(3600e3);
-  await page.reload(); await ready();
+  await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
   let en = (await state()).resources.energy;
   check('offline earnings applied (~1h at 1/s)', en > 3590 && en < 3700, `energy ${en.toFixed(0)}`);
   await editSave(30 * 3600e3);
-  await page.reload(); await ready();
+  await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
   en = (await state()).resources.energy;
   check('offline earnings capped at 8h', en > 28790 && en < 28900, `energy ${en.toFixed(0)}`);
   check('Beacon charge filled offline', (await state()).beacon.charge === 100);
@@ -305,7 +305,7 @@ async function run(url, label, takeShots) {
   check('Reset restores defaults (Base Power 35 incl. Infirmary Lv 1)', fresh.beacon.level === 1 && fresh.buildings.commandCenter.level === 1 && fresh.buildings.barracks.gy === 30 && (await power()) === 35);
   const sp2 = await ev(() => { const b = __BD.base(); return [b.sprites.barracks.img.x, b.sprites.barracks.img.y]; });
   check('Reset moves sprites back', Math.abs(sp2[0] - (await ev(() => __BD.grid.footprintAnchor(23, 30, 3).x))) < 0.5);
-  await page.reload(); await ready();
+  await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
   check('Reset persists after reload', (await state()).buildings.barracks.gy === 30 && (await power()) === 35);
 
   // --- Viewport fill
@@ -359,10 +359,10 @@ async function runStage2(url, label, takeShots) {
   const refresh = async () => { await ev(() => __BD.ui().renderScreen()); await sleep(150); };
   const tab = async (i) => { const p = await ev((id) => __BD.tabToPage(id), ['base', 'troops', 'armory', 'squads', 'more'][i]); await page.mouse.click(p.x, p.y); await sleep(350); };
   // Overwrite the save while the page can't overwrite it back, then reload.
-  const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload(); await ready(); };
+  const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); };
 
   try {
-    await page.goto(url); await ready();
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
 
     // --- 0. Save migration from a v2 save with the old SEQUENTIAL queue -> v3 parallel lanes
     await ev(() => {
@@ -378,7 +378,7 @@ async function runStage2(url, label, takeShots) {
       }));
       __BD.store.save = () => {};
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let m = await state();
     check('v2 save migrates to version 13 (via v3 … v8)', m.version === 13);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
@@ -399,11 +399,11 @@ async function runStage2(url, label, takeShots) {
       }));
       __BD.store.save = () => {};
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     m = await state();
     check('v3 save migrates to v13: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 13 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
-    check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload(); await ready(); return (await state()).resources.cores === 10; })());
+    check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); return (await state()).resources.cores === 10; })());
 
     // --- 0c. v4 save (before upgrade timers) -> v5: levels kept, nothing under construction, backup kept
     await ev(() => {
@@ -415,7 +415,7 @@ async function runStage2(url, label, takeShots) {
       }));
       __BD.store.save = () => {};
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     m = await state();
     check('v4 save migrates to v13: levels, Cores, claims kept; no construction', m.version === 13 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
     check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
@@ -431,7 +431,7 @@ async function runStage2(url, label, takeShots) {
       }));
       __BD.store.save = () => {};
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
     check('v1 save migrates to version 13', s.version === 13);
     // the Barracks sat off its default tile (8,15): on the v9 map it keeps its direction from the Beacon
@@ -687,7 +687,7 @@ async function runStage2(url, label, takeShots) {
     check('Claim all collects the rest (first squad saved) and leaves nothing ready', all[0] === all[1] && all[0] >= 1 && all[2] === 0, JSON.stringify(all));
     await ev(() => __BD.ui().closeModal(true));
     const cBefore = (await state()).resources.cores;
-    await ev(() => __BD.store.save()); await page.reload(); await ready();
+    await ev(() => __BD.store.save()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     const again = await ev(() => [__BD.store.claimBeaconLevel(2).ok, __BD.store.claimMilestone('cc3').ok, __BD.store.claimDaily().ok, __BD.store.state.resources.cores]);
     check('claims persist across reload (no double-claiming)', JSON.stringify(again) === JSON.stringify([false, false, false, cBefore]), JSON.stringify(again));
     check('stage-3 hook: grantCores(n, "battle") adds Cores', await ev(() => { const st = __BD.store; const c = st.state.resources.cores; st.grantCores(1, 'battle'); const ok = st.state.resources.cores === c + 1; st.state.resources.cores = c; return ok; }));
@@ -768,7 +768,7 @@ async function runStage2(url, label, takeShots) {
     // --- 8. Everything persists across reload
     const before = await state();
     await ev(() => __BD.store.save());
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state();
     check('squads, leaders, gear, troops and gacha persist after reload', JSON.stringify(s.squads) === JSON.stringify(before.squads) && JSON.stringify(Object.entries(s.leaders).sort()) === JSON.stringify(Object.entries(before.leaders).sort()) && s.gear.arcRifle === 1 && s.troops.bearer === 9 && s.gacha.total === before.gacha.total);
 
@@ -887,13 +887,13 @@ async function runStage3(url, label, takeShots) {
   };
   const waitTrue = async (fn, arg) => { for (let i = 0; i < 25; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
   const tab = async (id) => { const p = await ev((id) => __BD.tabToPage(id), id); await page.mouse.click(p.x, p.y); await frames(4); await sleep(350); };
-  const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload(); await ready(); };
+  const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); };
   // advance game time in 1 s steps until a predicate holds (marches, battles, healing)
   const runUntil = (pred, max = 120) => ev(([pred, max]) => { const f = new Function('st', `return (${pred})(st)`); for (let i = 0; i < max; i++) { if (f(__BD.store)) return i; __BD.store.tick(1); } return f(__BD.store) ? max : -1; }, [pred.toString(), max]);
   const cam = () => ev(() => { const c = __BD.world().cameras.main; return { zoom: c.zoom, x: c.scrollX, y: c.scrollY }; });
 
   try {
-    await page.goto(url); await ready();
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
 
     // --- 0. v5 save -> v6: Infirmary added (on a free spot: its default tile is taken here), world, stamina
     await ev(() => {
@@ -907,7 +907,7 @@ async function runStage3(url, label, takeShots) {
       }));
       __BD.store.save = () => {};
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
     check('v5 save migrates to v6 (and on to v13)', s.version === 13);
     // the Armory sat on the old Infirmary tile (16,8), right of the Beacon: it stays to the right on the v9 map
@@ -922,7 +922,7 @@ async function runStage3(url, label, takeShots) {
     check('Infirmary sprite is drawn on the base', await ev(() => !!__BD.base().sprites.infirmary?.img.visible));
 
     // --- 1. fresh game with a seeded world and three squads
-    await ev(() => { localStorage.clear(); __BD.store.save = () => {}; }); await page.reload(); await ready();
+    await ev(() => { localStorage.clear(); __BD.store.save = () => {}; }); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     await ev(() => {
       const st = __BD.store;
       delete st.save; // restore the prototype save()
@@ -935,7 +935,7 @@ async function runStage3(url, label, takeShots) {
       st.saveFormation('charlie', [{ type: 'bearer', count: 4 }, { type: null, count: 0 }, { type: 'voyager', count: 4 }]);
       st.save();
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
 
     // --- 2. world layout
     const lay = await ev(() => {
@@ -1189,7 +1189,7 @@ async function runStage3(url, label, takeShots) {
 
     // --- 14. persistence + reports list
     const before = await state();
-    await ev(() => __BD.store.save()); await page.reload(); await ready();
+    await ev(() => __BD.store.save()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state();
     check('world, hunt progress and infirmary persist across reload', JSON.stringify(s.world.entities) === JSON.stringify(before.world.entities) && s.hunt.kills === before.hunt.kills && JSON.stringify(s.hunt.firstKills) === JSON.stringify(before.hunt.firstKills) && JSON.stringify(s.infirmary) === JSON.stringify(before.infirmary) && s.hunt.reports.length === before.hunt.reports.length);
     const cores = await ev(() => { const st = __BD.store; return { fk: st.state.hunt.firstKills.length, tot: [...Array(20)].reduce((n, _, i) => n + ((i + 1) % 5 === 0 ? 2 : 1), 0) }; });
@@ -1245,11 +1245,11 @@ async function runStage4(url, label, takeShots) {
   };
   const waitTrue = async (fn, arg) => { for (let i = 0; i < 25; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
   const tab = async (id) => { const p = await ev((id) => __BD.tabToPage(id), id); await page.mouse.click(p.x, p.y); await frames(4); await sleep(350); };
-  const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload(); await ready(); };
+  const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); };
   const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 
   try {
-    await page.goto(url); await ready();
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
 
     // --- 0. v6 save -> v7: every troop is T1, lanes/formations/wounded/heal queue carry over, Archive added (sealed)
     await ev(() => {
@@ -1266,7 +1266,7 @@ async function runStage4(url, label, takeShots) {
       }));
       __BD.store.save = () => {};
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
     check('v6 save migrates to v7 (and v13)', s.version === 13);
     check('v7 keeps every troop as T1 (sentinel/bearer ids unchanged), no higher tiers', s.troops.sentinel === 12 && s.troops.bearer === 5 && s.troops.bulwark === 0 && s.troops.lancer === 0 && s.troops.aegis === 0, JSON.stringify(s.troops));
@@ -1288,7 +1288,7 @@ async function runStage4(url, label, takeShots) {
     await ev(() => __BD.ui().closePanel(true));
 
     // --- 2. fresh game at Beacon Lv 3: research via the Archive screen
-    await ev(() => { localStorage.clear(); __BD.store.save = () => {}; }); await page.reload(); await ready();
+    await ev(() => { localStorage.clear(); __BD.store.save = () => {}; }); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     await ev(() => {
       const st = __BD.store; delete st.save;
       Object.assign(st.state.beacon, { level: 3, charge: 0 });
@@ -1297,7 +1297,7 @@ async function runStage4(url, label, takeShots) {
       st.state.buildings.archive.placed = true; // unlocked and built (stage 6: hidden until placed)
       st.save();
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     await ev(() => __BD.base().select('archive')); await sleep(400);
     await click('Research');
     check('Archive panel → Research opens the research tree', await waitTrue(() => __BD.ui().screen?.id === 'archive'));
@@ -1491,7 +1491,7 @@ async function runStage4(url, label, takeShots) {
 
     // --- 9. persistence
     const before = await state();
-    await ev(() => { __BD.store.state.research.levels.salvage = 1; __BD.store.save(); }); await page.reload(); await ready();
+    await ev(() => { __BD.store.state.research.levels.salvage = 1; __BD.store.save(); }); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state();
     check('research levels, tier troops and tier formations persist', s.research.levels.tier2 === 1 && s.research.levels.salvage === 1 && s.troops.bulwark === before.troops.bulwark && s.squads.alpha.lines[0].type === 'bulwark');
   } catch (e) {
@@ -1551,8 +1551,8 @@ async function runStage5(url, label, takeShots) {
   };
 
   try {
-    await page.goto(url); await ready();
-    await ev(() => localStorage.clear()); await page.reload(); await ready();
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
+    await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
 
     // --- 0. loading screen, fresh save, defaults (stage 13 onboarding)
     check('loading screen fades out and is removed once the game is ready', await waitTrue(() => !document.getElementById('boot')));
@@ -1718,12 +1718,12 @@ async function runStage5(url, label, takeShots) {
 
     // --- 15. v7 save -> v8: tutorial marked done, defaults, backup, one-time toast
     await ev(() => { const k = 'brokenDawn.save.v1'; __BD.store.save = () => {}; const st = JSON.parse(localStorage.getItem(k)); st.version = 7; delete st.settings; delete st.tutorial; localStorage.setItem(k, JSON.stringify(st)); });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state(); t = await tut();
     check('v7 save migrates to v13: tutorial marked done (no coach, one-time tips allowed), default audio settings, backup kept', s.version === 13 && s.tutorial.done && !s.tutorial.skipped && (!t.visible || !!t.tip) && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
     check('existing players get a one-time "replay the tutorial from Settings" toast', await waitTrue(() => /Replay the tutorial/.test(__BD.ui().toastText.text) && __BD.ui().toastBox.visible, null, 40));
     await ev(() => { delete __BD.store.save; __BD.store.save(); });
-    await page.reload(); await ready(); await sleep(800);
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await sleep(800);
     check('…and only once (not again on the next load)', await ev(() => !/Replay the tutorial/.test(__BD.ui().toastText.text) || !__BD.ui().toastBox.visible));
   } catch (e) {
     const diag = await ev(() => ({ screen: __BD.ui().screen?.id, modal: !!__BD.ui().modal, tut: __BD.tutorial(), controls: __BD.controls().map((c) => c.label + (c.meta ? `#${c.meta}` : '')) })).catch(() => ({}));
@@ -1789,8 +1789,8 @@ async function runStage6(url, label, takeShots) {
   };
 
   try {
-    await page.goto(url); await ready();
-    await ev(() => localStorage.clear()); await page.reload(); await ready();
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
+    await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
 
     // --- 1. full-screen painted base, art sprites, level badges
     let s = await state();
@@ -1897,7 +1897,7 @@ async function runStage6(url, label, takeShots) {
     await click(null, { meta: 'q-research' });
     check('Research button now opens the Archive research screen', await waitTrue(() => __BD.ui().screen?.id === 'archive'));
     await tab('base');
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state();
     check('placement persists after reload', s.buildings.archive.placed && s.buildings.archive.gx === dest.gx && s.buildings.archive.gy === dest.gy && (await ev(() => __BD.base().sprites.archive.img.visible)));
 
@@ -1927,7 +1927,7 @@ async function runStage6(url, label, takeShots) {
       }));
       __BD.store.save = () => {};
     }, [lv, extra ?? {}]);
-    await v8(3); await page.reload(); await ready();
+    await v8(3); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state();
     const mig = await ev(() => {
       const st = __BD.store, B = st.state.buildings, ids = Object.keys(B), o = __BD.grid.BEACON_CENTER;
@@ -1940,7 +1940,7 @@ async function runStage6(url, label, takeShots) {
     check('v9: every migrated position is valid (inside the base, no overlaps), levels kept', mig.valid && mig.levels === '4,3,2,2,2', JSON.stringify(mig));
     check('v9: unlocked Archive (Beacon Lv 3) stays placed and visible; other progress kept', mig.arch[2] && (await ev(() => __BD.base().sprites.archive.img.visible)) && s.resources.cores === 4 && s.settings.music === 0.5 && s.tutorial.done);
     check('v8 migration keeps a backup with the old positions', await ev(() => { const b = JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v8') || '{}'); return b.version === 8 && b.buildings.commandCenter.gx === 12 && b.buildings.commandCenter.gy === 8; }));
-    await v8(2); await page.reload(); await ready();
+    await v8(2); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state();
     check('v9: a locked Archive (Beacon Lv 2) is hidden until unlocked', !s.buildings.archive.placed && !(await ev(() => __BD.base().sprites.archive.img.visible)) && (await ev(() => __BD.store.pendingPlacements().length === 0)));
   } catch (e) {
@@ -1965,7 +1965,7 @@ async function runStage7(url, label, takeShots) {
     const errors = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(url);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     return { ctx, page, errors };
   };
@@ -1994,7 +1994,7 @@ async function runStage7(url, label, takeShots) {
   }, [y0, y1]);
 
   try {
-    await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
+    await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
     const L = await ev(() => __BD.layout());
     // --- 1. top HUD
     const hud = await ev(() => {
@@ -2184,8 +2184,8 @@ async function runStage12(url, label) {
     const errors = []; page.on('pageerror', (e) => errors.push(e.message));
     const ev = (fn, arg) => page.evaluate(fn, arg);
     const ready = async () => { await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500); };
-    await page.goto(url); await ready();
-    await ev(() => localStorage.clear()); await page.reload(); await ready();
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
+    await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
 
     // --- layout of the new world
     const w = await ev(() => {
@@ -2249,7 +2249,7 @@ async function runStage12(url, label) {
       localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw));
       return true;
     });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     const m2 = await ev(() => { const s = __BD.store.state; return { v: s.version, seed: s.world.seed, base: s.world.entities.find((e) => e.id === 'base-local'), cit: !!s.world.entities.find((e) => e.kind === 'citadel'), marches: s.world.marches.length, stamina: s.hunt.stamina, best: s.hunt.bestKill, bots: s.world.entities.filter((e) => e.bot).length }; });
     check('v11 save migrates to v13: world rebuilt from the same seed around the Citadel, base moved, squads home, stamina refunded, hunt progress kept', m2.v === 13 && m2.seed === 4242 && m2.base.x === 43 && m2.base.y === 78 && m2.cit && m2.marches === 0 && m2.stamina >= 50 && m2.best === 7 && m2.bots === 14, JSON.stringify(m2));
     check('stage 12: no page errors', errors.length === 0, errors.join(' | '));
@@ -2267,8 +2267,8 @@ async function runStage10(url, label) {
     const errors = []; page.on('pageerror', (e) => errors.push(e.message));
     const ev = (fn, arg) => page.evaluate(fn, arg);
     const ready = async () => { await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500); };
-    await page.goto(url); await ready();
-    await ev(() => localStorage.clear()); await page.reload(); await ready();
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
+    await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
 
     // --- build times
     const bt = await ev(() => { const out = []; for (let L = 2; L <= 20; L++) out.push(Math.round(__BD.store.buildSeconds(L) * __BD.store.mods.build)); return out; });
@@ -2370,7 +2370,7 @@ async function runStage10(url, label) {
 
     // --- save v10 -> v11: running timers stay valid
     await ev(() => { __BD.ui().closeModal(true); const st = __BD.store; st.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 10; delete raw.items; delete raw.firstUpgradeGift; raw.construction = [{ id: 'barracks', toLevel: 12, cost: 500, total: 1200 * 3 ** 6, progress: 5000 }]; raw.research.job = { id: 'shardYield', toLevel: 1, cost: { energy: 1, alloy: 1, shards: 1 }, total: 1800, progress: 600 }; raw.buildings.barracks.level = 11; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
-    await page.reload(); await ready();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     const mg = await ev(() => { const s = __BD.store.state; return { v: s.version, j: s.construction[0], r: s.research.job, items: Object.values(s.items).every((n) => n === 0), gift: s.firstUpgradeGift, bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v10') || '{}').version }; });
     check('v10 save migrates to v13: running upgrade keeps its progress, its total shrinks to the new 70,779 s; research untouched; empty items; backup kept', mg.v === 13 && mg.j?.id === 'barracks' && mg.j.total === 70779 && mg.j.progress >= 5000 && mg.j.progress < 5100 && mg.r?.progress >= 600 && mg.items && mg.gift === true && mg.bk === 10, JSON.stringify(mg));
     // --- stage 10b: item registry + Resources section
@@ -2409,7 +2409,7 @@ async function runStage13(url, label) {
     const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     const ev = (fn, arg) => page.evaluate(fn, arg);
     const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(600); };
-    await page.goto(url); await ready(); await ev(() => localStorage.clear()); await page.reload(); await ready();
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready(); await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     const ctl = async (meta, lbl) => { for (let i = 0; i < 15; i++) { const c = (await ev(() => __BD.controls())).filter((c) => (meta == null || c.meta === meta) && (lbl == null || c.label === lbl) && c.enabled).pop(); if (c) return c; await sleep(200); } return null; };
     const tap = async (meta, lbl) => { const c = await ctl(meta, lbl); if (!c) throw new Error(`no control ${meta} ${lbl}`); await page.mouse.click(c.x, c.y); await sleep(500); };
     const waitTrue = async (fn, arg, n = 30) => { for (let i = 0; i < n; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
@@ -2464,7 +2464,7 @@ async function runStage13(url, label) {
     const migrate = async (patch) => {
       const P = await open(390, 844);
       await P.ev(({ KEY, patch }) => { __BD.store.save = () => {}; const st = JSON.parse(localStorage.getItem(KEY)); st.version = 12; Object.assign(st.tutorial, patch.tutorial); if (patch.beacon) st.beacon.level = patch.beacon; if (patch.energy != null) st.resources.energy = patch.energy; localStorage.setItem(KEY, JSON.stringify(st)); }, { KEY, patch });
-      await P.page.reload(); await P.ready();
+      await P.page.reload({ waitUntil: 'domcontentloaded' }); await P.ready();
       const r = await P.ev(() => ({ v: __BD.store.state.version, tu: __BD.store.state.tutorial, e: __BD.store.state.resources.energy, t: __BD.tutorial() }));
       await P.ctx.close();
       return r;
@@ -2493,9 +2493,9 @@ async function runStage9c(url, label) {
       const page = await ctx.newPage();
       const errors = []; page.on('pageerror', (e) => errors.push(e.message));
       const ev = (fn, arg) => page.evaluate(fn, arg);
-      await page.goto(url); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 });
+      await page.goto(url, { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 });
       await ev(midsave); await ev((k) => window[`__${k}Save`](), save);
-      await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(800);
+      await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(800);
       const issues = [];
       for (const [name, code] of LAYOUT_SCREENS) {
         await ev(() => { const u = __BD.ui(); u.reveal?.destroy(); u.reveal = null; u.closeModal(true); u.closeScreen(); u.closePanel(true); if (u.worldMode) { u.scene.get('World').select?.(null); u.hideWorld(); } });
@@ -2536,8 +2536,8 @@ async function runStage9c(url, label) {
     await ctx.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; });
     const page = await ctx.newPage();
     const ev = (fn, arg) => page.evaluate(fn, arg);
-    await page.goto(url); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 });
-    await ev(midsave); await ev(() => window.__midSave()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 });
+    await ev(midsave); await ev(() => window.__midSave()); await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
     const lane = await ev(async () => {
       const st = __BD.store; st.state.resources.energy = 1e6; st.train('bearer', 5);
       const u = __BD.ui(); u.openScreen('troops'); await new Promise((r) => setTimeout(r, 400));
@@ -2567,7 +2567,7 @@ async function runStage8(url, label, takeShots) {
     const errors = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(url);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     return { ctx, page, errors };
   };
@@ -2618,7 +2618,7 @@ async function runStage8(url, label, takeShots) {
   const mission = (id) => ev((id) => __BD.store.missionList().find((t) => t.id === id), id);
 
   try {
-    await ev(() => localStorage.clear()); await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
+    await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
     // ---------------------------------------------------------------- A. Daily Missions
     const m0 = await ev(() => { const st = __BD.store, s = st.state; return { v: s.version, day: s.missions.day, today: st.dayIndex(), tasks: st.missionList().map((t) => [t.id, t.goal, t.pts]), chests: st.missionChests().map((c) => `${c.at}:${c.tier}`), vis: __BD.ui().rightBtns.missions.visible, done: s.tutorial.done }; });
     check('new game: save v13 with today\'s missions (local day)', m0.v === 13 && m0.day === m0.today, JSON.stringify(m0));
@@ -2690,12 +2690,12 @@ async function runStage8(url, label, takeShots) {
 
     // --- offline actions count toward the day you come back
     const off = await ev(() => { const st = __BD.store; st.state.resources.energy = 100000; st.train('voyager', 12); st.save(); st.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.lastSaved = Date.now() - 3600e3; localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); return st.state.missions.progress.train ?? 0; });
-    await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
+    await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     check('offline: training that finished while away counts toward today', off === 0 && (await ev(() => __BD.store.state.missions.progress.train)) === 12 && (await ev(() => __BD.store.state.missions.day === __BD.store.dayIndex())));
 
     // --- save v9 -> v10
     await ev(() => { __BD.store.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 9; delete raw.missions; delete raw.events; delete raw.hints; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
-    await page.reload(); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
+    await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     const mig = await ev(() => { const s = __BD.store.state; return { v: s.version, day: s.missions.day === __BD.store.dayIndex(), p: Object.keys(s.missions.progress).length, ev: s.events && typeof s.events.marks === 'number', bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v9') || '{}').version, lv: s.buildings.barracks.level, cores: s.resources.cores }; });
     check('v9 save migrates to v13: missions start fresh today, events added, backup kept', mig.v === 13 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
 
@@ -2749,7 +2749,7 @@ async function runStage8(url, label, takeShots) {
     check('ISO week ids across the year boundary (2026-W01, 2026-W53)', sched.w1 === '2026-W01' && sched.w53 === '2026-W53', `${sched.w1} ${sched.w53}`);
     {
       const c2 = await browser.newContext({ timezoneId: 'Pacific/Auckland' }); const p2 = await c2.newPage();
-      await p2.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; }); await p2.goto(url); await p2.waitForFunction(() => window.__BD?.ui()?.panel);
+      await p2.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; }); await p2.goto(url, { waitUntil: 'domcontentloaded' }); await p2.waitForFunction(() => window.__BD?.ui()?.panel);
       const nz = await p2.evaluate((t) => { const e = __BD.store.eventService.active(t); return e && { id: e.id, start: e.start, end: e.end }; }, U(2026, 9, 19, 0));
       check('same event windows in every time zone (Auckland sees the same instance)', nz?.id === sched.mon.id && nz.start === sched.mon.start && nz.end === sched.mon.end, JSON.stringify(nz));
       await c2.close();
