@@ -1203,7 +1203,7 @@ async function runStage3(url, label, takeShots) {
     await tab('base');
     check('Base tab returns to the base view', await waitTrue(() => !__BD.ui().worldMode && !__BD.base().scene.isSleeping() && __BD.world().scene.isSleeping()));
   } catch (e) {
-    const diag = await ev(() => ({ screen: __BD.ui().screen?.id, world: __BD.ui().worldMode, modal: !!__BD.ui().modal, controls: __BD.controls().map((c) => c.label + (c.meta ? `#${c.meta}` : '')) })).catch(() => ({}));
+    const diag = await ev(() => ({ base: !!__BD.base(), sprites: !!__BD.base()?.sprites, panel: !!__BD.ui()?.panel, sleeping: __BD.base()?.scene?.isSleeping?.(), active: __BD.base()?.scene?.isActive?.(), screen: __BD.ui().screen?.id, world: __BD.ui().worldMode, modal: !!__BD.ui().modal, controls: __BD.controls().map((c) => c.label + (c.meta ? `#${c.meta}` : '')) })).catch(() => ({}));
     check('stage 3 suite ran without exceptions', false, `${e.message} :: ${JSON.stringify(diag)}`);
   }
   check('stage 3: no console errors', errors.length === 0, errors.join(' | '));
