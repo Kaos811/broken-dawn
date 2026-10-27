@@ -3122,7 +3122,7 @@ async function runStage8(url, label, takeShots) {
     check('ISO week ids across the year boundary (2026-W01, 2026-W53)', sched.w1 === '2026-W01' && sched.w53 === '2026-W53', `${sched.w1} ${sched.w53}`);
     {
       const c2 = await browser.newContext({ timezoneId: 'Pacific/Auckland' }); const p2 = await c2.newPage();
-      await p2.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; }); await p2.goto(url, { waitUntil: 'domcontentloaded' }); await p2.waitForFunction(() => window.__BD?.ui()?.panel);
+      await p2.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; }); await p2.goto(url, { waitUntil: 'domcontentloaded' }); await p2.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 90000 }); // cold second context boots slowly on a loaded box
       const nz = await p2.evaluate((t) => { const e = __BD.store.eventService.active(t); return e && { id: e.id, start: e.start, end: e.end }; }, U(2026, 9, 19, 0));
       check('same event windows in every time zone (Auckland sees the same instance)', nz?.id === sched.mon.id && nz.start === sched.mon.start && nz.end === sched.mon.end, JSON.stringify(nz));
       await c2.close();
