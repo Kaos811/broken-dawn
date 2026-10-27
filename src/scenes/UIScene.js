@@ -15,7 +15,7 @@ import { RARITY, LEADERS, GEAR, CORES, INFIRMARY, STAMINA, CREATURES, SQUADS as 
 import { renderInfirmary } from '../ui/screens/infirmary.js';
 import { renderArchive } from '../ui/screens/archive.js';
 import { RESEARCH } from '../config.js';
-import { createWorldHud, openReport, openReports } from '../ui/world.js';
+import { createWorldHud, openReport, openReports, confirmTeleport } from '../ui/world.js';
 import { createRightColumn, refreshRightColumn, openMissions, openEvents, openExchange } from '../ui/stage8.js';
 import { audio } from '../audio/audio.js';
 import { openSpeedUp, openItems, finishNow, speedupIconKey } from '../ui/speedups.js';
@@ -71,6 +71,7 @@ export default class UIScene extends Phaser.Scene {
     ev.on('toast', (msg) => this.toast(msg), this);
     ev.on('world:select', (id) => this.onWorldSelect(id), this);
     ev.on('world:deselect', () => this.worldHud.closeSheet(), this);
+    ev.on('world:tile', (t) => this.worldHud.openTile(t), this);
     this.unsubs = [
       store.on('upgrade', (id) => {
         this.bump(this.powerText); this.refreshPanel();
@@ -1419,7 +1420,7 @@ export default class UIScene extends Phaser.Scene {
     const tier = BASE_TIERS[baseTier(level)].name;
     const al = ALLIANCES.find((a) => a.tag === e.tag);
     if (local) {
-      this.openModal({ title: 'Your Base', body: `Beacon Lv ${level} · ${tier}\nPower ${fmt(store.power)}\nAlliance: none yet (alliances are coming)\n\nYour base grows on the map as your Beacon levels up: Outpost, Walled Camp, Fortress, Citadel, then a gold-crowned Stronghold at Lv 20.`, buttons: [{ label: 'Enter Base', style: 'cyan', onClick: () => { ws.select(null); this.time.delayedCall(0, () => this.onTab('base')); } }, close], kind: 'base-local' });
+      this.openModal({ title: 'Your Base', body: `Beacon Lv ${level} · ${tier}\nPower ${fmt(store.power)}\nAlliance: none yet (alliances are coming)\n\nX:${e.x} Y:${e.y}\n\nYour base grows on the map as your Beacon levels up: Outpost, Walled Camp, Fortress, Citadel, then a gold-crowned Stronghold at Lv 20. Tap empty ground to teleport (free for now).`, buttons: [{ label: 'Enter Base', style: 'cyan', onClick: () => { ws.select(null); this.time.delayedCall(0, () => this.onTab('base')); } }, { label: '🎲 Teleport', style: 'ghost', onClick: () => { ws.select(null); this.time.delayedCall(0, () => confirmTeleport(this, store.basePos(), 'random')); } }, close], kind: 'base-local' });
       return;
     }
     this.openModal({
@@ -1512,7 +1513,7 @@ export default class UIScene extends Phaser.Scene {
         }, { style: 'gold', size: 22 }); rep.chip = 'replay-tutorial'; c.add(rep);
         // game
         sectionHeader(this, c, x0, r.y + 650, 'GAME', { w: r.w - 64 });
-        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.12 (stage 17: game feel)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
+        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.13 (stage 18: open world + teleport)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
         const rs = button(this, r.x + r.w / 2, r.y + 836, 300, 64, 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
         this.refreshSettings = () => {
           if (!c.active) { this.refreshSettings = null; return; }

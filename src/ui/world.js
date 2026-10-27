@@ -1,18 +1,21 @@
 // World-map UI (lives in the UI scene, drawn over the World scene): stamina + Auto strip, squad march
 // bar, creature attack sheet, battle report card, battle replay and the reports list.
 import Phaser from 'phaser';
-import { GAME_WIDTH as W, GAME_HEIGHT, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES, GATHER } from '../config.js';
+import { GAME_WIDTH as W, GAME_HEIGHT, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES, GATHER, NORMAL_CREATURES } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, fmt, fmtClock, panelBg } from './widgets.js';
 import { drawBar, drawCard } from './skin.js';
 import { sectionHeader } from './kit.js';
 import { tapZone } from './screens/common.js';
-import { ringOfLevel } from '../world/worldState.js';
+import { dist, levelAtTile, nodeLevelAt } from '../world/worldState.js';
 import { audio } from '../audio/audio.js';
 
 import { NAV_H, HERO_RISE, SAFE } from './layout.js';
 const sqName = (id) => SQUADS[id].name;
 const ago = (t) => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
+// stage 18: "X:12 Y:40 · 9 tiles from your base"
+export const tilesFromBase = (p) => Math.round(dist(p, store.basePos()));
+export const where = (p) => `X:${p.x} Y:${p.y} · ${tilesFromBase(p)} tiles away`;
 const classLabel = (t, n) => (n === 1 ? TROOP_CLASSES[t].name : TROOP_CLASSES[t].plural);
 
 export function createWorldHud(ui, TOP_H, H) {
@@ -58,6 +61,31 @@ export function createWorldHud(ui, TOP_H, H) {
     return { id, x, cg, name, st, sub };
   });
 
+  // --- stage 18: centre coordinates + Search + Go to my base (right edge, above the squad bar)
+  const cy = sy + sh + 12;
+  hud.coordRect = new Phaser.Geom.Rectangle(W / 2 - 150, cy, 300, 40);
+  const coordBg = ui.add.graphics();
+  coordBg.fillStyle(0x07090d, 0.78).fillRoundedRect(W / 2 - 150, cy, 300, 40, 20).lineStyle(2, PALETTE.gold, 0.5).strokeRoundedRect(W / 2 - 150, cy, 300, 40, 20);
+  const coord = text(ui, W / 2, cy + 20, '', 19, PALETTE.textGold, { fontStyle: 'bold' }).setOrigin(0.5);
+  hud.coordText = coord;
+  const fx = W - 58, fy0 = by - 70;
+  hud.fabRect = new Phaser.Geom.Rectangle(fx - 40, fy0 - 92 - 40, 80, 172);
+  const search = button(ui, fx, fy0 - 92, 76, 76, '🔍', () => openSearch(ui, hud, by), { style: 'cyan', size: 30 });
+  search.chip = 'world-search';
+  const home = button(ui, fx, fy0, 76, 76, '🏠', () => { ui.scene.get('World').select(null); ui.scene.get('World').focusBase(); }, { style: 'gold', size: 30 });
+  home.chip = 'world-home';
+  hud.searchBtn = search; hud.homeBtn = home;
+  c.add([coordBg, coord, search, home]);
+  hud.coords = () => {
+    const ws = ui.scene.get('World');
+    if (!ws?.centerTile) return;
+    const t = ws.centerTile(), d = tilesFromBase(t);
+    const key = `${t.x},${t.y},${d}`;
+    if (key === hud.coordKey) return;
+    hud.coordKey = key;
+    coord.setText(`✛ X:${t.x} Y:${t.y}${d ? ` · ${d} tiles from base` : ' · your base'}`);
+  };
+
   // --- creature sheet (rebuilt when a creature is selected)
   hud.sheet = null;
   hud.sheetRect = new Phaser.Geom.Rectangle(0, 0, 0, 0);
@@ -96,12 +124,15 @@ export function createWorldHud(ui, TOP_H, H) {
         ch.sub.setText(`Power ${fmt(attackPower(ch.id))}${add ? `  (+${add} refill)` : ''}`);
       }
     }
+    hud.coords();
     hud.sheetRefresh?.();
   };
   hud.show = () => { hud.visible = true; c.setVisible(true); hud.refresh(); };
   hud.hide = () => { hud.visible = false; c.setVisible(false); closeSheet(ui, hud); };
-  hud.blocks = (x, y) => hud.visible && (hud.stripRect.contains(x, y) || hud.barRect.contains(x, y) || (hud.sheet && hud.sheetRect.contains(x, y)));
+  hud.blocks = (x, y) => hud.visible && (hud.stripRect.contains(x, y) || hud.barRect.contains(x, y) || hud.fabRect.contains(x, y) || (hud.sheet && hud.sheetRect.contains(x, y)));
   hud.openSheet = (id) => openSheet(ui, hud, id, by);
+  hud.openTile = (t) => openTileSheet(ui, hud, t, by);
+  hud.openSearch = () => openSearch(ui, hud, by);
   hud.closeSheet = () => closeSheet(ui, hud);
   return hud;
 }
@@ -190,9 +221,8 @@ function openSheet(ui, hud, id, barY) {
   });
   hud.sheetRefresh = () => {
     if (!store.world.get(id)) { ui.scene.get('World').select(null); return; }
-    const z = ringOfLevel(e.level) + 1;
     info.setText([
-      `Power ${fmt(power)}   ·   Zone ${z}   ·   March ${Math.ceil(store.attackInfo('alpha', id).travel)}s each way`,
+      `Power ${fmt(power)}   ·   ${where(e)}   ·   March ${Math.ceil(store.attackInfo('alpha', id).travel)}s`,
       `Kill: +${fmt(loot.energy)} Energy  +${fmt(loot.alloy)} Alloy  +${fmt(loot.shards)} Shards`,
       fk ? `First Lv ${e.level} kill: +${fk} Beacon ${fk === 1 ? 'Core' : 'Cores'}` : `First-kill Core for Lv ${e.level} already earned`,
     ].join('\n'));
@@ -251,7 +281,7 @@ function openNodeSheet(ui, hud, e, barY) {
     left.setText(`${fmt(amt)} / ${fmt(n.max)} Alloy left`);
     barG.clear(); drawBar(barG, x + 360, y + 160, w - 384, 18, n.max ? amt / n.max : 0, { color: 0x2fe0c8 });
     const travel = store.gatherInfo('alpha', id).travel;
-    info.setText(`March ${Math.ceil(travel)}s each way   ·   Speed +${Math.round(GATHER.rateLevel * 100 * (n.level - 1))}% (node level)\nCarry ${GATHER.capBase} + ${GATHER.capPerTroop} per troop   ·   more troops mine faster`);
+    info.setText(`${where(n)}   ·   March ${Math.ceil(travel)}s each way   ·   Speed +${Math.round(GATHER.rateLevel * 100 * (n.level - 1))}% (node level)\nCarry ${GATHER.capBase} + ${GATHER.capPerTroop} per troop   ·   more troops mine faster`);
     const m = n.busy ? store.world.marches().find((x) => x.id === n.busy) : null;
     if (amt < 1) note.setText(`Drained: regrows in ${fmtClock(Math.max(0, n.regrowAt - store.world.snapshot().clock))}`).setColor('#ff8a95');
     else if (m?.gather) note.setText(m.phase === 'gather' ? `${sqName(m.squadId)} is gathering: ${fmt(Math.floor(m.gather.load))}/${fmt(m.gather.cap)}` : `${sqName(m.squadId)} is on the way`).setColor('#7ff5e2');
@@ -265,6 +295,112 @@ function openNodeSheet(ui, hud, e, barY) {
     }
   };
   hud.sheetRefresh();
+  ui.flushInput();
+}
+
+// ---------------------------------------------- stage 18: tile card + teleport --
+export function confirmTeleport(ui, t, kind = 'targeted') {
+  const ws = ui.scene.get('World');
+  const c = kind === 'random' ? { ok: true } : store.canTeleport(t.x, t.y);
+  if (!c.ok) { ui.toast(c.reason); return; }
+  const cost = store.teleportCost(kind);
+  ui.openModal({
+    title: kind === 'random' ? 'Random teleport?' : `Teleport to X:${t.x} Y:${t.y}?`,
+    body: `${kind === 'random' ? `Your base jumps to a random spot where Lv ${Math.max(1, store.maxAttackLevel() - 4)}-${store.maxAttackLevel()} creatures are common.` : `Your base moves ${tilesFromBase(t)} tiles. Creatures here are about Lv ${levelAtTile(t.x, t.y)} (you can attack up to Lv ${store.maxAttackLevel()}).`}\n\n${cost ? `Cost: ${cost}` : 'Free for now. Later teleports will use Teleport items or a resource.'}\nSquads must be home to move.`,
+    buttons: [
+      { label: 'Cancel', style: 'ghost', onClick: () => ws.selectTile?.(null) },
+      { label: 'Teleport', style: 'gold', onClick: () => {
+        const r = kind === 'random' ? store.randomTeleport() : store.teleport(t.x, t.y);
+        if (!r.ok) { ui.toast(r.reason); return; }
+        audio.play('reward');
+        ui.toast(`Base moved to X:${r.to.x} Y:${r.to.y}`, 2200);
+      } },
+    ],
+    kind: 'teleport',
+  });
+}
+
+function openTileSheet(ui, hud, t, barY) {
+  closeSheet(ui, hud);
+  const ws = ui.scene.get('World');
+  const sh = 250, x = 16, w = W - 32, y = barY - 10 - sh;
+  hud.sheetRect.setTo(x, y, w, sh);
+  const c = ui.add.container(0, 0).setDepth(25);
+  hud.sheet = c; hud.sheetFor = `tile:${t.x},${t.y}`;
+  const g = ui.add.graphics();
+  panelBg(g, x, y, w, sh, { accent: PALETTE.cyan, stroke: PALETTE.cyan });
+  c.add([g, ui.add.rectangle(x + w / 2, y + sh / 2, w, sh, 0, 0.001).setInteractive()]);
+  c.add(text(ui, x + 24, y + 18, `X:${t.x}  Y:${t.y}`, 30, PALETTE.textCyan, { fontStyle: 'bold' }));
+  c.add(text(ui, x + 24, y + 62, `${tilesFromBase(t)} tiles from your base   ·   creatures here ~Lv ${levelAtTile(t.x, t.y)}   ·   Alloy Lv ${nodeLevelAt(t.x, t.y)}`, 18, PALETTE.textDim));
+  c.add(button(ui, x + w - 38, y + 36, 52, 52, '✕', () => ws.selectTile(null), { style: 'ghost', size: 24 }));
+  const why = text(ui, x + 24, y + 96, '', 18, '#ff8a95');
+  const tp = button(ui, x + 24 + 160, y + 180, 320, 64, 'Teleport here', () => confirmTeleport(ui, t), { style: 'gold', size: 24 });
+  tp.chip = 'tile-teleport';
+  const rnd = button(ui, x + w - 24 - 150, y + 180, 300, 64, '🎲 Random teleport', () => confirmTeleport(ui, t, 'random'), { style: 'ghost', size: 22 });
+  rnd.chip = 'tile-random';
+  c.add([why, tp, rnd]);
+  hud.sheetRefresh = () => {
+    const r = store.canTeleport(t.x, t.y);
+    tp.setEnabled(r.ok);
+    why.setText(r.ok ? 'Free for now' : r.reason).setColor(r.ok ? '#8fffc1' : '#ff8a95');
+  };
+  hud.sheetRefresh();
+  ui.flushInput();
+}
+
+// ---------------------------------------------------------- stage 18: search --
+const SEARCH_TYPES = ['any', ...NORMAL_CREATURES, 'wyrm', 'node'];
+function openSearch(ui, hud, barY) {
+  closeSheet(ui, hud);
+  const ws = ui.scene.get('World');
+  ws.select(null); ws.tileSel = null;
+  const q = hud.searchQ ?? (hud.searchQ = { type: 'any', level: Math.max(1, store.maxAttackLevel()) });
+  const sh = 330, x = 16, w = W - 32, y = barY - 10 - sh;
+  hud.sheetRect.setTo(x, y, w, sh);
+  const c = ui.add.container(0, 0).setDepth(25);
+  hud.sheet = c; hud.sheetFor = 'search';
+  const g = ui.add.graphics();
+  panelBg(g, x, y, w, sh, { accent: PALETTE.cyan, stroke: PALETTE.cyan });
+  c.add([g, ui.add.rectangle(x + w / 2, y + sh / 2, w, sh, 0, 0.001).setInteractive()]);
+  c.add(text(ui, x + 24, y + 18, '🔍 Search the map', 28, PALETTE.textCyan, { fontStyle: 'bold' }));
+  c.add(button(ui, x + w - 38, y + 36, 52, 52, '✕', () => closeSheet(ui, hud), { style: 'ghost', size: 24 }));
+  const bw = (w - 48 - 6 * 6) / 7;
+  const chips = SEARCH_TYPES.map((tp, i) => {
+    const label = tp === 'any' ? 'Any' : tp === 'node' ? 'Alloy' : CREATURES[tp].short ?? CREATURES[tp].name;
+    const b = button(ui, x + 24 + bw / 2 + i * (bw + 6), y + 100, bw, 52, label, () => { q.type = tp; clampQ(); sync(); }, { style: 'ghost', size: 16 });
+    b.chip = `search-${tp}`;
+    c.add(b);
+    return { tp, b };
+  });
+  const maxFor = () => (q.type === 'node' ? GATHER.levels.length : store.maxAttackLevel());
+  const clampQ = () => { q.level = Math.max(1, Math.min(maxFor(), q.level)); };
+  const minus = button(ui, x + 24 + 40, y + 180, 70, 60, '−', () => { q.level--; clampQ(); sync(); }, { style: 'ghost', size: 30 });
+  const lvl = text(ui, x + 24 + 170, y + 180, '', 28, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0.5);
+  const plus = button(ui, x + 24 + 300, y + 180, 70, 60, '+', () => { q.level++; clampQ(); sync(); }, { style: 'ghost', size: 30 });
+  minus.chip = 'search-minus'; plus.chip = 'search-plus';
+  const hint = text(ui, x + 400, y + 166, '', 16, PALETTE.textDim, { wordWrap: { width: w - 420 } });
+  const go = button(ui, x + w / 2, y + 270, w - 48, 64, 'Search', () => {
+    const kind = q.type === 'node' ? 'node' : 'creature';
+    const e = store.searchWorld({ kind, type: kind === 'node' ? 'any' : q.type, level: q.level });
+    if (!e) {
+      ui.toast(kind === 'node' ? `No free Lv ${q.level} Alloy nodes right now.` : `No Lv ${q.level} creatures near your base. Try teleporting closer to the Citadel.`, 2600);
+      return;
+    }
+    closeSheet(ui, hud);
+    ws.focusTile(e.x, e.y);
+    ws.pulseAt(e.x, e.y);
+    ws.select(e.id);
+    ui.toast(`Found Lv ${e.level} ${kind === 'node' ? 'Alloy node' : CREATURES[e.type].name} at X:${e.x} Y:${e.y}`, 1800);
+  }, { style: 'gold', size: 24 });
+  go.chip = 'search-go';
+  c.add([minus, lvl, plus, hint, go]);
+  const sync = () => {
+    for (const ch of chips) ch.b.setStyle(ch.tp === q.type ? 'gold' : 'ghost');
+    lvl.setText(`Lv ${q.level}`);
+    minus.setEnabled(q.level > 1); plus.setEnabled(q.level < maxFor());
+    hint.setText(q.type === 'node' ? 'Nearest free Alloy node of this level.' : `Nearest free creature of this level to your base (up to Lv ${store.maxAttackLevel()}).`);
+  };
+  clampQ(); sync();
   ui.flushInput();
 }
 
