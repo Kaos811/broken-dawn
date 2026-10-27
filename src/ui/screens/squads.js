@@ -127,7 +127,11 @@ function renderDetails(ui, c, a, api, st, y0) {
     const n = store.refillable(id), m = store.squadMarch(id);
     refill.setEnabled(n > 0 && !m).setLabel(n > 0 ? `Refill +${n}` : 'Refill');
     const tgt = m && store.world.get(m.targetId);
-    status.setText(m ? `${m.phase === 'out' ? `Marching to Lv ${tgt?.level ?? '?'}` : 'Returning to base'} · formation locked until it's back` : 'Only healthy troops march. Refill tops lines up from reserve');
+    const g = m?.gather, load = g ? Math.floor(g.load) : 0;
+    const what = !m ? '' : g
+      ? (m.phase === 'out' ? `Marching to a Lv ${g.level} Alloy node` : m.phase === 'gather' ? `Gathering Alloy: ${load}/${g.cap}` : `Returning with ${load} Alloy`)
+      : (m.phase === 'out' ? `Marching to Lv ${tgt?.level ?? '?'}` : 'Returning to base');
+    status.setText(m ? `${what} · formation locked until it's back` : 'Only healthy troops march. Refill tops lines up from reserve');
   });
   void march;
 }

@@ -1,7 +1,7 @@
 // World-map UI (lives in the UI scene, drawn over the World scene): stamina + Auto strip, squad march
 // bar, creature attack sheet, battle report card, battle replay and the reports list.
 import Phaser from 'phaser';
-import { GAME_WIDTH as W, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES } from '../config.js';
+import { GAME_WIDTH as W, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES, GATHER } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, fmt, fmtClock, panelBg } from './widgets.js';
 import { drawBar, drawCard } from './skin.js';
@@ -76,10 +76,15 @@ export function createWorldHud(ui, TOP_H, H) {
     rep.setLabel(h.reports.length ? `Reports (${h.reports.length})` : 'Reports');
     for (const ch of hud.chips) {
       const status = store.squadStatus(ch.id), m = store.squadMarch(ch.id);
-      const col = { home: PALETTE.cyan, marching: PALETTE.cyan, returning: PALETTE.gold, locked: 0x3b4452, empty: 0xff4d5e }[status];
-      ch.cg.clear(); drawCard(ch.cg, ch.x, by + 6, chipW, bh - 12, { state: status === 'locked' ? 'locked' : status === 'marching' ? 'progress' : 'normal', color: col, cut: 8 });
+      const col = { home: PALETTE.cyan, marching: PALETTE.cyan, gathering: 0x2fe0c8, returning: PALETTE.gold, locked: 0x3b4452, empty: 0xff4d5e }[status];
+      ch.cg.clear(); drawCard(ch.cg, ch.x, by + 6, chipW, bh - 12, { state: status === 'locked' ? 'locked' : status === 'marching' || status === 'gathering' ? 'progress' : 'normal', color: col, cut: 8 });
       if (status === 'locked') { ch.st.setText(`Locked`).setColor('#5d6878'); ch.sub.setText(`CC Lv ${SQUADS[ch.id].unlockCC}`); continue; }
-      if (m) {
+      if (m?.gather) { // stage 16: gathering march
+        const g = m.gather, load = Math.floor(g.load);
+        if (m.phase === 'out') { ch.st.setText(`→ Alloy Lv ${g.level}  ${fmtClock(m.travel - m.t)}`).setColor(PALETTE.textCyan); ch.sub.setText('tap to recall'); }
+        else if (m.phase === 'gather') { ch.st.setText(`Gathering ${fmt(load)}/${fmt(g.cap)}`).setColor('#7ff5e2'); ch.sub.setText('tap to recall'); }
+        else { ch.st.setText(`↩ home ${fmtClock(m.back - m.t)}`).setColor(PALETTE.textGold); ch.sub.setText(`carrying ${fmt(load)} Alloy`); }
+      } else if (m) {
         const t = m.phase === 'out' ? m.travel - m.t : m.back - m.t;
         const tgt = store.world.get(m.targetId);
         ch.st.setText(m.phase === 'out' ? `→ ${tgt ? `Lv ${tgt.level}` : 'target'}  ${fmtClock(t)}` : `↩ home ${fmtClock(t)}`).setColor(m.phase === 'out' ? PALETTE.textCyan : PALETTE.textGold);
@@ -121,6 +126,16 @@ function onChip(ui, hud, id) {
   }
   const k = m.phase === 'out' ? Math.min(1, m.t / m.travel) : 1 - m.t / m.back;
   ws.focusTile(m.from.x + (m.to.x - m.from.x) * k, m.from.y + (m.to.y - m.from.y) * k);
+  if (m.gather && (m.phase === 'out' || m.phase === 'gather')) {
+    const load = Math.floor(m.gather.load);
+    ui.openModal({
+      title: `Recall ${sqName(id)}?`,
+      body: m.phase === 'gather' ? `It stops gathering and marches home with the ${fmt(load)} Alloy gathered so far (${fmtClock(m.travel)}).` : 'It turns around now and comes home empty-handed.',
+      buttons: [{ label: 'Keep going', style: 'ghost' }, { label: 'Recall', style: 'danger', onClick: () => { const r = store.recall(id); ui.toast(r.ok ? `${sqName(id)} is heading home` : r.reason); } }],
+      kind: 'recall',
+    });
+    return;
+  }
   if (m.phase === 'out') {
     ui.openModal({
       title: `Recall ${sqName(id)}?`,
@@ -140,6 +155,7 @@ function closeSheet(ui, hud) {
 function openSheet(ui, hud, id, barY) {
   closeSheet(ui, hud);
   const e = store.world.get(id);
+  if (e?.kind === 'node') { openNodeSheet(ui, hud, e, barY); return; }
   if (!e || e.kind !== 'creature') return;
   const T = CREATURES[e.type];
   const sh = 470, x = 16, w = W - 32, y = barY - 10 - sh;
@@ -187,6 +203,64 @@ function openSheet(ui, hud, id, barY) {
       r.b.setEnabled(a.can);
       if (store.squadStatus(r.sid) === 'locked') r.t.setText(`Locked (CC Lv ${SQUADS[r.sid].unlockCC})`).setColor('#5d6878');
       else if (a.can || /stamina/.test(a.reason ?? '')) r.t.setText(`${fmt(a.power)} vs ${fmt(power)}  ·  ${a.odds.label}${a.can ? '' : '  · low stamina'}`).setColor(a.can ? a.odds.color : '#ff8a95');
+      else r.t.setText(a.reason).setColor('#ff8a95');
+    }
+  };
+  hud.sheetRefresh();
+  ui.flushInput();
+}
+
+// Stage 16: Alloy node sheet (level, Alloy left, one Gather button per squad).
+function openNodeSheet(ui, hud, e, barY) {
+  const id = e.id;
+  const sh = 430, x = 16, w = W - 32, y = barY - 10 - sh;
+  hud.sheetRect.setTo(x, y, w, sh);
+  const c = ui.add.container(0, 0).setDepth(25);
+  hud.sheet = c; hud.sheetFor = id;
+  const g = ui.add.graphics();
+  panelBg(g, x, y, w, sh, { accent: 0x2fe0c8, stroke: 0x2fe0c8 });
+  c.add([g, ui.add.rectangle(x + w / 2, y + sh / 2, w, sh, 0, 0.001).setInteractive()]);
+  const art = ui.add.image(x + 80, y + 78, 'node-full'); art.setScale(132 / art.width); c.add(art);
+  c.add(text(ui, x + 160, y + 18, `Lv ${e.level}  ·  Alloy Node`, 30, '#7ff5e2', { fontStyle: 'bold' }));
+  c.add(text(ui, x + 160, y + 60, 'Send a squad to mine Alloy. No stamina and no fighting: troops come home safe. Higher-level nodes are farther out, richer and faster to mine.', 17, PALETTE.textDim, { wordWrap: { width: w - 230 }, lineSpacing: 3 }));
+  c.add(button(ui, x + w - 38, y + 36, 52, 52, '✕', () => { ui.scene.get('World').select(null); }, { style: 'ghost', size: 24 }));
+  const pile = ui.add.image(x + 40, y + 170, 'ic-alloy-pile'); pile.setScale(40 / pile.width); c.add(pile);
+  const left = text(ui, x + 68, y + 156, '', 22, PALETTE.text, { fontStyle: 'bold' });
+  const barG = ui.add.graphics();
+  const info = text(ui, x + 24, y + 200, '', 18, PALETTE.textDim, { lineSpacing: 5 });
+  const note = text(ui, x + 24, y + 250, '', 18, '#7ff5e2');
+  c.add([left, barG, info, note]);
+  const rows = TROOPS.squadIds.map((sid, i) => {
+    const ry = y + 282 + i * 48;
+    const b = button(ui, x + 24 + 140, ry + 22, 280, 44, `Gather · ${sqName(sid)}`, () => {
+      const r = store.gather(sid, id);
+      if (!r.ok) { ui.toast(r.reason); return; }
+      ui.toast(`${sqName(sid)} marching to the Lv ${e.level} Alloy node (${Math.ceil(r.travel)}s)  ·  carries up to ${fmt(r.cap)}`, 2000);
+      ui.scene.get('World').select(null);
+    }, { style: 'cyan', size: 20 });
+    b.chip = `gather-${sid}`;
+    const t = text(ui, x + 320, ry + 10, '', 17, PALETTE.text);
+    c.add([b, t]);
+    return { sid, b, t };
+  });
+  hud.sheetRefresh = () => {
+    const n = store.world.get(id);
+    if (!n) { ui.scene.get('World').select(null); return; }
+    const amt = Math.floor(n.amount);
+    art.setTexture(amt >= 1 ? 'node-full' : 'node-depleted');
+    left.setText(`${fmt(amt)} / ${fmt(n.max)} Alloy left`);
+    barG.clear(); drawBar(barG, x + 360, y + 160, w - 384, 18, n.max ? amt / n.max : 0, { color: 0x2fe0c8 });
+    const travel = store.gatherInfo('alpha', id).travel;
+    info.setText(`March ${Math.ceil(travel)}s each way   ·   Speed +${Math.round(GATHER.rateLevel * 100 * (n.level - 1))}% (node level)\nCarry ${GATHER.capBase} + ${GATHER.capPerTroop} per troop   ·   more troops mine faster`);
+    const m = n.busy ? store.world.marches().find((x) => x.id === n.busy) : null;
+    if (amt < 1) note.setText(`Drained: regrows in ${fmtClock(Math.max(0, n.regrowAt - store.world.snapshot().clock))}`).setColor('#ff8a95');
+    else if (m?.gather) note.setText(m.phase === 'gather' ? `${sqName(m.squadId)} is gathering: ${fmt(Math.floor(m.gather.load))}/${fmt(m.gather.cap)}` : `${sqName(m.squadId)} is on the way`).setColor('#7ff5e2');
+    else note.setText('');
+    for (const r of rows) {
+      const a = store.gatherInfo(r.sid, id);
+      r.b.setEnabled(a.can);
+      if (store.squadStatus(r.sid) === 'locked') r.t.setText(`Locked (CC Lv ${SQUADS[r.sid].unlockCC})`).setColor('#5d6878');
+      else if (a.can) r.t.setText(`${fmt(a.troops)} troops · carries ${fmt(a.cap)} · ${fmtClock(a.fill)}`).setColor(PALETTE.text);
       else r.t.setText(a.reason).setColor('#ff8a95');
     }
   };

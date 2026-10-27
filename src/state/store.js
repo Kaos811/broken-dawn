@@ -7,7 +7,7 @@ import {
   LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION, SPEEDUPS,
   INFIRMARY, CASUALTIES, STAMINA, WORLD, HUNT_REWARDS, CREATURES, creaturePower, MAP,
   CLASS_IDS, TIERS, MAX_TIER, PROMOTE, RESEARCH, RESEARCH_IDS, RESEARCH_TUNING, healBase, classOf, tierOf, nextTier,
-  AUDIO, TUTORIAL,
+  AUDIO, TUTORIAL, gatherCap, gatherRate,
 } from '../config.js';
 import { researchMods, researchLevel, archiveUnlocked } from '../systems/research.js';
 import { isValidPlacement, nearestFree, BEACON_TILE } from '../systems/grid.js';
@@ -17,7 +17,7 @@ import { createWorld, sanitizeWorld, dist, marchSeconds, LOCAL_OWNER } from '../
 import { squadArmy } from '../world/armies.js';
 import { combatPower, resolveBattle, odds } from '../world/battle.js';
 import { defaultMissions, sanitizeMissions, missionMethods } from '../systems/missions.js';
-import { defaultGoals, sanitizeGoals, fastForwardGoals, goalMethods } from '../systems/goals.js';
+import { defaultGoals, sanitizeGoals, fastForwardGoals, goalMethods, GATHER_GOAL_INDEX } from '../systems/goals.js';
 import { defaultEvents, sanitizeEvents, eventMethods } from '../systems/events.js';
 import { emptySpeedups, sanitizeSpeedups, speedupMethods } from '../systems/speedups.js';
 import { LocalEventService } from '../events/eventService.js';
@@ -34,7 +34,7 @@ const emptySquad = () => ({ level: 1, lines: emptyLines(), leader: null, armor: 
 const ORIGINS = [...TROOPS.squadIds, 'reserve'];
 const emptyWounded = () => Object.fromEntries(TROOP_IDS.map((t) => [t, Object.fromEntries(ORIGINS.map((o) => [o, 0]))]));
 const defaultSettings = () => ({ music: AUDIO.music, sfx: AUDIO.sfx, muted: AUDIO.muted, haptics: AUDIO.haptics });
-const defaultHunt = () => ({ stamina: STAMINA.max, staminaCarry: 0, auto: false, bestKill: 0, firstKills: [], kills: 0, losses: 0, dead: 0, reports: [], reportSeq: 0 });
+const defaultHunt = () => ({ stamina: STAMINA.max, staminaCarry: 0, auto: false, bestKill: 0, firstKills: [], kills: 0, losses: 0, dead: 0, reports: [], reportSeq: 0, gathered: 0, trips: 0 });
 
 function defaultState() {
   const buildings = {};
@@ -234,6 +234,12 @@ export function migrate(raw) {
     } else raw.tutorial = { done: false, step: 0, skipped: false, rewarded: false };
     raw.version = 13;
   }
+  // v14 -> v15: Alloy nodes (seeded by sanitizeWorld) + a new 'Gather Alloy' chapter goal. A v14 save that
+  // is already past that slot in the chain keeps its place (the goal is skipped, no back-pay).
+  if (num(raw.version, 1) < 15) {
+    if (v >= 14 && raw.goals && Number(raw.goals.i) >= GATHER_GOAL_INDEX) raw = { ...raw, goals: { ...raw.goals, i: Number(raw.goals.i) + 1 } };
+    raw.version = 15;
+  }
   return raw;
 }
 
@@ -340,7 +346,7 @@ function sanitize(raw) {
     auto: h.auto === true,
     bestKill: Math.min(WORLD.maxLevel, int(h.bestKill)),
     firstKills: [...new Set((Array.isArray(h.firstKills) ? h.firstKills : []).map((l) => Math.floor(l)).filter((l) => l >= 1 && l <= WORLD.maxLevel))],
-    kills: int(h.kills), losses: int(h.losses), dead: int(h.dead), reportSeq: int(h.reportSeq),
+    kills: int(h.kills), losses: int(h.losses), dead: int(h.dead), reportSeq: int(h.reportSeq), gathered: int(h.gathered), trips: int(h.trips),
     reports: (Array.isArray(h.reports) ? h.reports : []).filter((r) => r && Array.isArray(r.attacker?.lines) && Array.isArray(r.defender?.lines) && Number.isFinite(r.seed)).slice(0, WORLD.reportsKept),
   };
   s.infirmary = { wounded: emptyWounded(), queue: [] };
@@ -1322,7 +1328,7 @@ class Store extends Emitter {
   squadStatus(id) {
     if (!this.squadUnlocked(id)) return 'locked';
     const m = this.squadMarch(id);
-    if (m) return m.phase === 'out' ? 'marching' : 'returning';
+    if (m) return m.phase === 'out' ? 'marching' : m.phase === 'gather' ? 'gathering' : 'returning';
     return this.squadSoldiers(id) > 0 || this.refillable(id) > 0 ? 'home' : 'empty';
   }
   refillable(id) {
@@ -1412,6 +1418,54 @@ class Store extends Emitter {
     if (!this.simulating) { this.save(); this.emit('march', r.march); this.emit('change'); }
     return { ok: true, march: r.march, travel: info.travel };
   }
+  // ---- Gathering (stage 16) ------------------------------------------------
+  nodes() { return this.world.nodes(); }
+  // What a squad would do at a node if sent now (after refilling to its saved formation).
+  gatherInfo(squadId, nodeId) {
+    const t = this.world.get(nodeId);
+    const out = { can: false, reason: null, node: t, travel: 0, troops: 0, cap: 0, rate: 0, fill: 0 };
+    if (!t || t.kind !== 'node') { out.reason = 'Node is gone'; return out; }
+    if (!this.squadUnlocked(squadId)) out.reason = `Unlocks at Command Center Lv ${SQUADS[squadId].unlockCC}`;
+    else if (this.squadMarch(squadId)) out.reason = `${SQUADS[squadId].name} is already out`;
+    out.troops = this.squadMarch(squadId) ? 0 : this.squadSoldiers(squadId) + this.refillable(squadId);
+    if (!out.reason && out.troops < 1) out.reason = `No healthy troops in ${SQUADS[squadId].name}`;
+    const speed = this.mods.march;
+    const c = this.world.canSend({ owner: LOCAL_OWNER, squadId, targetId: nodeId, speed });
+    if (!out.reason && !c.ok) out.reason = c.reason;
+    out.travel = c.travel ?? marchSeconds(dist(t, { x: WORLD.baseX, y: WORLD.baseY })) / speed;
+    out.cap = Math.min(gatherCap(out.troops), Math.floor(t.amount));
+    out.rate = gatherRate(out.troops, t.level);
+    out.fill = out.rate > 0 ? out.cap / out.rate : 0;
+    out.can = !out.reason;
+    return out;
+  }
+  // Sends a squad to gather Alloy at a node. No stamina, no fighting; troops come home safe.
+  gather(squadId, nodeId) {
+    const info = this.gatherInfo(squadId, nodeId);
+    if (!info.can) return { ok: false, reason: info.reason };
+    this.refillSquad(squadId, { silent: true });
+    const army = squadArmy(this.state, squadId);
+    const troops = this.squadSoldiers(squadId);
+    const r = this.world.sendMarch({ owner: LOCAL_OWNER, squadId, army, targetId: nodeId, speed: this.mods.march, gather: { troops }, meta: { gather: true, level: info.node.level } });
+    if (!r.ok) return r;
+    if (!this.simulating) { this.save(); this.emit('march', r.march); this.emit('change'); }
+    return { ok: true, march: r.march, travel: info.travel, cap: r.march.gather.cap };
+  }
+  gatherLoad(squadId) { const m = this.squadMarch(squadId); return m?.gather ? { load: Math.floor(m.gather.load), cap: m.gather.cap, phase: m.phase } : null; }
+  onGatherHome(m) {
+    const n = Math.floor(m.gather?.load ?? 0);
+    if (n > 0) {
+      this.state.resources.alloy += n;
+      this.state.hunt.gathered += n;
+      this.track('gather', n);
+    }
+    this.state.hunt.trips += 1;
+    const acc = this.simAcc;
+    if (acc) { acc.gathered += n; acc.trips++; }
+    if (!this.simulating) this.emit('gathered', { squadId: m.squadId, amount: n, recalled: !!m.recalled });
+    return n;
+  }
+
   recall(squadId) {
     const m = this.squadMarch(squadId);
     if (!m) return { ok: false, reason: 'Not out' };
@@ -1452,6 +1506,7 @@ class Store extends Emitter {
     const events = this.world.tick(dt);
     for (const ev of events) {
       if (ev.type === 'battle') this.onBattle(ev);
+      else if (ev.type === 'home' && ev.march.gather) this.onGatherHome(ev.march);
       else if (ev.type === 'home' && !this.simulating) this.emit('marchHome', ev.march);
     }
     const sent = this.autoStep();
@@ -1541,7 +1596,7 @@ class Store extends Emitter {
   // Offline: healing, stamina, marches, respawns and Auto all advance together in 5 s steps.
   simulateWorld(secs) {
     const healed = {};
-    const acc = this.simAcc = { fights: 0, wins: 0, energy: 0, alloy: 0, shards: 0, cores: 0, dead: 0, wounded: 0, healed };
+    const acc = this.simAcc = { gathered: 0, trips: 0, fights: 0, wins: 0, energy: 0, alloy: 0, shards: 0, cores: 0, dead: 0, wounded: 0, healed };
     this.simulating = true;
     try {
       for (let t = 0; t < secs; t += 5) {

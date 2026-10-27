@@ -15,6 +15,8 @@ export const GOALS = [
   { text: 'Have 30 troops', goal: 30, cur: troops, go: 'troops', reward: { energy: 400, su_m5: 1 } },
   { text: 'Raise the Beacon to Lv 3', goal: 3, cur: (s) => s.beacon.level, go: 'beacon', reward: { energy: 600, alloy: 60 } },
   { text: 'Defeat 10 creatures', goal: 10, cur: (s) => s.hunt.kills, go: 'world', reward: { stamina: 20, su_m15: 1 } },
+  // stage 16: send a squad to an Alloy node on the World map (GATHER_GOAL_INDEX below must match this slot)
+  { text: 'Gather 500 Alloy', goal: 500, cur: (s) => s.hunt.gathered ?? 0, go: 'world', reward: { energy: 800, shards: 40, su_m15: 1 } },
   { ...L('barracks', 4, 'Barracks'), reward: { energy: 800, su_m15: 1 } },
   { text: 'Win a hunt against a Lv 3 creature', goal: 3, cur: (s) => s.hunt.bestKill, go: 'world', reward: { shards: 40, stamina: 20 } },
   { text: 'Recruit 5 times', goal: 5, cur: (s) => s.gacha.total, go: 'armory', reward: { shards: 60, su_m15: 1 } },
@@ -28,6 +30,7 @@ export const GOALS = [
   { text: 'Raise the Beacon to Lv 6', goal: 6, cur: (s) => s.beacon.level, go: 'beacon', reward: { cores: 1, energy: 4000, su_h3: 1 } },
 ];
 
+export const GATHER_GOAL_INDEX = 4;
 export const defaultGoals = () => ({ i: 0 });
 export function sanitizeGoals(raw) { const i = Math.floor(Number(raw?.i)); return { i: Number.isFinite(i) ? Math.min(GOALS.length, Math.max(0, i)) : 0 }; }
 // v14 migration: skip goals an existing save has already met (no back-pay), stopping at the first open one

@@ -38,6 +38,7 @@ export default class WorldScene extends Phaser.Scene {
     this.selG = this.add.graphics().setDepth(6);
     this.crSprites = new Map();   // id -> { img, badge, lock }
     this.marchSprites = new Map(); // id -> { img, label }
+    this.nodeSprites = new Map();  // stage 16: Alloy nodes, id -> { img, badge, e, tex }
     this.selected = null;
     this.gesture = null; this.pinch = null;
 
@@ -253,7 +254,35 @@ export default class WorldScene extends Phaser.Scene {
       s.badge.setText(`${locked ? '🔒 ' : e.busy ? '⚔ ' : ''}Lv ${e.level}`).setColor(locked ? '#9aa6b8' : (CREATURES[e.type].elite ? '#ffb347' : '#ffffff'));
       s.img.setTint(locked ? 0x9a9a9a : 0xffffff);
     }
+    this.syncNodes(force);
     for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
+  }
+
+  // Stage 16: Alloy nodes: full crystal, drained stump, or the gathering camp while a squad mines it.
+  syncNodes(force = false) {
+    const live = new Set();
+    const marches = store.world.marches();
+    for (const e of store.world.nodes()) {
+      live.add(e.id);
+      const p = tileToWorld(e.x, e.y);
+      let s = this.nodeSprites.get(e.id);
+      if (!s) {
+        const img = this.add.image(p.x, p.y + 6, 'node-full').setOrigin(0.5, 0.72).setDepth(10 + p.y / SIZE);
+        const badge = this.plaque(p.x, p.y + 34, '', { size: 22, depth: 11, min: 0.33 });
+        s = { img, badge, e, tex: 'node-full' };
+        this.nodeSprites.set(e.id, s);
+        if (!force) { img.setAlpha(0); this.tweens.add({ targets: img, alpha: 1, duration: 400 }); }
+      }
+      s.e = e;
+      const m = e.busy ? marches.find((x) => x.id === e.busy) : null;
+      const gathering = m?.phase === 'gather';
+      const tex = e.amount < 1 ? 'node-depleted' : gathering ? 'node-camp' : 'node-full';
+      if (tex !== s.tex) { s.tex = tex; s.img.setTexture(tex); }
+      s.img.setScale((tex === 'node-camp' ? 128 : 96 + e.level * 8) / s.img.width).setAlpha(e.amount < 1 ? 0.8 : 1);
+      s.badge.setText(e.amount < 1 ? `Lv ${e.level} · drained` : gathering ? `${SQUADS[m.squadId].name} ${Math.floor(m.gather.load)}/${m.gather.cap}` : `Lv ${e.level} Alloy`)
+        .setColor(e.amount < 1 ? '#9aa6b8' : '#7ff5e2');
+    }
+    for (const [id, s] of this.nodeSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); this.nodeSprites.delete(id); if (this.selected === id) this.select(null); }
   }
 
   drawMarches() {
@@ -262,9 +291,14 @@ export default class WorldScene extends Phaser.Scene {
     for (const m of store.world.marches(LOCAL_OWNER)) {
       live.add(m.id);
       const a = tileToWorld(m.from.x, m.from.y), b = tileToWorld(m.to.x, m.to.y);
-      const k = m.phase === 'out' ? Math.min(1, m.t / m.travel) : Math.max(0, 1 - m.t / m.back) * (m.recalled ? Math.min(1, m.back / m.travel) : 1);
+      const k = m.phase === 'gather' ? 1 : m.phase === 'out' ? Math.min(1, m.t / m.travel) : Math.max(0, 1 - m.t / m.back) * (m.recalled ? Math.min(1, m.back / m.travel) : 1);
       const x = a.x + (b.x - a.x) * k, y = a.y + (b.y - a.y) * k;
-      const col = m.phase === 'out' ? PALETTE.cyan : PALETTE.gold;
+      const col = m.phase === 'gather' ? 0x2fe0c8 : m.phase === 'out' ? PALETTE.cyan : PALETTE.gold;
+      if (m.phase === 'gather') { // sitting at the node: the camp sprite + node plaque show progress
+        let s = this.marchSprites.get(m.id);
+        if (s) { s.img.setVisible(false); s.label.hiddenByGame = true; s.label.setVisible(false); }
+        continue;
+      }
       g.lineStyle(8, col, 0.12).lineBetween(a.x, a.y, b.x, b.y);
       // dashed path
       const len = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(1, Math.floor(len / 28)), off = (this.time.now / 40) % 28;
@@ -280,6 +314,7 @@ export default class WorldScene extends Phaser.Scene {
         this.marchSprites.set(m.id, s);
       }
       const left = m.phase === 'out' ? m.travel - m.t : m.back - m.t;
+      if (s.label.hiddenByGame) { s.label.hiddenByGame = false; this.fitLabel({ t: s.label, min: 0 }); s.img.setVisible(true); }
       s.img.setPosition(x, y).setTint(m.phase === 'out' ? 0xffffff : 0xffd27f);
       s.label.setPosition(x, y - 30).setText(`${SQUADS[m.squadId].name} ${m.phase === 'out' ? '→' : '↩'} ${Math.ceil(Math.max(0, left))}s`).setColor(m.phase === 'out' ? '#3ff0ff' : PALETTE.textGold);
     }
@@ -335,6 +370,9 @@ export default class WorldScene extends Phaser.Scene {
       const d = Math.hypot(wx - p.x, wy - (p.y - 8));
       if (d < bd) { bd = d; best = s.e.id; }
     }
+    if (best) return best;
+    bd = 58;
+    for (const s of this.nodeSprites.values()) { const p = tileToWorld(s.e.x, s.e.y), d = Math.hypot(wx - p.x, wy - (p.y - 6)); if (d < bd) { bd = d; best = s.e.id; } }
     if (best) return best;
     bd = 95;
     for (const e of store.world.bases()) { const p = tileToWorld(e.x, e.y), d = Math.hypot(wx - p.x, wy - p.y); if (d < bd) { bd = d; best = e.id; } }

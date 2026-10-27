@@ -92,6 +92,7 @@ export default class UIScene extends Phaser.Scene {
       store.on('squad', (_id, d) => { if (d && d.after !== d.before) this.bump(this.powerText); }),
       store.on('hunt', (r) => this.onHunt(r)),
       store.on('marchHome', (m) => { if (!m.meta?.auto) this.toast(`${SQ[m.squadId].name} is back at base`, 1400); }),
+      store.on('gathered', (d) => { this.toast(d.amount ? `${SQ[d.squadId].name} is back with +${fmt(d.amount)} Alloy` : `${SQ[d.squadId].name} is back at base`, 1800); if (d.amount) { audio.play('reward'); this.floatText?.(this.alloyText ? this.alloyText.x + this.alloyText.width + 30 : W / 2, SAFE.top + 70, `+${fmt(d.amount)}`, '#bfc8d6'); } }),
       store.on('research', (id, lv, d) => {
         if (d && d.after !== d.before) this.bump(this.powerText);
         audio.play('research'); audio.haptic([15, 30, 15]);
@@ -119,7 +120,7 @@ export default class UIScene extends Phaser.Scene {
       const trained = Object.entries(off.trained ?? {}).map(([t, n]) => `${n} ${TROOP_CLASSES[t].plural}`).join(', ');
       const built = [...(off.built ?? []).map((b) => `${store.nameOf(b.id)} Lv ${b.level}`), ...(off.researched ?? []).map((r) => `${RESEARCH[r.id].name} ${RESEARCH[r.id].maxLevel === 1 ? '' : `Lv ${r.level}`}`.trim())].join(', ');
       const hu = off.hunts;
-      const hunts = hu?.fights ? `\nHunts while away: ${hu.wins}/${hu.fights} won${hu.cores ? `, +${hu.cores} Cores` : ''}, ${hu.wounded} wounded, ${hu.dead} fallen` : '';
+      const hunts = (hu?.fights ? `\nHunts while away: ${hu.wins}/${hu.fights} won${hu.cores ? `, +${hu.cores} Cores` : ''}, ${hu.wounded} wounded, ${hu.dead} fallen` : '') + (hu?.trips ? `\nGathered while away: +${fmt(hu.gathered)} Alloy (${hu.trips} ${hu.trips === 1 ? 'trip' : 'trips'})` : '');
       this.time.delayedCall(400, () => this.toast(`Welcome back, Commander. Away ${fmtDuration(off.seconds)}${off.capped ? ' (capped)' : ''}: +${fmt(off.energy)} Energy, +${fmt(off.shards)} Shards, +${fmt(off.alloy)} Alloy${trained ? `\nTrained while away: ${trained}` : ''}${built ? `\nUpgrades finished: ${built}` : ''}${hunts}`, hunts ? 6000 : 4600));
     } else if (store.migratedFrom && store.migratedFrom < 4) {
       this.time.delayedCall(400, () => this.toast(`Recruitment now uses Beacon Cores. Here are ${CORES.migrationGrant} to start. Your Shards stay for upgrades.`, 4600));
@@ -1389,7 +1390,7 @@ export default class UIScene extends Phaser.Scene {
   onWorldSelect(id) {
     const e = store.world.get(id);
     if (!e) return;
-    if (e.kind === 'creature') { this.worldHud.openSheet(id); return; }
+    if (e.kind === 'creature' || e.kind === 'node') { this.worldHud.openSheet(id); return; }
     this.worldHud.closeSheet();
     const ws = this.scene.get('World');
     const close = { label: 'Close', style: 'gold', onClick: () => ws.select(null) };

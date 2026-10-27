@@ -386,7 +386,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 14; // v14: chapter goals + crew help (stage 14); v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 15; // v15: Alloy gathering nodes (stage 16); v14: chapter goals + crew help (stage 14); v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -451,6 +451,25 @@ export const WORLD = {
   minZoom: 0.25, maxZoom: 1.6, startZoom: 0.55,
   bots: 14,                 // seeded neighbour bases (a server replaces these with real players later)
 };
+
+// Stage 16 (after The Ants: Underground Kingdom): Alloy nodes on the world map. Send a squad to gather:
+// no stamina, no fighting. Capacity = base + per troop; rate scales with troops and node level.
+// Nodes near your base are Lv 1, richer ones sit farther out. A drained node regrows in place.
+export const GATHER = {
+  levels: [ // per node level: total Alloy in the node + distance band (tiles from YOUR base) + count on the map
+    { amount: 150, band: [3, 7], count: 3 },
+    { amount: 260, band: [7, 11], count: 3 },
+    { amount: 400, band: [11, 15], count: 2 },
+    { amount: 600, band: [15, 20], count: 2 },
+    { amount: 900, band: [20, 26], count: 2 },
+  ],
+  capBase: 20, capPerTroop: 3,          // Alloy a squad can carry home
+  rateBase: 0.08, ratePerTroop: 0.002,  // Alloy per second at a Lv 1 node
+  rateLevel: 0.3,                       // +30% gather speed per node level above 1
+  regrowSeconds: 1800,                  // a drained node regrows after 30 min
+};
+export const gatherCap = (troops) => Math.round(GATHER.capBase + GATHER.capPerTroop * Math.max(0, troops));
+export const gatherRate = (troops, level) => (GATHER.rateBase + GATHER.ratePerTroop * Math.max(0, troops)) * (1 + GATHER.rateLevel * (Math.max(1, level) - 1));
 
 // Stage 12: player-base look by Beacon level (5 tiers) + seeded neighbour alliances.
 export const BASE_TIERS = [
