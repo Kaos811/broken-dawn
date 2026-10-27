@@ -1022,7 +1022,8 @@ async function runStage3(url, label, takeShots) {
     check('replay advances through the battle volley by volley', await waitTrue(() => __BD.ui().replayState().i >= 1));
     const det = await ev(() => { const st = __BD.store, r = st.state.hunt.reports[0]; const a = st.replayOf(r), b = st.replayOf(r); return JSON.stringify(a) === JSON.stringify(b) && (a.winner === 'attacker') === r.win && a.seed === r.seed; });
     check('replay is the exact same deterministic battle (same seed → same result)', det);
-    if (await ev(() => !__BD.ui().replayState().done)) await click('Skip', { wait: 300 }); // short battles may already be over
+    // short battles may already be over, or finish between this check and the tap (Skip then reads Report)
+    if (await ev(() => !__BD.ui().replayState().done)) { try { await click('Skip', { wait: 300 }); } catch (e) { if (!await ev(() => __BD.ui().replayState().done)) throw e; } }
     check('Skip jumps to the result', await waitTrue(() => __BD.ui().replayState().done));
     await click('Close', { wait: 300 });
     check('replay closes', await waitTrue(() => __BD.ui().replay === null));
@@ -1627,8 +1628,11 @@ async function runStage5(url, label, takeShots) {
     s = await state();
     check('Squad Alpha has troops for the hunt', s.squads.alpha.lines.some((l) => l.type && l.count > 0), JSON.stringify(s.squads.alpha.lines));
     const huntT0 = Date.now();
+    await ev(() => { window.__huntMarch = null; const off = __BD.store.on('march', (m) => { if (!window.__huntMarch && m?.squadId === 'alpha') { window.__huntMarch = { travel: m.travel, back: m.back }; off(); } }); });
     check('onboarding 6→7: first hunt from the World map (world track + march sound)', await walkTo('recruit', 120) && ((await au()).byName.march ?? 0) >= 1 && (await state()).hunt.reports.length >= 1);
-    check('first hunt resolves fast (under a minute of play, test clock)', Date.now() - huntT0 < 60000, `${Date.now() - huntT0} ms`);
+    // judged on the game's own schedule (out + back in game seconds), so a stalled test box can't fail it; wall time is informational
+    const hm = await ev(() => window.__huntMarch), huntWall = Date.now() - huntT0;
+    check('first hunt resolves fast (march out + back ≤ 20 s of game time; well under a minute of play)', !!hm && hm.travel + hm.back <= 20, JSON.stringify({ ...hm, wallMs: huntWall }));
     check('onboarding 7→8: first pull is a guaranteed Kael, assigned to Alpha (reveal sound)', await walkTo('beacon2', 40) && !!(await state()).leaders.kael && (await state()).squads.alpha.leader === 'kael' && ((await au()).byName.reveal ?? 0) >= 1);
     check('onboarding 8→9: Beacon Lv 2', await walkTo('missions', 40) && (await state()).beacon.level >= 2);
     const res0 = (await state()).resources;
