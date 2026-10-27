@@ -21,7 +21,7 @@ await p.screenshot({path:`${dir}/stage17-${PREFIX}-hud-crop.png`,clip:{x:0,y:0,w
 await seq('panel-open',()=>__BD.base().select('barracks'));
 await shot('panel',600);
 await p.screenshot({path:`${dir}/stage17-${PREFIX}-panel-crop.png`,clip:{x:0,y:520,width:390,height:324}});
-await ev(()=>{__BD.base().select(null);});
+await ev(()=>{__BD.base().clearSelection(true);});
 await seq('screen-open',()=>__BD.ui().onTab('troops'));
 await shot('troops',600);
 await ev(()=>{__BD.ui().closeScreen();});

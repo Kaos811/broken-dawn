@@ -1105,10 +1105,12 @@ export default class UIScene extends Phaser.Scene {
             b.setEnabled(m.done); b.chip = `ms-${m.id}`; c.add(b);
           }
         });
-        const yb = r.y + 376 + C.milestones.length * 66 + 16;
-        c.add(text(this, x0, yb, `World hunts: the first kill of each creature level pays ${CORES.battle.firstKill} Core (Dusk Wyrms ${CORES.battle.firstKillElite}). Daily login also gives +${STAMINA.dailyBonus} stamina.`, 16, PALETTE.textDim, { wordWrap: { width: r.w - 56 } }));
+        const yb = r.y + 376 + C.milestones.length * 66 + 8;
+        const note = text(this, x0, yb, `World hunts: the first kill of each creature level pays ${CORES.battle.firstKill} Core (Dusk Wyrms ${CORES.battle.firstKillElite}). Daily login also gives +${STAMINA.dailyBonus} stamina.`, 16, PALETTE.textDim, { wordWrap: { width: r.w - 56 } });
+        c.add(note);
         const n = store.rewardsReady();
-        const all = button(this, r.x + r.w / 2, yb + 66, 320, 64, n ? `Claim all (${n})` : 'Nothing to claim', () => claimed(store.claimAllRewards()), { style: 'cyan', size: 22 });
+        // stage 17: the button sits a clear gap below the note however many lines it wraps to
+        const all = button(this, r.x + r.w / 2, yb + note.height + 46, 320, 64, n ? `Claim all (${n})` : 'Nothing to claim', () => claimed(store.claimAllRewards()), { style: 'cyan', size: 22 });
         all.setEnabled(n > 0); c.add(all);
       },
     });
@@ -1179,6 +1181,7 @@ export default class UIScene extends Phaser.Scene {
   }
 
   openPanel(id) {
+    if (!id) { this.closePanel(false); return; }
     const was = this.panel.visible && this.panel.active;
     this.panelOpenFor = id;
     this.tweens.killTweensOf(this.panel);
@@ -1194,7 +1197,7 @@ export default class UIScene extends Phaser.Scene {
   }
 
   closePanel(notifyBase) {
-    if (!this.panelOpenFor) return;
+    if (!this.panelOpenFor && !(this.panel.visible && this.panel.active)) return;
     this.panelOpenFor = null;
     this.tweens.killTweensOf(this.panel);
     if (REDUCED_MOTION) this.panel.setVisible(false);

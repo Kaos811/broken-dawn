@@ -2484,6 +2484,15 @@ async function runStage17(url, label) {
     const zMid = await P.ev(() => __BD.base().zl); let zEnd = zMid;
     for (let i = 0; i < 40; i++) { await sleep(150); zEnd = await P.ev(() => __BD.base().zl); if (Math.abs(zEnd - Math.min(1.6, z0 * 1.1)) < 1e-6) break; }
     check('stage 17: wheel zoom eases toward its 10% step instead of jumping', zMid < z0 * 1.1 - 1e-4 && Math.abs(zEnd - Math.min(1.6, z0 * 1.1)) < 1e-6, `${z0} -> ${zMid} -> ${zEnd}`);
+    // idle life: couriers launch, travel between a building front and the Beacon plaza, never take input
+    await P.ev(() => __BD.base().couriers.forEach((k) => { k.wait = 0; }));
+    let cr = null;
+    for (let i = 0; i < 40; i++) { cr = await P.ev(() => { const ks = __BD.base().couriers; const on = ks.filter((k) => k.t < 1); return { n: ks.length, on: on.length, moved: on.some((k) => k.t > 0.02), alpha: Math.max(0, ...on.map((k) => k.body.alpha)), input: ks.some((k) => k.body.input || k.shadow.input) }; }); if (cr.on > 0 && cr.moved && cr.alpha > 0.2) break; await sleep(100); }
+    check('stage 17: idle energy couriers shuttle between buildings and the Beacon (visual only, no input)', cr.n === 6 && cr.on > 0 && cr.moved && cr.alpha > 0.2 && !cr.input, JSON.stringify(cr));
+    await P.ev(() => __BD.base().select('barracks')); await sleep(500);
+    await P.ev(() => __BD.base().select(null));
+    let np = null; for (let i = 0; i < 30; i++) { np = await P.ev(() => ({ vis: __BD.ui().panel.visible, act: __BD.ui().panel.active, for: __BD.ui().panelOpenFor })); if (!np.vis) break; await sleep(100); }
+    check('stage 17: selecting nothing closes the building panel (no empty panel left behind)', !np.vis && !np.act && np.for === null, JSON.stringify(np));
     check('stage 17: no console errors (motion checks)', P.errors.length === 0, P.errors.join(' | ').slice(0, 300));
     await P.ctx.close();
   }
@@ -2498,6 +2507,7 @@ async function runStage17(url, label) {
     const rf = await R.ev(() => __BD.feel());
     const rs = await R.ev(async () => { const s = __BD.store.state.resources; s.shards += 800; await new Promise((r) => setTimeout(r, 600)); return { t: __BD.ui().shardText.text, s: Math.floor(s.shards), flying: __BD.feel().flying }; });
     check('stage 17: prefers-reduced-motion turns off inertia, flying icons and number rolls', rf.reduced && !rf.on && rs.flying === 0 && Number(rs.t.replace(/,/g, '')) === rs.s, JSON.stringify({ rf, rs }));
+    check('stage 17: prefers-reduced-motion turns off the idle couriers', (await R.ev(() => __BD.base().couriers.length)) === 0);
     await R.ctx.close();
 
     // ?sharp=0 falls back to the 720-px backbuffer

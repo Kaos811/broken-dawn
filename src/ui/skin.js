@@ -172,7 +172,10 @@ export function drawButtonSkin(g, w, h, style) {
   g.fillTriangle(x + 2, y + 2, x + 2 + c2, y + 2, x + 2, y + 2 + c2).fillTriangle(x + bw - 2, y + 2, x + bw - 2 - c2, y + 2, x + bw - 2, y + 2 + c2);
   g.fillTriangle(x + 2, y + bh - 2, x + 2 + c2, y + bh - 2, x + 2, y + bh - 2 - c2).fillTriangle(x + bw - 2, y + bh - 2, x + bw - 2 - c2, y + bh - 2, x + bw - 2, y + bh - 2 - c2);
   if (style !== 'disabled') {
-    g.fillStyle(0xffffff, style === 'gold' ? 0.32 : 0.16).fillRect(x + cut, y + 4, bw - cut * 2, Math.max(2, bh * 0.2)); // gloss
+    // gloss: a soft sheen that fades out downward (stage 17: was a hard-edged band, which read as
+    // a flat grey stripe on tall tiles), capped so big tiles keep a thin highlight
+    const ga = style === 'gold' ? 0.34 : 0.17, gh = Math.max(3, Math.min(bh * 0.3, 24));
+    g.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, ga, ga, 0, 0).fillRect(x + cut, y + 3, bw - cut * 2, gh);
     g.fillStyle(0x000000, 0.18).fillRect(x + cut, y + bh - 6, bw - cut * 2, 3);
   }
 }
