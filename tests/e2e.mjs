@@ -2357,7 +2357,7 @@ async function runStage18(url, label, takeShots = true) {
     // --- 3. teleport rules (service + store)
     const tr = await ev(() => {
       const st = __BD.store, B0 = st.basePos(), bot = st.world.bases().find((b) => b.bot);
-      const cr = st.creatures()[0];
+      const cr = st.creatures().find((c) => c.x > 4 && c.y > 4 && c.x < 82 && c.y < 82 && __BD.dev.dist(c, __BD.dev.CENTER) > 10);
       const r = {
         edge: st.canTeleport(1, 40).reason, edge2: st.canTeleport(84, 40).reason, cit: st.canTeleport(43, 47).reason, bot: st.canTeleport(bot.x, bot.y).reason, crt: st.canTeleport(cr.x, cr.y).reason,
         cost: [st.teleportCost('targeted'), st.teleportCost('random')],
