@@ -22,10 +22,13 @@
 //   nodes()                            -> Alloy nodes { id, level, amount, max, busy, regrowAt, x, y } (stage 16)
 //   sendMarch({ ..., gather: { troops } }) to a node: march goes 'out' -> 'gather' -> 'back' and carries
 //                                         march.gather.load home (capacity + rate from config gatherCap/gatherRate)
-import { WORLD, CREATURES, GATHER, gatherCap, gatherRate } from '../config.js';
+//   canTeleport(owner, x, y) -> { ok, reason? }   teleport(owner, x, y) -> { ok, from, to }   (stage 18)
+//   randomTeleportSpot(owner, maxLevel)  -> {x,y}|null   ensureNear(owner, maxLevel) -> spawned entities
+//   tick events also include { type: 'despawn', entity } (an untouched creature wandered off)
+import { WORLD, CREATURES, GATHER, TELEPORT, gatherCap, gatherRate } from '../config.js';
 import { resolveBattle, hashSeed } from './battle.js';
 import { creatureArmy } from './armies.js';
-import { createWorld, spawnCreature, dist, marchSeconds, BASE_ID } from './worldState.js';
+import { createWorld, spawnCreature, ensureNearCreatures, ensureNearNodes, gradientLevel, dist, marchSeconds, BASE_ID, CENTER } from './worldState.js';
 
 export class LocalWorldService {
   // getWorld/setWorld read/write the plain world object stored in the save.
@@ -94,6 +97,41 @@ export class LocalWorldService {
     return { ok: true, march: m };
   }
 
+  // ---- stage 18: teleport. A server would run the same checks (and charge the cost) authoritatively.
+  canTeleport(owner, x, y) {
+    const M = TELEPORT.margin;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, reason: 'Pick a spot on the map' };
+    x = Math.round(x); y = Math.round(y);
+    if (x < M || y < M || x > WORLD.size - 1 - M || y > WORLD.size - 1 - M) return { ok: false, reason: 'Too close to the edge of the map' };
+    if (dist({ x, y }, CENTER) < WORLD.citadelRadius + TELEPORT.citadelClear) return { ok: false, reason: 'The Citadel is sealed' };
+    const home = this.homeOf(owner);
+    if (this.w.entities.some((e) => e !== home && dist(e, { x, y }) < (e.kind === 'base' ? WORLD.baseClear + 1 : e.kind === 'citadel' ? 0 : 1.5))) return { ok: false, reason: 'That spot is occupied' };
+    if (this.marches(owner).length) return { ok: false, reason: 'Recall your squads first' };
+    return { ok: true, x, y };
+  }
+  teleport(owner, x, y) {
+    const c = this.canTeleport(owner, x, y);
+    if (!c.ok) return c;
+    const home = this.homeOf(owner), from = { x: home.x, y: home.y };
+    home.x = c.x; home.y = c.y;
+    return { ok: true, from, to: { x: c.x, y: c.y } };
+  }
+  // A random spot where creatures you can fight are common (gradient level <= maxLevel).
+  randomTeleportSpot(owner, maxLevel, rng = Math.random) {
+    const home = this.homeOf(owner);
+    for (let tries = 0; tries < 600; tries++) {
+      const x = Math.round(TELEPORT.margin + rng() * (WORLD.size - 1 - 2 * TELEPORT.margin)), y = Math.round(TELEPORT.margin + rng() * (WORLD.size - 1 - 2 * TELEPORT.margin));
+      const g = gradientLevel(dist({ x, y }, CENTER));
+      if (g > maxLevel + 0.5 || g < Math.max(1, maxLevel - 4) - 0.5 || dist(home, { x, y }) < 8) continue;
+      if (this.canTeleport(owner, x, y).ok) return { x, y };
+    }
+    return null;
+  }
+  ensureNear(owner, maxLevel) {
+    const home = this.homeOf(owner);
+    return [...ensureNearCreatures(this.w, home, maxLevel), ...ensureNearNodes(this.w, home)];
+  }
+
   tick(dt) {
     const w = this.w, events = [];
     if (!(dt > 0)) return events;
@@ -131,7 +169,7 @@ export class LocalWorldService {
           target.busy = null;
           if (result.winner === 'attacker' && target.kind === 'creature') {
             w.entities.splice(w.entities.indexOf(target), 1);
-            w.respawns.push({ ring: target.ring, at: w.clock + WORLD.respawnSeconds });
+            w.respawns.push({ at: w.clock + WORLD.respawnSeconds });
           }
           events.push({ type: 'battle', march: m, target: { ...target }, defender, result });
         }
@@ -150,9 +188,17 @@ export class LocalWorldService {
     for (const r of [...w.respawns]) {
       if (w.clock < r.at) continue;
       w.respawns.splice(w.respawns.indexOf(r), 1);
-      const e = spawnCreature(w, r.ring);
+      const e = spawnCreature(w);
       if (e) events.push({ type: 'respawn', entity: e });
-      else w.respawns.push({ ring: r.ring, at: w.clock + 30 }); // no room right now, try again soon
+      else w.respawns.push({ at: w.clock + 30 }); // no room right now, try again soon
+    }
+    // stage 18: untouched creatures wander off after their lifetime; a fresh one appears somewhere else
+    for (const e of [...w.entities]) {
+      if (e.kind !== 'creature' || e.busy || !(e.expires > 0) || w.clock < e.expires) continue;
+      w.entities.splice(w.entities.indexOf(e), 1);
+      events.push({ type: 'despawn', entity: e });
+      const n = spawnCreature(w);
+      if (n) events.push({ type: 'respawn', entity: n });
     }
     return events;
   }

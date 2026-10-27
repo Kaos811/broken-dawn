@@ -402,7 +402,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 15; // v15: Alloy gathering nodes (stage 16); v14: chapter goals + crew help (stage 14); v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 16; // v16: zoneless world, gradient levels, teleport (stage 18); v15: Alloy gathering nodes (stage 16); v14: chapter goals + crew help (stage 14); v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -447,17 +447,18 @@ export const WORLD = {
   size: 86,
   tile: 72,
   centerX: 43, centerY: 43,
-  baseX: 43, baseY: 78,     // your base: south edge of the outer (Lv 1-5) zone
+  baseX: 43, baseY: 78,     // where a NEW base starts (south edge); the live position is world base entity x,y
   citadelRadius: 5,         // locked stronghold + golden dome (no creatures inside ~6 tiles)
-  rings: [
-    { min: 29, max: 37, levels: [1, 5], count: 16 },
-    { min: 21, max: 28, levels: [6, 10], count: 12 },
-    { min: 14, max: 20, levels: [11, 15], count: 9 },
-    { min: 7, max: 13, levels: [16, 20], count: 7 },
-  ],
+  // Stage 18 (after The Ants): no zones. Creatures are scattered at random over the whole map; the level
+  // follows a smooth gradient: Lv 20 within `inner` tiles of the Citadel, Lv 1 at `outer` tiles and beyond,
+  // +-jitter. Elites (wyrms) are every 5th level.
+  gradient: { inner: 8, outer: 40, jitter: 1 },
+  creatures: 60,            // creatures on the map at any time (killed ones respawn elsewhere)
+  near: { radius: 12, count: 6 }, // always >= count attackable creatures within radius of YOUR base
+  lifetime: [7200, 14400],  // an untouched creature wanders off after 2-4 h (a new one appears elsewhere)
   minSpacing: 2.2,          // tiles between creatures
   baseClear: 3,             // tiles kept clear around any player base
-  respawnSeconds: 600,      // a killed creature comes back after 10 min, somewhere else in its ring
+  respawnSeconds: 600,      // a killed creature comes back after 10 min, somewhere else on the map
   march: { base: 5, perTile: 1, max: 60 }, // seconds each way
   maxMarches: 3,            // one per squad
   levelHeadroom: 1,         // you can attack up to (best kill + 1)
@@ -472,17 +473,28 @@ export const WORLD = {
 // no stamina, no fighting. Capacity = base + per troop; rate scales with troops and node level.
 // Nodes near your base are Lv 1, richer ones sit farther out. A drained node regrows in place.
 export const GATHER = {
-  levels: [ // per node level: total Alloy in the node + distance band (tiles from YOUR base) + count on the map
-    { amount: 150, band: [3, 7], count: 3 },
-    { amount: 260, band: [7, 11], count: 3 },
-    { amount: 400, band: [11, 15], count: 2 },
-    { amount: 600, band: [15, 20], count: 2 },
-    { amount: 900, band: [20, 26], count: 2 },
+  levels: [ // per node level: total Alloy in the node + count on the map. Stage 18: the level follows the
+    // same gradient as creatures (richer toward the Citadel); a couple of Lv 1-2 nodes always sit near your base.
+    { amount: 150, count: 4 },
+    { amount: 260, count: 4 },
+    { amount: 400, count: 3 },
+    { amount: 600, count: 3 },
+    { amount: 900, count: 2 },
   ],
+  near: { radius: 10, count: 2, maxLevel: 2 },
   capBase: 20, capPerTroop: 3,          // Alloy a squad can carry home
   rateBase: 0.08, ratePerTroop: 0.002,  // Alloy per second at a Lv 1 node
   rateLevel: 0.3,                       // +30% gather speed per node level above 1
   regrowSeconds: 1800,                  // a drained node regrows after 30 min
+};
+// Stage 18: teleport your base. Free for now; the cost hook is ready for teleport items / a resource later
+// (cost: { res: amount } or item: inventory key). cooldown in seconds (0 = none).
+export const TELEPORT = {
+  targeted: { cost: null, item: 'teleport' },
+  random: { cost: null, item: 'teleportRandom' },
+  cooldown: 0,
+  margin: 2,                // tiles kept from the map edge
+  citadelClear: 3,          // tiles kept from the Citadel dome (citadelRadius + this)
 };
 export const gatherCap = (troops) => Math.round(GATHER.capBase + GATHER.capPerTroop * Math.max(0, troops));
 export const gatherRate = (troops, level) => (GATHER.rateBase + GATHER.ratePerTroop * Math.max(0, troops)) * (1 + GATHER.rateLevel * (Math.max(1, level) - 1));

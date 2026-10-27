@@ -12,7 +12,7 @@ const TAP_SLOP = 10;
 const tileToWorld = (x, y) => ({ x: (x + 0.5) * T, y: (y + 0.5) * T });
 
 // The World map (stage 12: painted wasteland). The Rift Citadel sits at the centre under a golden dome;
-// creature zones get tougher closer to it. Your base and seeded neighbour bases (WorldService bases())
+// stage 18: no zones; creatures are scattered everywhere and get tougher closer to it. Your base and seeded neighbour bases (WorldService bases())
 // render by Beacon tier with an alliance banner. Squads march out, auto-battle and march back.
 // Pan: drag. Zoom: pinch / wheel. Tap a creature to target it, a base for its profile, the Citadel for its card.
 // Perf: every prop is one image from the 'wmap' atlas (one batch) and off-screen props are culled.
@@ -34,13 +34,15 @@ export default class WorldScene extends Phaser.Scene {
     this.labels = [];              // constant-size plaques
     this.drawWorld();
     this.baseSprites = new Map();  // id -> { parts[], tier, e }
-    const b = tileToWorld(WORLD.baseX, WORLD.baseY);
+    const bp = store.basePos(), b = tileToWorld(bp.x, bp.y);
     this.marchG = this.add.graphics().setDepth(5);
     this.selG = this.add.graphics().setDepth(6);
     this.crSprites = new Map();   // id -> { img, badge, lock }
     this.marchSprites = new Map(); // id -> { img, label }
     this.nodeSprites = new Map();  // stage 16: Alloy nodes, id -> { img, badge, e, tex }
     this.selected = null;
+    this.tileSel = null;           // stage 18: an empty tile you tapped {x,y}
+    this.markG = this.add.graphics().setDepth(7);
     this.gesture = null; this.pinch = null;
 
     this.setZl(WORLD.startZoom);
@@ -57,7 +59,8 @@ export default class WorldScene extends Phaser.Scene {
     installCamFeel(this, { minZ: () => WORLD.minZoom, maxZ: () => WORLD.maxZoom });
     this.unsubs = [
       store.on('hunt', (r) => this.battleFx(r)),
-      store.on('reset', () => { this.select(null); this.syncAll(true); }),
+      store.on('reset', () => { this.select(null); this.syncAll(true); this.focusBase(); }),
+      store.on('teleport', (r) => this.teleportFx(r)),
     ];
     this.events.once('shutdown', () => this.unsubs.forEach((u) => u()));
     this.syncAll(true);
@@ -101,14 +104,15 @@ export default class WorldScene extends Phaser.Scene {
     const c = tileToWorld(CENTER.x, CENTER.y);
     this.add.rectangle(SIZE / 2, SIZE / 2, SIZE + 6000, SIZE + 6000, 0x07080a).setDepth(0);
     this.add.tileSprite(SIZE / 2, SIZE / 2, SIZE, SIZE, 'wmap-ground').setTileScale(1.25).setDepth(0);
-    // the land darkens + scorches toward the Citadel (tougher zones)
-    this.add.image(c.x, c.y, 'wmap', 'shadow').setScale((WORLD.rings[1].max * 2.3 * T) / 96).setAlpha(0.55).setDepth(0.1);
-    this.add.image(c.x, c.y, 'wmap', 'shadow').setScale((WORLD.rings[3].max * 2.4 * T) / 96).setAlpha(0.6).setDepth(0.1);
+    // stage 18: no zones. The land darkens smoothly toward the Citadel (soft stacked falloff, no hard edges)
+    for (const [r, a] of [[WORLD.gradient.outer * 2.6, 0.22], [WORLD.gradient.outer * 1.8, 0.22], [WORLD.gradient.outer * 1.1, 0.24], [WORLD.gradient.inner * 2.6, 0.22]]) {
+      this.add.image(c.x, c.y, 'wmap', 'shadow').setScale((r * T) / 96).setAlpha(a).setDepth(0.1);
+    }
     // keep-out test for decor (bases, citadel, creatures move so we only avoid fixed things)
     const fixed = store.world.entities().filter((e) => e.kind !== 'creature').map((e) => ({ ...tileToWorld(e.x, e.y), r: (e.kind === 'citadel' ? WORLD.citadelRadius + 1.5 : 2) * T }));
     const clear = (x, y, pad = 0) => fixed.every((f) => Math.hypot(f.x - x, f.y - y) > f.r + pad);
     // broken roads: from your base and the map edges toward the Citadel, with gaps
-    const roads = [[tileToWorld(WORLD.baseX, WORLD.baseY), c]];
+    const roads = [[tileToWorld(WORLD.baseX, WORLD.baseY), c]]; // decor only (the old start road)
     for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + (k - 2) * 0.95 + (rnd() - 0.5) * 0.3; roads.push([{ x: c.x + Math.cos(a) * 39 * T, y: c.y + Math.sin(a) * 39 * T }, c]); }
     for (let k = 0; k < 3; k++) { const a = rnd() * Math.PI * 2, r1 = (12 + rnd() * 20) * T; const p = { x: c.x + Math.cos(a) * r1, y: c.y + Math.sin(a) * r1 }; const b2 = a + (rnd() > 0.5 ? 1 : -1) * (0.6 + rnd() * 0.6); roads.push([p, { x: c.x + Math.cos(b2) * r1, y: c.y + Math.sin(b2) * r1 }]); }
     for (const [a, b] of roads) {
@@ -121,16 +125,6 @@ export default class WorldScene extends Phaser.Scene {
         this.prop(x, y, 'road', { w: 250, rot: ang + (rnd() - 0.5) * 0.25, alpha: 0.75, depth: 0.3 });
       }
     }
-    // zone rings (gold, red at the inner zone) + labels
-    const g = this.add.graphics().setDepth(0.5);
-    WORLD.rings.forEach((R, i) => {
-      g.lineStyle(14, PALETTE.gold, 0.05).strokeCircle(c.x, c.y, (R.max + 1) * T);
-      g.lineStyle(3, i === 3 ? 0xff4d5e : PALETTE.gold, 0.28).strokeCircle(c.x, c.y, (R.max + 1) * T);
-      for (const a of [Math.PI / 2 - 0.42, -Math.PI / 2 + 0.42]) {
-        const r = (R.min + (R.max - R.min) / 2) * T;
-        this.add.text(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, `ZONE ${i + 1} · Lv ${R.levels[0]}–${R.levels[1]}`, { fontFamily: 'system-ui, sans-serif', fontSize: '26px', fontStyle: 'bold', color: '#ffd27f88', stroke: '#05070a99', strokeThickness: 5, letterSpacing: 4 }).setOrigin(0.5).setDepth(1);
-      }
-    });
     // teal rift fissures (pulse), crystal nodes, ruins
     this.fissures = [];
     for (let i = 0; i < 70; i++) {
@@ -367,7 +361,45 @@ export default class WorldScene extends Phaser.Scene {
     if (zoom) this.setZl(zoom);
     this.tweens.add({ targets: cam, scrollX: p.x - cam.width / 2, scrollY: p.y - cam.height / 2 + 120, duration: 350, ease: 'Cubic.easeOut', onUpdate: () => this.clampCamera() });
   }
-  focusBase() { this.focusTile(WORLD.baseX, WORLD.baseY); }
+  focusBase() { const b = store.basePos(); this.focusTile(b.x, b.y); }
+  // tile under the screen centre (the coordinate readout); the camera's view centre minus focusTile's offset
+  centerTile() {
+    const cam = this.cameras.main, w = this.screenToWorld(LW / 2, LH / 2);
+    return { x: Phaser.Math.Clamp(Math.floor(w.x / T), 0, WORLD.size - 1), y: Phaser.Math.Clamp(Math.floor(w.y / T), 0, WORLD.size - 1) };
+  }
+  // search result / teleport target: a pulsing gold marker on a tile for a few seconds
+  pulseAt(x, y, ms = 4000) { this.pulse = { x, y, until: this.time.now + ms }; }
+  teleportFx(r) {
+    this.select(null);
+    this.syncAll(true);
+    for (const p of [r.from, r.to]) {
+      const w = tileToWorld(p.x, p.y);
+      const sp = this.add.particles(w.x, w.y, 'spark', { speed: { min: 80, max: 300 }, lifespan: 900, scale: { start: 1.6, end: 0 }, tint: [0x3ff0ff, PALETTE.gold], blendMode: 'ADD', emitting: false }).setDepth(30);
+      sp.explode(40);
+      this.time.delayedCall(1000, () => sp.destroy());
+    }
+    this.focusTile(r.to.x, r.to.y);
+    this.pulseAt(r.to.x, r.to.y, 2500);
+  }
+  selectTile(t) {
+    this.tileSel = t;
+    if (t) { this.selected = null; this.game.events.emit('world:tile', t); }
+    else this.game.events.emit('world:deselect');
+  }
+  drawMarks() {
+    const g = this.markG; g.clear();
+    const k = Math.sin(this.time.now / 160) * 0.5 + 0.5;
+    if (this.tileSel) {
+      const p = tileToWorld(this.tileSel.x, this.tileSel.y);
+      g.lineStyle(4, 0x3ff0ff, 0.9).strokeRect(p.x - T / 2, p.y - T / 2, T, T);
+      g.fillStyle(0x3ff0ff, 0.12 + 0.1 * k).fillRect(p.x - T / 2, p.y - T / 2, T, T);
+    }
+    if (this.pulse && this.time.now < this.pulse.until) {
+      const p = tileToWorld(this.pulse.x, this.pulse.y), r = 50 + 40 * ((this.time.now / 900) % 1);
+      g.lineStyle(6, PALETTE.gold, 1 - ((this.time.now / 900) % 1)).strokeCircle(p.x, p.y, r);
+      g.lineStyle(3, PALETTE.gold, 0.9).strokeCircle(p.x, p.y, 46);
+    } else this.pulse = null;
+  }
 
   pick(wx, wy) {
     let best = null, bd = 60;
@@ -388,6 +420,7 @@ export default class WorldScene extends Phaser.Scene {
     return null;
   }
   select(id) {
+    if (id) this.tileSel = null;
     this.selected = id;
     this.game.events.emit(id ? 'world:select' : 'world:deselect', id);
   }
@@ -431,7 +464,10 @@ export default class WorldScene extends Phaser.Scene {
     if (!g || p.id !== g.id) return;
     if (g.mode === 'pending') {
       const w = this.screenToWorld(p.x, p.y);
-      this.select(this.pick(w.x, w.y));
+      const id = this.pick(w.x, w.y);
+      // stage 18: tapping empty ground opens a tile card (coordinates + Teleport here)
+      if (id || this.selected || this.tileSel) { this.tileSel = null; this.select(id); }
+      else this.selectTile({ x: Phaser.Math.Clamp(Math.floor(w.x / T), 0, WORLD.size - 1), y: Phaser.Math.Clamp(Math.floor(w.y / T), 0, WORLD.size - 1) });
     } else if (g.mode === 'pan') this.releasePan();
     this.gesture = null;
   }
@@ -443,6 +479,8 @@ export default class WorldScene extends Phaser.Scene {
     if (!this.lastSync || this.time.now - this.lastSync > 250) { this.lastSync = this.time.now; this.syncAll(); }
     this.drawMarches();
     this.drawSelection();
+    this.drawMarks();
+    this.ui()?.worldHud?.visible && this.ui().worldHud.coords?.();
     if ((this.gesture || this.pinch) && this.downPointers().length === 0) { this.gesture = null; this.pinch = null; }
   }
 }

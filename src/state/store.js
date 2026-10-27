@@ -7,13 +7,13 @@ import {
   LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION, SPEEDUPS,
   INFIRMARY, CASUALTIES, STAMINA, WORLD, HUNT_REWARDS, CREATURES, creaturePower, MAP,
   CLASS_IDS, TIERS, MAX_TIER, PROMOTE, RESEARCH, RESEARCH_IDS, RESEARCH_TUNING, healBase, classOf, tierOf, nextTier,
-  AUDIO, TUTORIAL, gatherCap, gatherRate,
+  AUDIO, TUTORIAL, TELEPORT, gatherCap, gatherRate,
 } from '../config.js';
 import { researchMods, researchLevel, archiveUnlocked } from '../systems/research.js';
 import { isValidPlacement, nearestFree, BEACON_TILE } from '../systems/grid.js';
 import { basePower, squadPower, squadSoldiers, troopPowerBreakdown } from '../systems/power.js';
 import { LocalWorldService } from '../world/worldService.js';
-import { createWorld, sanitizeWorld, dist, marchSeconds, LOCAL_OWNER } from '../world/worldState.js';
+import { createWorld, sanitizeWorld, dist, marchSeconds, LOCAL_OWNER, BASE_ID } from '../world/worldState.js';
 import { squadArmy } from '../world/armies.js';
 import { combatPower, resolveBattle, odds } from '../world/battle.js';
 import { defaultMissions, sanitizeMissions, missionMethods } from '../systems/missions.js';
@@ -239,6 +239,36 @@ export function migrate(raw) {
   if (num(raw.version, 1) < 15) {
     if (v >= 14 && raw.goals && Number(raw.goals.i) >= GATHER_GOAL_INDEX) raw = { ...raw, goals: { ...raw.goals, i: Number(raw.goals.i) + 1 } };
     raw.version = 15;
+  }
+  if (num(raw.version, 1) < 16) {
+    // v16 (stage 18): zoneless world. Keep the seed, clock, bots, YOUR base position and squads in the field;
+    // creatures and nodes are regenerated from the same seed on the new gradient (old ring fields dropped).
+    // A hunt whose creature is gone just comes home (stamina refunded); a gathering squad comes home with
+    // whatever Alloy it already carries. Hunt progress and stamina are untouched. (backup-v15 is kept.)
+    const ow = raw.world;
+    if (ow && typeof ow === 'object' && Number.isFinite(ow.seed) && Array.isArray(ow.entities)) {
+      const ents = ow.entities.filter(Boolean);
+      const ob = ents.find((e) => e.id === BASE_ID);
+      const base = ob && Number.isFinite(ob.x) && Number.isFinite(ob.y) ? { x: ob.x, y: ob.y } : { x: WORLD.baseX, y: WORLD.baseY };
+      const nw = createWorld(ow.seed >>> 0, base);
+      const clock = Math.max(0, num(ow.clock, 0));
+      const bots = ents.filter((e) => e.kind === 'base' && e.bot);
+      if (bots.length) {
+        nw.entities = nw.entities.filter((e) => !e.bot);
+        // drop any regenerated creature/node that now sits on an old bot base
+        nw.entities = nw.entities.filter((e) => !((e.kind === 'creature' || e.kind === 'node') && bots.some((b) => dist(b, e) < WORLD.baseClear)));
+        nw.entities.push(...bots);
+      }
+      for (const e of nw.entities) if (e.kind === 'creature') e.expires += clock;
+      nw.clock = clock;
+      nw.nextId = Math.max(nw.nextId, Math.floor(num(ow.nextId, 1)));
+      const marches = Array.isArray(ow.marches) ? ow.marches.filter((m) => m && typeof m === 'object') : [];
+      const refund = marches.filter((m) => m.phase === 'out' && !m.gather).reduce((n, m) => n + num(m.meta?.stamina, 0), 0);
+      if (raw.hunt && refund) raw.hunt = { ...raw.hunt, stamina: num(raw.hunt.stamina, 0) + refund };
+      nw.marches = marches.map((m) => (m.phase === 'out' || m.phase === 'gather' ? { ...m, phase: 'back', t: 0, back: m.phase === 'gather' ? num(m.travel, 5) : Math.max(0.1, num(m.t, 0)) || 0.1, targetId: null, recalled: true } : m));
+      raw = { ...raw, world: nw };
+    }
+    raw.version = 16;
   }
   return raw;
 }
@@ -467,6 +497,7 @@ class Store extends Emitter {
   }
 
   reset() {
+    this.nearChecked = false;
     try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
     this.state = defaultState();
     this.missionsRoll();
@@ -1369,6 +1400,45 @@ class Store extends Emitter {
   // ---- Hunting -------------------------------------------------------------
   maxAttackLevel() { return Math.min(WORLD.maxLevel, this.state.hunt.bestKill + WORLD.levelHeadroom); }
   creatures() { return this.world.entities('creature'); }
+
+  // ---- stage 18: base position, teleport, search -------------------------------------------------
+  basePos() { const b = this.world.homeOf(LOCAL_OWNER); return { x: b.x, y: b.y }; }
+  // Cost hook: null = free (today). Later: { res, amount } or an inventory item from TELEPORT[kind].item.
+  teleportCost(kind = 'targeted') { return TELEPORT[kind]?.cost ?? null; }
+  canTeleport(x, y) {
+    if (this.tutorialActive() && this.state.hunt.kills + this.state.hunt.losses === 0) return { ok: false, reason: 'Finish your first hunt before moving your base' };
+    return this.world.canTeleport(LOCAL_OWNER, x, y);
+  }
+  teleport(x, y, kind = 'targeted') {
+    const c = this.canTeleport(x, y);
+    if (!c.ok) return c;
+    const r = this.world.teleport(LOCAL_OWNER, x, y);
+    if (!r.ok) return r;
+    this.world.ensureNear(LOCAL_OWNER, this.maxAttackLevel());
+    this.emit('teleport', { ...r, kind });
+    this.save(); this.emit('change');
+    return r;
+  }
+  randomTeleport() {
+    if (this.tutorialActive() && this.state.hunt.kills + this.state.hunt.losses === 0) return { ok: false, reason: 'Finish your first hunt before moving your base' };
+    if (this.world.marches(LOCAL_OWNER).length) return { ok: false, reason: 'Recall your squads first' };
+    const p = this.world.randomTeleportSpot(LOCAL_OWNER, this.maxAttackLevel());
+    if (!p) return { ok: false, reason: 'No safe spot found, try again' };
+    return this.teleport(p.x, p.y, 'random');
+  }
+  // Nearest free creature of exactly `level` (type: 'any' | a creature type) to your base; or a node.
+  searchWorld({ kind = 'creature', type = 'any', level = 1 } = {}) {
+    const home = this.basePos();
+    let best = null, bd = Infinity;
+    for (const e of this.world.entities(kind)) {
+      if (e.level !== level || e.busy) continue;
+      if (kind === 'creature' && type !== 'any' && e.type !== type) continue;
+      if (kind === 'node' && !(e.amount >= 1)) continue;
+      const d = dist(e, home);
+      if (d < bd || (d === bd && e.id < best.id)) { bd = d; best = e; }
+    }
+    return best;
+  }
   creaturePowerOf(e) { return creaturePower(e.level, !!CREATURES[e.type]?.elite); }
   firstKillCores(level) {
     if (this.state.hunt.firstKills.includes(level)) return 0;
@@ -1392,7 +1462,7 @@ class Store extends Emitter {
     const speed = this.mods.march; // Rift Striders research
     const c = this.world.canSend({ owner: LOCAL_OWNER, squadId, targetId, speed });
     if (!out.reason && !c.ok) out.reason = c.reason;
-    out.travel = c.travel ?? marchSeconds(dist(t, { x: WORLD.baseX, y: WORLD.baseY })) / speed;
+    out.travel = c.travel ?? marchSeconds(dist(t, this.basePos())) / speed;
     // power if it marched now (after refill)
     const sq = this.state.squads[squadId];
     const saved = sq.lines.map((l) => l.count);
@@ -1432,7 +1502,7 @@ class Store extends Emitter {
     const speed = this.mods.march;
     const c = this.world.canSend({ owner: LOCAL_OWNER, squadId, targetId: nodeId, speed });
     if (!out.reason && !c.ok) out.reason = c.reason;
-    out.travel = c.travel ?? marchSeconds(dist(t, { x: WORLD.baseX, y: WORLD.baseY })) / speed;
+    out.travel = c.travel ?? marchSeconds(dist(t, this.basePos())) / speed;
     out.cap = Math.min(gatherCap(out.troops), Math.floor(t.amount));
     out.rate = gatherRate(out.troops, t.level);
     out.fill = out.rate > 0 ? out.cap / out.rate : 0;
@@ -1508,6 +1578,11 @@ class Store extends Emitter {
       if (ev.type === 'battle') this.onBattle(ev);
       else if (ev.type === 'home' && ev.march.gather) this.onGatherHome(ev.march);
       else if (ev.type === 'home' && !this.simulating) this.emit('marchHome', ev.march);
+    }
+    // stage 18: keep enough fightable creatures (and a Lv 1-2 node or two) near your base
+    if (!this.nearChecked || events.some((e) => e.type === 'battle' || e.type === 'despawn' || e.type === 'gatherDone')) {
+      this.nearChecked = true;
+      this.world.ensureNear(LOCAL_OWNER, this.maxAttackLevel());
     }
     const sent = this.autoStep();
     if ((events.length || sent) && !this.simulating) { this.save(); this.emit('change'); }
