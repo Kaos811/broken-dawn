@@ -2795,19 +2795,19 @@ async function runStage16(url, label) {
       const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
       const nodes = st.nodes();
       const byL = [1, 2, 3, 4, 5].map((L) => nodes.filter((n) => n.level === L));
-      const avg = byL.map((a) => a.reduce((s, n) => s + d(n, base), 0) / Math.max(1, a.length));
+      const avg = byL.map((a) => a.reduce((s, n) => s + d(n, cit), 0) / Math.max(1, a.length)); // stage 18: by distance to the Citadel
       const clash = nodes.filter((n) => st.world.entities().some((e) => e !== n && d(e, n) < (e.kind === 'base' || e.kind === 'citadel' ? 3 : 2.2))).length;
-      return { n: nodes.length, counts: byL.map((a) => a.length), avg, clash, full: nodes.every((n) => n.amount === n.max && n.max > 0), near: Math.min(...byL[0].map((n) => d(n, base))), farCit: nodes.every((n) => d(n, cit) > 8), maxes: byL.map((a) => a[0]?.max) };
+      return { n: nodes.length, counts: byL.map((a) => a.length), avg, clash, full: nodes.every((n) => n.amount === n.max && n.max > 0), near: Math.min(...byL[0].map((n) => d(n, base))), farCit: nodes.every((n) => d(n, cit) >= 6.9), maxes: byL.map((a) => a[0]?.max) };
     });
-    check('12 Alloy nodes seeded: every level 1-5 present, all full', w.n === 12 && w.counts.every((c) => c >= 2) && w.full, JSON.stringify(w));
-    check('node level rises with distance from your base (Lv 1 within ~7 tiles, Lv 5 farthest); richer nodes hold more', w.avg.every((a, i) => i === 0 || a > w.avg[i - 1]) && w.near <= 7.5 && w.maxes.every((m, i) => i === 0 || m > w.maxes[i - 1]), JSON.stringify(w.avg));
+    check('~16 Alloy nodes seeded (stage 18): every level 1-5 present, all full', w.n >= 14 && w.n <= 20 && w.counts.every((c) => c >= 2) && w.full, JSON.stringify(w));
+    check('node level rises toward the Citadel (stage 18 gradient; a Lv 1 within 10 tiles of your base); richer nodes hold more', w.avg.every((a, i) => i === 0 || a < w.avg[i - 1]) && w.near <= 10 && w.maxes.every((m, i) => i === 0 || m > w.maxes[i - 1]), JSON.stringify(w.avg));
     check('nodes keep clear of creatures, bases and the Citadel', w.clash === 0 && w.farCit, JSON.stringify(w));
     // --- world map: node sprites, tap opens the sheet
     await P.ev(() => { const st = __BD.store; st.state.troops.sentinel = Math.max(st.state.troops.sentinel, 60); st.state.squads.alpha.lines = [{ type: 'sentinel', count: 30, full: 30 }, { type: null, count: 0, full: 0 }, { type: null, count: 0, full: 0 }]; st.save(); __BD.ui().onTab('world'); });
     await sleep(900);
     const node = await P.ev(() => __BD.store.nodes().filter((n) => n.level === 1).sort((a, b) => Math.hypot(a.x - 43, a.y - 78) - Math.hypot(b.x - 43, b.y - 78))[0]);
     const spr = await P.ev((id) => { const s = __BD.world().nodeSprites.get(id); return s && { tex: s.tex, badge: s.badge.text, vis: s.img.visible }; }, node.id);
-    check('each node has a painted sprite on the map with a "Lv N Alloy" plaque', !!spr && spr.tex === 'node-full' && /Lv 1 Alloy/.test(spr.badge) && (await P.ev(() => __BD.world().nodeSprites.size)) === 12, JSON.stringify(spr));
+    check('each node has a painted sprite on the map with a "Lv N Alloy" plaque', !!spr && spr.tex === 'node-full' && /Lv 1 Alloy/.test(spr.badge) && (await P.ev(() => __BD.world().nodeSprites.size)) === w.n, JSON.stringify(spr));
     const pickId = await P.ev((id) => { const ws = __BD.world(); const im = ws.nodeSprites.get(id).img; return ws.pick(im.x, im.y); }, node.id);
     check('tapping a node on the map picks it', pickId === node.id, String(pickId));
     await P.ev((id) => __BD.world().select(id), node.id); await sleep(500);
