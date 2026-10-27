@@ -1589,11 +1589,24 @@ async function runStage5(url, label, takeShots) {
     check('Barracks shows as a ruin before it is rebuilt', await ev(() => __BD.base().sprites.barracks.img.texture.key === 'ob-barracks-ruin'));
     const played0 = (await au()).played;
     check('onboarding 1→2: tapping the Beacon relights it (celebration), then Rebuild the Barracks', await walkTo('rebuild', 20));
+    // record the rebuild job the moment it starts (a slow machine can finish the 10 s job before the
+    // walk returns), and watch for its scaffolding every frame while it runs
+    await ev(() => {
+      const rec = window.__rebuildRec = { job: null, free: false, scaffold: false };
+      const off = __BD.store.on('upgradeStart', (id) => {
+        if (id !== 'barracks' || rec.job) return;
+        const j = __BD.store.state.construction.find((x) => x.id === 'barracks');
+        rec.job = j ? { total: j.total } : null; rec.free = __BD.store.canFreeFinish({ kind: 'build', id: 'barracks' }); off?.();
+      });
+      const watch = () => { if (__BD.base().scaffolds?.barracks?.visible === true) rec.scaffold = true; if (!rec.scaffold) requestAnimationFrame(watch); };
+      requestAnimationFrame(watch);
+    });
     check('onboarding 2→3: Barracks rebuild started via the pointer', await walkTo('finish', 20));
     s = await state(); a = await au();
-    check('upgrade start plays the build sound; button taps play click sounds', s.construction.some((j) => j.id === 'barracks') && a.byName.build >= 1 && a.byName.tap >= 1 && a.played > played0, JSON.stringify(a.byName));
-    check('construction shows scaffolding on the building', await waitTrue(() => __BD.base().scaffolds?.barracks?.visible === true));
-    check('rebuild is quick during the tutorial (≤10 s job, free-finish eligible)', await ev(() => { const j = __BD.store.state.construction.find((x) => x.id === 'barracks'); return !!j && j.total <= 10 && __BD.store.canFreeFinish({ kind: 'build', id: 'barracks' }); }));
+    const rec = await ev(() => window.__rebuildRec);
+    check('upgrade start plays the build sound; button taps play click sounds', (rec.job || s.construction.some((j) => j.id === 'barracks')) && a.byName.build >= 1 && a.byName.tap >= 1 && a.played > played0, JSON.stringify({ ...a.byName, rec }));
+    check('construction shows scaffolding on the building', rec.scaffold || await waitTrue(() => __BD.base().scaffolds?.barracks?.visible === true || window.__rebuildRec.scaffold));
+    check('rebuild is quick during the tutorial (≤10 s job, free-finish eligible)', !!rec.job && rec.job.total <= 10 && rec.free, JSON.stringify(rec));
     await ev(() => { __BD.ui().closePanel(true); const b = __BD.base(); const img = b.sprites.barracks.img; b.cameras.main.setZoom(1.25); b.cameras.main.centerOn(img.x, img.y - 120); });
     await shot('stage5-construction-scaffolding.png', { wait: 700 });
     check('onboarding 3→4: Free finish, Barracks rebuilt (level-up sound), Troops unlocked', await walkTo('train', 30) && (await state()).buildings.barracks.level >= 2 && ((await au()).byName.levelup ?? 0) >= 1 && !(await tut()).locked.includes('troops'));
