@@ -97,7 +97,7 @@ export function spawnNode(world, level) {
     const x = Math.round(WORLD.baseX + Math.cos(a) * r), y = Math.round(WORLD.baseY + Math.sin(a) * r);
     if (x < 2 || y < 2 || x > WORLD.size - 3 || y > WORLD.size - 3) continue;
     if (dist({ x, y }, CENTER) < WORLD.citadelRadius + 3) continue;
-    if (world.entities.some((e) => dist(e, { x, y }) < (e.kind === 'base' || e.kind === 'citadel' ? WORLD.baseClear : WORLD.minSpacing + 0.3))) continue;
+    if (world.entities.some((e) => dist(e, { x, y }) < (e.kind === 'citadel' ? WORLD.baseClear : e.kind === 'base' ? WORLD.baseClear + (e.owner === LOCAL_OWNER ? 0 : 1.2) : WORLD.minSpacing + 0.3))) continue;
     const e = { id: `n${world.nextId++}`, kind: 'node', owner: 'npc', res: 'alloy', level, amount: G.amount, max: G.amount, x, y, busy: null, regrowAt: 0 };
     world.entities.push(e);
     return e;
