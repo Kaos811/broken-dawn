@@ -44,5 +44,8 @@ export const LAYOUT_SCREENS = [
   ['world citadel card', "u.showWorld(); u.onWorldSelect('citadel');"],
   ['world profile card', "u.showWorld(); u.onWorldSelect(__BD.store.world.bases().find((b) => b.bot && b.tag).id);"],
   ['world your base card', "u.showWorld(); u.onWorldSelect('base-local');"],
+  // stage 16: Alloy node sheet (idle, and while a squad gathers there)
+  ['world node sheet', "u.showWorld(); const n = __BD.store.nodes().filter((e) => !e.busy)[0]; __BD.world().select(n.id);"],
+  ['world node gathering', "const st = __BD.store; const n = st.nodes().filter((e) => !e.busy && e.amount >= 1).sort((a, b) => a.level - b.level)[0]; const sid = ['alpha', 'bravo', 'charlie'].find((s) => st.gatherInfo(s, n.id).can); if (sid) { st.gather(sid, n.id); for (let i = 0; i < 120 && st.squadMarch(sid)?.phase === 'out'; i++) st.tick(1); } u.showWorld(); __BD.world().select(n.id);"],
   ['reset modal', "u.openModal({ title: 'Reset all progress?', body: 'This permanently erases your base, troops, squads, leaders, gear and all resources. This can\\u2019t be undone.', buttons: [{ label: 'Cancel' }, { label: 'Reset', style: 'danger' }] });"],
 ];

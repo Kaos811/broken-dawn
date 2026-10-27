@@ -1485,7 +1485,7 @@ export default class UIScene extends Phaser.Scene {
         }, { style: 'gold', size: 22 }); rep.chip = 'replay-tutorial'; c.add(rep);
         // game
         sectionHeader(this, c, x0, r.y + 650, 'GAME', { w: r.w - 64 });
-        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.9 (stage 9: painted menus)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
+        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.11 (stage 16: Alloy gathering)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
         const rs = button(this, r.x + r.w / 2, r.y + 836, 300, 64, 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
         this.refreshSettings = () => {
           if (!c.active) { this.refreshSettings = null; return; }
