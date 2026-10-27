@@ -28,8 +28,8 @@ function nextRng(world, tag) { world.rngCursor = (world.rngCursor ?? 0) + 1; ret
 // Is (x,y) a free spot for a creature / node (inside the map, outside the dome, spaced from everything)?
 export function freeSpot(world, x, y, spacing = WORLD.minSpacing) {
   if (x < 1 || y < 1 || x > WORLD.size - 2 || y > WORLD.size - 2) return false;
-  if (dist({ x, y }, CENTER) < WORLD.citadelRadius + 1.5) return false;
-  return !world.entities.some((e) => dist(e, { x, y }) < (e.kind === 'creature' || e.kind === 'node' ? spacing : e.kind === 'citadel' ? WORLD.citadelRadius + 1.5 : WORLD.baseClear));
+  if (dist({ x, y }, CENTER) < WORLD.citadelRadius + 2) return false;
+  return !world.entities.some((e) => dist(e, { x, y }) < (e.kind === 'creature' || e.kind === 'node' ? spacing : e.kind === 'citadel' ? WORLD.citadelRadius + 2 : WORLD.baseClear));
 }
 const lifetime = (world, rng) => world.clock + WORLD.lifetime[0] + rng() * (WORLD.lifetime[1] - WORLD.lifetime[0]);
 
@@ -68,9 +68,9 @@ export function ensureNearCreatures(world, home, maxL) {
   const R = WORLD.near.radius, out = [];
   const near = () => world.entities.filter((e) => e.kind === 'creature' && e.level <= maxL && dist(e, home) <= R);
   const push = (e) => { if (e) out.push(e); return e; };
-  if (maxL <= 2 && !near().some((e) => e.level === 1)) push(spawnCreature(world, { near: home, radius: 8, minDist: 3, level: 1, maxLevel: 1 }));
-  if (!near().some((e) => e.level === maxL)) push(spawnCreature(world, { near: home, radius: R, minDist: 3, level: maxL, maxLevel: maxL }));
-  for (let k = near().length, guard = 0; k < WORLD.near.count && guard < 20; guard++) { if (push(spawnCreature(world, { near: home, radius: R, minDist: 3, maxLevel: maxL }))) k++; }
+  if (maxL <= 2 && !near().some((e) => e.level === 1)) push(spawnCreature(world, { near: home, radius: 7.25, minDist: 3, level: 1, maxLevel: 1 }));
+  if (!near().some((e) => e.level === maxL)) push(spawnCreature(world, { near: home, radius: R - 0.75, minDist: 3, level: maxL, maxLevel: maxL }));
+  for (let k = near().length, guard = 0; k < WORLD.near.count && guard < 20; guard++) { if (push(spawnCreature(world, { near: home, radius: R - 0.75, minDist: 3, maxLevel: maxL }))) k++; }
   return out;
 }
 

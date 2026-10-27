@@ -391,7 +391,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let m = await state();
-    check('v2 save migrates to version 13 (via v3 … v8)', m.version === 15);
+    check('v2 save migrates to version 13 (via v3 … v8)', m.version === 16);
     check('v2 queue moves into per-class lanes (sentinel 3+2, bearer 5, voyager 4)', m.training.sentinel.count === 5 && m.training.bearer.count === 5 && m.training.voyager.count === 4, JSON.stringify(m.training));
     check('v2 head batch progress carries over to its lane', m.training.sentinel.progress >= 2 && m.training.sentinel.progress < 5, m.training.sentinel.progress.toFixed(2));
     check('migrated lanes all run at once', m.training.bearer.progress > 0 && m.training.voyager.progress > 0);
@@ -412,7 +412,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     m = await state();
-    check('v3 save migrates to v13: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 15 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
+    check('v3 save migrates to v13: Shards 777 stay, +10 Cores, lanes/leaders/gear/pity kept', m.version === 16 && Math.floor(m.resources.shards) === 777 && m.resources.cores === 10 && m.training.sentinel.count === 2 && m.leaders.jax.stars === 2 && m.gear.arcRifle === 1 && m.gacha.sinceLegendary === 30 && m.claims.beacon.length === 0 && m.daily.lastDay === null, JSON.stringify(m.resources));
     check('v3 migration keeps a backup of the v3 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v3') || '{}').version === 3));
     check('migration grants Cores only once (reload keeps 10)', await (async () => { await ev(() => __BD.store.save()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); return (await state()).resources.cores === 10; })());
 
@@ -428,7 +428,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     m = await state();
-    check('v4 save migrates to v13: levels, Cores, claims kept; no construction', m.version === 15 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
+    check('v4 save migrates to v13: levels, Cores, claims kept; no construction', m.version === 16 && m.buildings.commandCenter.level === 5 && m.beacon.level === 4 && m.resources.cores === 7 && m.claims.beacon.length === 2 && Array.isArray(m.construction) && m.construction.length === 0, JSON.stringify({ v: m.version, c: m.construction, cores: m.resources.cores }));
     check('v4 migration keeps a backup of the v4 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v4') || '{}').version === 4));
 
     // --- 1. Save migration from a stage-1 (v1) save
@@ -444,7 +444,7 @@ async function runStage2(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
-    check('v1 save migrates to version 13', s.version === 15);
+    check('v1 save migrates to version 13', s.version === 16);
     // the Barracks sat off its default tile (8,15): on the v9 map it keeps its direction from the Beacon
     const bOff = await ev(() => { const b = __BD.store.state.buildings.barracks, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('barracks', b.gx, b.gy), def: b.gx === 23 && b.gy === 30 }; });
     check('migration keeps buildings (moved Barracks keeps its direction from the Beacon), levels, Energy and Beacon', bOff.ok && !bOff.def && bOff.dx < -200 && Math.abs(bOff.dy) < 220 && s.buildings.commandCenter.level === 3 && s.buildings.barracks.level === 2 && s.beacon.level === 2 && s.resources.energy >= 1234 && s.resources.energy < 1260, `energy ${s.resources.energy.toFixed(0)}`);
@@ -922,7 +922,7 @@ async function runStage3(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
-    check('v5 save migrates to v6 (and on to v13)', s.version === 15);
+    check('v5 save migrates to v6 (and on to v13)', s.version === 16);
     // the Armory sat on the old Infirmary tile (16,8), right of the Beacon: it stays to the right on the v9 map
     const aOff = await ev(() => { const b = __BD.store.state.buildings.armory, c = __BD.grid.isoToWorld(b.gx + 1.5, b.gy + 1.5), o = __BD.grid.BEACON_CENTER; return { dx: c.x - o.x, dy: c.y - o.y, ok: __BD.store.canPlace('armory', b.gx, b.gy) }; });
     check('v6 keeps buildings (Armory stays right of the Beacon), levels, resources, troops and squads', aOff.ok && aOff.dx > 200 && Math.abs(aOff.dy) < 250 && s.buildings.commandCenter.level === 3 && s.beacon.level === 3 && s.resources.cores === 6 && s.troops.sentinel === 8 && s.squads.alpha.level === 2 && s.squads.alpha.lines[0].count === 6, JSON.stringify(s.buildings));
@@ -953,13 +953,15 @@ async function runStage3(url, label, takeShots) {
     // --- 2. world layout
     const lay = await ev(() => {
       const st = __BD.store, base = __BD.dev.CENTER, cr = st.creatures();
-      const ringOk = cr.every((e) => e.level === __BD.dev.ringLevel(e.ring, __BD.dev.dist(e, base)));
-      const avgD = [0, 1, 2, 3].map((r) => { const xs = cr.filter((e) => e.ring === r); return xs.reduce((n, e) => n + __BD.dev.dist(e, base), 0) / xs.length; });
+      const home = st.basePos();
+      // stage 18: no rings; level = gradient by distance to the Citadel +-1 (near-base top-ups may be weaker)
+      const ringOk = cr.every((e) => __BD.dev.dist(e, home) <= 12 || Math.abs(e.level - Math.round(__BD.dev.gradientLevel(__BD.dev.dist(e, base)))) <= 1);
+      const avgD = [[1, 5], [6, 10], [11, 15], [16, 20]].map(([a, b]) => { const xs = cr.filter((e) => e.level >= a && e.level <= b && __BD.dev.dist(e, home) > 12); return xs.reduce((n, e) => n + __BD.dev.dist(e, base), 0) / Math.max(1, xs.length); });
       const levels = new Set(cr.map((e) => e.level));
       return { n: cr.length, ringOk, avgD, all: [...Array(20)].every((_, i) => levels.has(i + 1)), wyrm: cr.every((e) => (e.level % 5 === 0) === (e.type === 'wyrm')), types: [...new Set(cr.map((e) => e.type))].sort() };
     });
-    check('world has 44 creatures', lay.n === 44, lay.n);
-    check('creature level follows its ring + distance to the Citadel (Lv 1-5 outer edge … Lv 16-20 by the Citadel)', lay.ringOk && lay.avgD.every((d, i) => i === 0 || d < lay.avgD[i - 1]), lay.avgD.map((d) => d.toFixed(1)).join(' > '));
+    check('world has ~60 creatures (60 + near-base top-ups)', lay.n >= 60 && lay.n <= 70, lay.n);
+    check('creature level follows the Citadel gradient (±1; Lv 1-5 far out … Lv 16-20 by the Citadel)', lay.ringOk && lay.avgD.every((d, i) => i === 0 || d < lay.avgD[i - 1]), lay.avgD.map((d) => d.toFixed(1)).join(' > '));
     check('every level 1-20 is on the map', lay.all);
     check('Dusk Wyrm elites exactly on every 5th level; all 5 creature types present', lay.wyrm && lay.types.join() === 'drone,golem,hound,scuttler,wyrm', lay.types.join());
     const pw = await ev(() => [1, 5, 10, 20].map((L) => __BD.store.creaturePowerOf({ level: L, type: L % 5 ? 'hound' : 'wyrm' })));
@@ -1048,7 +1050,7 @@ async function runStage3(url, label, takeShots) {
     // --- 6. second kill of the same level: loot, but no Core
     const second = await ev(() => {
       const st = __BD.store; const c0 = st.state.resources.cores;
-      const t = st.creatures().filter((e) => !e.busy && e.ring === 0).sort((a, b) => a.level - b.level)[0];
+      const t = st.creatures().filter((e) => !e.busy && e.level <= 5).sort((a, b) => a.level - b.level)[0];
       t.level = 1; // fixture: this seed has a single Lv 1 creature, make another
       const r = st.attack('bravo', t.id);
       for (let i = 0; i < 70 && st.state.hunt.reports[0].squadId !== 'bravo'; i++) st.tick(1);
@@ -1282,7 +1284,7 @@ async function runStage4(url, label, takeShots) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     let s = await state();
-    check('v6 save migrates to v7 (and v13)', s.version === 15);
+    check('v6 save migrates to v7 (and v13)', s.version === 16);
     check('v7 keeps every troop as T1 (sentinel/bearer ids unchanged), no higher tiers', s.troops.sentinel === 12 && s.troops.bearer === 5 && s.troops.bulwark === 0 && s.troops.lancer === 0 && s.troops.aegis === 0, JSON.stringify(s.troops));
     check('v7 keeps the training lane (3 Sentinels, progress 1.5) as a T1 job', s.training.sentinel.count === 3 && near(s.training.sentinel.progress, 1.5, 0.6) && s.training.sentinel.unit === 'sentinel' && s.training.sentinel.from === null, JSON.stringify(s.training.sentinel));
     check('v7 keeps formations, wounded and hunt progress', s.squads.alpha.lines[0].type === 'sentinel' && s.squads.alpha.lines[0].count === 6 && s.squads.alpha.lines[0].full === 8 && s.infirmary.wounded.sentinel.alpha === 2 && s.hunt.bestKill === 3 && s.hunt.stamina === 70 && s.resources.cores === 12);
@@ -1571,7 +1573,7 @@ async function runStage5(url, label, takeShots) {
     // --- 0. loading screen, fresh save, defaults (stage 13 onboarding)
     check('loading screen fades out and is removed once the game is ready', await waitTrue(() => !document.getElementById('boot')));
     let s = await state();
-    check('new game: save v13 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 15 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
+    check('new game: save v13 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 16 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
     let t = await tut();
     check('new game: the 3-panel story intro opens first (page 1, Skip intro chip)', t.active && t.step === 0 && t.story === 0 && !!(await ctl(null, { meta: 'story-skip' })), JSON.stringify(t));
     check('new game: HUD is gated (only Base; Troops/World/Armory/Squads/More/Cores/Missions locked)', ['troops', 'world', 'armory', 'squads', 'more', 'cores', 'missions'].every((k) => t.locked.includes(k)) && await waitTrue(() => __BD.ui().tabs.filter((x) => !x.hero && x.icon.visible).length === 0), JSON.stringify(t.locked));
@@ -1750,7 +1752,7 @@ async function runStage5(url, label, takeShots) {
     await ev(() => { const k = 'brokenDawn.save.v1'; __BD.store.save = () => {}; const st = JSON.parse(localStorage.getItem(k)); st.version = 7; delete st.settings; delete st.tutorial; localStorage.setItem(k, JSON.stringify(st)); });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     s = await state(); t = await tut();
-    check('v7 save migrates to v13: tutorial marked done (no coach, one-time tips allowed), default audio settings, backup kept', s.version === 15 && s.tutorial.done && !s.tutorial.skipped && (!t.visible || !!t.tip) && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
+    check('v7 save migrates to v13: tutorial marked done (no coach, one-time tips allowed), default audio settings, backup kept', s.version === 16 && s.tutorial.done && !s.tutorial.skipped && (!t.visible || !!t.tip) && s.settings.music === 0.7 && s.settings.haptics === true && (await ev(() => !!localStorage.getItem('brokenDawn.save.v1.backup-v7'))), JSON.stringify({ tu: s.tutorial, set: s.settings }));
     check('existing players get a one-time "replay the tutorial from Settings" toast', await waitTrue(() => /Replay the tutorial/.test(__BD.ui().toastText.text) && __BD.ui().toastBox.visible, null, 40));
     await ev(() => { delete __BD.store.save; __BD.store.save(); });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await sleep(800);
@@ -1824,7 +1826,7 @@ async function runStage6(url, label, takeShots) {
 
     // --- 1. full-screen painted base, art sprites, level badges
     let s = await state();
-    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 15 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
+    check('new game: save v9, Beacon 4x4 fixed at the centre, buildings 3x3 on the new map', s.version === 16 && (await ev(() => __BD.grid.BEACON.footprint === 4 && __BD.grid.BEACON.gx === 20 && Object.values(__BD.grid.BUILDINGS).every((b) => b.footprint === 3))));
     const art = await ev(() => { const b = __BD.base(); return { cc: b.sprites.commandCenter.img.texture.key, beacon: b.beaconSprite.texture.key, ground: b.ground.texture.key, decos: b.decos.length, inner: b.innerDecos.length }; });
     check('painted art: building + Beacon sprites, baked ground, scattered crystals/plants/rocks', art.cc === 'art-commandCenter' && art.beacon === 'art-beacon' && art.ground === 'ground-baked' && art.decos >= 60 && art.inner >= 10, JSON.stringify(art));
     const fill = await ev(() => { const c = __BD.base().cameras.main, v = c.worldView, G = __BD.grid.GROUND; return { ok: v.x >= G.x - 1 && v.y >= G.y - 1 && v.right <= G.x + G.w + 1 && v.bottom <= G.y + G.h + 1, bigger: G.w > v.width && G.h > v.height }; });
@@ -1964,7 +1966,7 @@ async function runStage6(url, label, takeShots) {
       const off = (id) => { const c = __BD.grid.isoToWorld(B[id].gx + 1.5, B[id].gy + 1.5); return { dx: c.x - o.x, dy: c.y - o.y }; };
       return { valid: ids.every((id) => st.canPlace(id, B[id].gx, B[id].gy)), cc: [B.commandCenter.gx, B.commandCenter.gy], arch: [B.archive.gx, B.archive.gy, B.archive.placed], br: off('barracks'), levels: ids.map((id) => B[id].level).join(',') };
     });
-    check('v8 save migrates to v9', s.version === 15);
+    check('v8 save migrates to v9', s.version === 16);
     check('v9: buildings on their old default tiles move to the new defaults (CC 12,8 -> 11,11; Archive 8,8 -> 12,19)', mig.cc.join() === '11,11' && mig.arch.join() === '12,19,true', JSON.stringify(mig));
     check('v9: a moved building keeps its direction from the Beacon (Barracks 9,15 stays lower-left)', mig.br.dx < -150 && mig.br.dy > -100, JSON.stringify(mig.br));
     check('v9: every migrated position is valid (inside the base, no overlaps), levels kept', mig.valid && mig.levels === '4,3,2,2,2', JSON.stringify(mig));
@@ -2281,8 +2283,216 @@ async function runStage12(url, label) {
     });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     const m2 = await ev(() => { const s = __BD.store.state; return { v: s.version, seed: s.world.seed, base: s.world.entities.find((e) => e.id === 'base-local'), cit: !!s.world.entities.find((e) => e.kind === 'citadel'), marches: s.world.marches.length, stamina: s.hunt.stamina, best: s.hunt.bestKill, bots: s.world.entities.filter((e) => e.bot).length }; });
-    check('v11 save migrates to v13: world rebuilt from the same seed around the Citadel, base moved, squads home, stamina refunded, hunt progress kept', m2.v === 15 && m2.seed === 4242 && m2.base.x === 43 && m2.base.y === 78 && m2.cit && m2.marches === 0 && m2.stamina >= 50 && m2.best === 7 && m2.bots === 14, JSON.stringify(m2));
+    check('v11 save migrates to v13: world rebuilt from the same seed around the Citadel, base moved, squads home, stamina refunded, hunt progress kept', m2.v === 16 && m2.seed === 4242 && m2.base.x === 43 && m2.base.y === 78 && m2.cit && m2.marches === 0 && m2.stamina >= 50 && m2.best === 7 && m2.bots === 14, JSON.stringify(m2));
     check('stage 12: no page errors', errors.length === 0, errors.join(' | '));
+  } finally { await browser.close(); }
+}
+
+// Stage 18: zoneless world (gradient toward the Citadel), base position as data, teleport, search,
+// coordinates + "go to my base", save v16.
+async function runStage18(url, label, takeShots = true) {
+  console.log(`\n=== stage 18 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => { window.__BD_TEST = { noTutorial: true }; });
+    const page = await ctx.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+    const ev = (fn, arg) => page.evaluate(fn, arg);
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.ui()?.panel && window.__BD.world(), null, { timeout: 60000 }); await sleep(600); };
+    const shot = async (name) => { if (!takeShots) return; await sleep(450); await ev(() => { const u = __BD.ui(); u.tweens.killTweensOf(u.toastBox); u.toastBox.setVisible(false); }); await sleep(60); await page.screenshot({ path: join(ROOT, 'screens', name) }); console.log(`      saved screens/${name}`); };
+    const ctl = (meta) => ev((m) => __BD.controls().find((c) => c.meta === m), meta);
+    const tapCtl = async (meta) => { let c = null; for (let i = 0; i < 20 && !c; i++) { c = await ctl(meta); if (!c) await sleep(100); } if (!c) throw new Error(`control ${meta} not found`); await page.mouse.click(c.x, c.y); await sleep(350); return c; };
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
+    await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+
+    // --- 1. gradient + scatter + density (pure, several seeds)
+    const g = await ev(() => {
+      const D = __BD.dev, C = D.CENTER;
+      const mono = [0, 1, 2, 3, 4, 5, 6, 7].every((k) => { const a = k * Math.PI / 4; let prev = 99; for (let r = 0; r <= 42; r++) { const L = D.levelAtTile(Math.round(C.x + Math.cos(a) * r), Math.round(C.y + Math.sin(a) * r)); if (L > prev) return false; prev = L; } return true; });
+      const ends = { center: D.levelAtTile(43, 36), edge: D.levelAtTile(43, 84), mid: D.levelAtTile(43, 67) };
+      const seeds = [3, 77, 1234, 98765, 424242].map((seed) => {
+        const w = D.createWorld(seed), cr = w.entities.filter((e) => e.kind === 'creature'), B = D.BASE_POS;
+        const q = [0, 0, 0, 0]; for (const e of cr) q[(e.x < 43 ? 0 : 1) + (e.y < 43 ? 0 : 2)]++;
+        const near = cr.filter((e) => e.level <= 2 && D.dist(e, B) <= 12);
+        const far = cr.filter((e) => D.dist(e, B) > 12.5);
+        return { seed, n: cr.length, q, near: near.length, lv1: near.some((e) => e.level === 1), all20: new Set(cr.map((e) => e.level)).size === 20,
+          grad: far.every((e) => Math.abs(e.level - Math.round(D.gradientLevel(D.dist(e, C)))) <= 1), elite: cr.every((e) => (e.level % 5 === 0) === (e.type === 'wyrm')),
+          dome: Math.min(...cr.map((e) => D.dist(e, C))), nodes: w.entities.filter((e) => e.kind === 'node').length, nodesNear: w.entities.filter((e) => e.kind === 'node' && e.level <= 2 && D.dist(e, B) <= 10).length,
+          nodeGrad: w.entities.filter((e) => e.kind === 'node' && D.dist(e, B) > 10).every((e) => e.level === Math.max(1, Math.min(5, Math.ceil(D.gradientLevel(D.dist(e, C)) / 20 * 5)))),
+          bots: w.entities.filter((e) => e.bot).length, botsQ: new Set(w.entities.filter((e) => e.bot).map((e) => (e.x < 43 ? 0 : 1) + (e.y < 43 ? 0 : 2))).size };
+      });
+      return { mono, ends, seeds };
+    });
+    check('stage 18: level rises monotonically toward the Citadel along every direction (Lv 20 by the dome, Lv 1 at the edge)', g.mono && g.ends.center === 20 && g.ends.edge === 1 && g.ends.mid >= 8 && g.ends.mid <= 13, JSON.stringify(g.ends));
+    check('stage 18: ~60 creatures scattered over all four quadrants (no bias to your side), every level 1-20 present, 5 seeds', g.seeds.every((s) => s.n >= 60 && s.n <= 66 && s.q.every((n) => n >= 8) && s.all20), JSON.stringify(g.seeds.map((s) => [s.n, s.q.join('/')])));
+    check('stage 18: creature level = gradient at its spot ±1 (away from the near-base top-ups); elites every 5th level; none inside the dome', g.seeds.every((s) => s.grad && s.elite && s.dome >= 7), JSON.stringify(g.seeds.map((s) => [s.grad, s.elite, s.dome.toFixed(1)])));
+    check('stage 18: a new base always has >= 6 fightable creatures (incl. a Lv 1) within 12 tiles', g.seeds.every((s) => s.near >= 6 && s.lv1), JSON.stringify(g.seeds.map((s) => s.near)));
+    check('stage 18: ~16 Alloy nodes on the gradient, >= 2 Lv 1-2 nodes within 10 tiles of the base', g.seeds.every((s) => s.nodes >= 14 && s.nodes <= 20 && s.nodesNear >= 2 && s.nodeGrad), JSON.stringify(g.seeds.map((s) => [s.nodes, s.nodesNear, s.nodeGrad])));
+    check('stage 18: 14 bot bases scattered around the map (3+ quadrants)', g.seeds.every((s) => s.bots === 14 && s.botsQ >= 3), JSON.stringify(g.seeds.map((s) => [s.bots, s.botsQ])));
+
+    // --- 2. respawn + despawn
+    const rd = await ev(() => {
+      const st = __BD.store, w = st.world.snapshot();
+      const n0 = st.creatures().length;
+      const e = st.creatures().find((c) => !c.busy && __BD.dev.dist(c, st.basePos()) > 14);
+      e.expires = w.clock + 1;
+      const t = st.creatures().find((c) => c !== e && !c.busy); t.expires = w.clock + 1; t.busy = 'mX';
+      st.tick(3);
+      const gone = !st.world.get(e.id), kept = !!st.world.get(t.id); t.busy = null; t.expires = w.clock + 9999;
+      return { n0, n1: st.creatures().length, gone, kept, life: st.creatures().every((c) => c.expires > w.clock && c.expires <= w.clock + 14400 + 1), noRing: st.creatures().every((c) => !('ring' in c)) };
+    });
+    check('stage 18: an untouched creature wanders off after its lifetime (2-4 h) and a new one appears; a targeted one never does', rd.gone && rd.kept && rd.n1 >= rd.n0 && rd.life && rd.noRing, JSON.stringify(rd));
+    const rs = await ev(() => {
+      const st = __BD.store; st.state.troops.sentinel = 400; st.saveFormation('alpha', [{ type: 'sentinel', count: 60 }, { type: null, count: 0 }, { type: null, count: 0 }]); st.state.hunt.stamina = 100;
+      const t = st.creatures().filter((e) => e.level === 1 && !e.busy).sort((a, b) => __BD.dev.dist(a, st.basePos()) - __BD.dev.dist(b, st.basePos()))[0];
+      const r = st.attack('alpha', t.id);
+      for (let i = 0; i < 80 && st.squadMarch('alpha'); i++) st.tick(1);
+      const w = st.world.snapshot(), rsp = w.respawns.map((x) => ({ ...x }));
+      st.tick(601);
+      return { ok: r.ok, killed: !st.world.get(t.id), rsp, after: w.respawns.length, best: st.state.hunt.bestKill };
+    });
+    check('stage 18: a killed creature respawns after 10 min somewhere on the map ({at} only, no ring)', rs.ok && rs.killed && rs.rsp.length === 1 && Object.keys(rs.rsp[0]).join() === 'at' && rs.after === 0, JSON.stringify(rs));
+
+    // --- 3. teleport rules (service + store)
+    const tr = await ev(() => {
+      const st = __BD.store, B0 = st.basePos(), bot = st.world.bases().find((b) => b.bot);
+      const cr = st.creatures()[0];
+      const r = {
+        edge: st.canTeleport(1, 40).reason, edge2: st.canTeleport(84, 40).reason, cit: st.canTeleport(43, 47).reason, bot: st.canTeleport(bot.x, bot.y).reason, crt: st.canTeleport(cr.x, cr.y).reason,
+        cost: [st.teleportCost('targeted'), st.teleportCost('random')],
+      };
+      // squads out
+      const t = st.creatures().filter((e) => e.level === 1 && !e.busy)[0]; st.state.hunt.stamina = 100; st.attack('alpha', t.id);
+      r.out = st.canTeleport(20, 60).reason;
+      st.recall('alpha'); for (let i = 0; i < 80 && st.squadMarch('alpha'); i++) st.tick(1);
+      // tutorial: no teleport before the first hunt
+      const k = st.state.hunt.kills, l = st.state.hunt.losses, done = st.state.tutorial.done;
+      window.__BD_TEST.noTutorial = false; st.state.tutorial.done = false; st.state.hunt.kills = 0; st.state.hunt.losses = 0;
+      r.tut = st.canTeleport(20, 60).reason; r.tutRnd = st.randomTeleport().reason;
+      st.state.hunt.kills = 1; r.tutAfter = st.canTeleport(20, 60).ok;
+      st.state.tutorial.done = done; st.state.hunt.kills = k; st.state.hunt.losses = l; window.__BD_TEST.noTutorial = true;
+      r.free = st.canTeleport(20, 60).ok; r.b0 = B0;
+      return r;
+    });
+    check('stage 18: teleport refused at the map edge, inside the Citadel area ("The Citadel is sealed") and on an occupied spot', /edge/.test(tr.edge) && /edge/.test(tr.edge2) && tr.cit === 'The Citadel is sealed' && tr.bot === 'That spot is occupied' && tr.crt === 'That spot is occupied', JSON.stringify(tr));
+    check('stage 18: teleport refused while a squad is out ("Recall your squads first")', tr.out === 'Recall your squads first', tr.out);
+    check('stage 18: no teleport during the tutorial until the first hunt is done', /first hunt/.test(tr.tut ?? '') && /first hunt/.test(tr.tutRnd ?? '') && tr.tutAfter, JSON.stringify([tr.tut, tr.tutRnd, tr.tutAfter]));
+    check('stage 18: teleport is free for now (cost hook returns null for targeted + random)', tr.cost[0] === null && tr.cost[1] === null && tr.free, JSON.stringify(tr.cost));
+
+    // --- 4. world tab: no zones, coordinates, screens
+    await ev(() => __BD.ui().onTab('world')); await sleep(900);
+    const z = await ev(() => { const ws = __BD.world(); return { zone: ws.children.list.filter((o) => o.type === 'Text' && /ZONE/i.test(o.text)).length, coord: __BD.ui().worldHud.coordText.text, home: !!__BD.controls().find((c) => c.meta === 'world-home'), search: !!__BD.controls().find((c) => c.meta === 'world-search') }; });
+    check('stage 18: the World map has no zone rings or "ZONE n" labels', z.zone === 0, String(z.zone));
+    check('stage 18: coordinates readout at the screen centre + Search and "go to my base" buttons on the World HUD', /X:\d+ Y:\d+/.test(z.coord) && z.home && z.search, JSON.stringify(z));
+    await ev(() => { const ws = __BD.world(); ws.setZl(0.3); ws.cameras.main.centerOn(43.5 * 72, 50 * 72); }); await sleep(500);
+    await shot('stage18-map-no-zones.png');
+    await ev(() => { const ws = __BD.world(); ws.setZl(0.6); ws.cameras.main.centerOn(43.5 * 72, 52 * 72); }); await sleep(500);
+    await shot('stage18-gradient-citadel.png');
+    const ct = await ev(() => { const ws = __BD.world(), t = ws.centerTile(), u = __BD.ui(); u.worldHud.coords(); return { t, txt: u.worldHud.coordText.text }; });
+    check('stage 18: the readout shows the tile under the screen centre and its distance from your base', ct.txt.includes(`X:${ct.t.x} Y:${ct.t.y}`) && /tiles from base/.test(ct.txt), JSON.stringify(ct));
+    await shot('stage18-coordinates.png');
+    // creature card shows coords + distance instead of "Zone n"
+    const crd = await ev(() => { const st = __BD.store; const e = st.creatures().find((c) => c.level <= st.maxAttackLevel() && !c.busy); __BD.world().select(e.id); return e; }); await sleep(400);
+    const crdTxt = await ev(() => __BD.ui().worldHud.sheet.list.filter((o) => o.type === 'Text').map((o) => o.text).join(' | '));
+    check('stage 18: the creature card shows "X:… Y:… · N tiles away" (no zone)', crdTxt.includes(`X:${crd.x} Y:${crd.y}`) && /tiles away/.test(crdTxt) && !/Zone/.test(crdTxt), crdTxt.slice(0, 160));
+    await ev(() => __BD.world().select(null)); await sleep(200);
+
+    // --- 5. "go to my base"
+    await ev(() => { const ws = __BD.world(); ws.cameras.main.centerOn(10 * 72, 10 * 72); }); await sleep(200);
+    await tapCtl('world-home'); await sleep(600);
+    const hm = await ev(() => { const ws = __BD.world(), b = __BD.store.basePos(), cam = ws.cameras.main; const v = cam.worldView; return { b, inView: (b.x + 0.5) * 72 > v.x && (b.x + 0.5) * 72 < v.right && (b.y + 0.5) * 72 > v.y && (b.y + 0.5) * 72 < v.bottom }; });
+    check('stage 18: the "go to my base" button glides the camera back to your base', hm.inView, JSON.stringify(hm));
+    await shot('stage18-go-home.png');
+
+    // --- 6. targeted teleport via the UI: tap empty tile -> tile card -> confirm "Free for now"
+    const spot = await ev(() => {
+      const st = __BD.store, b = st.basePos();
+      for (let r = 6; r < 20; r++) for (let a = 0; a < 16; a++) { const x = Math.round(b.x + Math.cos(a / 16 * 6.283) * r), y = Math.round(b.y - Math.abs(Math.sin(a / 16 * 6.283)) * r); if (st.canTeleport(x, y).ok && st.world.entities().every((e) => __BD.dev.dist(e, { x, y }) > 2.5)) return { x, y }; }
+      return null;
+    });
+    await ev((s) => { const ws = __BD.world(); ws.setZl(0.7); ws.cameras.main.centerOn((s.x + 0.5) * 72, (s.y + 0.5) * 72); }, spot); await sleep(400);
+    const sp = await ev((s) => __BD.tileToPage(s.x, s.y), spot);
+    await page.mouse.click(sp.x, sp.y); await sleep(500);
+    const card = await ev(() => { const h = __BD.ui().worldHud; return { for: h.sheetFor, txt: h.sheet?.list.filter((o) => o.type === 'Text').map((o) => o.text).join(' | ') }; });
+    check('stage 18: tapping empty ground opens a tile card with its coordinates and "Teleport here"', card.for === `tile:${spot.x},${spot.y}` && card.txt.includes(`X:${spot.x}  Y:${spot.y}`) && !!(await ctl('tile-teleport'))?.enabled, JSON.stringify({ card, spot }));
+    await tapCtl('tile-teleport'); await sleep(400);
+    const md = await ev(() => { const m = __BD.ui().modal; return m && { kind: m.kind, txt: m.list.filter((o) => o.text).map((o) => o.text).join(' | ') }; });
+    check('stage 18: Teleport asks to confirm and says "Free for now"', md?.kind === 'teleport' && /Free for now/.test(md.txt) && md.txt.includes(`X:${spot.x} Y:${spot.y}`), md?.txt?.slice(0, 200));
+    await shot('stage18-teleport-confirm.png');
+    await ev(() => { window.__tp = []; __BD.store.on('teleport', (r) => window.__tp.push(r)); });
+    const okBtn = await ev(() => __BD.controls().filter((c) => c.label === 'Teleport' && c.enabled).pop());
+    await page.mouse.click(okBtn.x, okBtn.y); await sleep(1200);
+    const af = await ev(() => { const st = __BD.store, b = st.basePos(), ws = __BD.world(), s = ws.baseSprites.get('base-local');
+      const near = st.creatures().filter((e) => e.level <= st.maxAttackLevel() && __BD.dev.dist(e, b) <= 12);
+      return { b, ev: window.__tp, sprite: s && s.e.x === b.x && s.e.y === b.y, near: near.length, best: near.some((e) => e.level === st.maxAttackLevel()), nodes: st.nodes().filter((n) => n.level <= 2 && __BD.dev.dist(n, b) <= 10).length }; });
+    check('stage 18: after confirming, your base is at the new spot (sprite moved, "teleport" event)', af.b.x === spot.x && af.b.y === spot.y && af.sprite && af.ev.length === 1 && af.ev[0].kind === 'targeted', JSON.stringify(af));
+    check('stage 18: the new spot gets >= 6 fightable creatures (one at your top level) + 2 low nodes nearby', af.near >= 6 && af.best && af.nodes >= 2, JSON.stringify(af));
+    await shot('stage18-after-teleport.png');
+    const hm2 = await ev(() => { const st = __BD.store, b = st.basePos(); st.state.hunt.stamina = 100; const t = st.creatures().filter((e) => e.level <= st.maxAttackLevel() && !e.busy).sort((a, c) => __BD.dev.dist(a, b) - __BD.dev.dist(c, b))[0]; const r = st.attack('alpha', t.id); const m = st.squadMarch('alpha'); const out = { ok: r.ok, from: m?.from, b, travel: m?.travel, want: Math.min(60, 5 + __BD.dev.dist(t, b)) }; st.recall('alpha'); for (let i = 0; i < 80 && st.squadMarch('alpha'); i++) st.tick(1); return out; });
+    check('stage 18: hunts now march from the new base position', hm2.ok && hm2.from.x === hm2.b.x && hm2.from.y === hm2.b.y && Math.abs(hm2.travel - hm2.want) < 1e-6, JSON.stringify(hm2));
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+    const pr = await ev(() => __BD.store.basePos());
+    check('stage 18: the teleported base position survives a reload', pr.x === spot.x && pr.y === spot.y, JSON.stringify(pr));
+
+    // --- 7. random teleport
+    const rt = await ev(() => { const st = __BD.store, b0 = st.basePos(); st.state.hunt.bestKill = 6; const r = st.randomTeleport(); const b = st.basePos(); return { ok: r.ok, b0, b, kind: r.ok, g: __BD.dev.gradientLevel(__BD.dev.dist(b, __BD.dev.CENTER)), maxL: st.maxAttackLevel(), moved: b.x !== b0.x || b.y !== b0.y }; });
+    check('stage 18: random teleport lands where creatures you can fight are common (gradient level <= best + 1)', rt.ok && rt.moved && rt.g <= rt.maxL + 0.5 && rt.g >= rt.maxL - 4.5, JSON.stringify(rt));
+
+    // --- 8. search: matches a brute force, UI pans + pulses + selects, empty-result message
+    const sr = await ev(() => {
+      const st = __BD.store, b = st.basePos(), out = [];
+      for (const type of ['any', 'scuttler', 'drone', 'hound', 'golem', 'wyrm']) for (let L = 1; L <= 7; L++) {
+        const got = st.searchWorld({ type, level: L });
+        const all = st.creatures().filter((e) => e.level === L && !e.busy && (type === 'any' || e.type === type)).sort((a, c) => __BD.dev.dist(a, b) - __BD.dev.dist(c, b) || (a.id < c.id ? -1 : 1));
+        out.push((got?.id ?? null) === (all[0]?.id ?? null) || (got && all[0] && __BD.dev.dist(got, b) === __BD.dev.dist(all[0], b)));
+      }
+      const nodes = [1, 2, 3, 4, 5].every((L) => { const got = st.searchWorld({ kind: 'node', level: L }); const all = st.nodes().filter((n) => n.level === L && !n.busy && n.amount >= 1).sort((a, c) => __BD.dev.dist(a, b) - __BD.dev.dist(c, b)); return (got && all[0] && __BD.dev.dist(got, b) === __BD.dev.dist(all[0], b)) || (!got && !all[0]); });
+      return { ok: out.every(Boolean), n: out.length, nodes };
+    });
+    check('stage 18: search returns the nearest free match to your base (vs brute force: 6 types × 7 levels + nodes)', sr.ok && sr.nodes, JSON.stringify(sr));
+    await ev(() => __BD.ui().onTab('world')); await sleep(700);
+    await tapCtl('world-search'); await sleep(300);
+    const want = await ev(() => { const st = __BD.store; const h = __BD.ui().worldHud; h.searchQ.type = 'any'; h.searchQ.level = 3; return st.searchWorld({ type: 'any', level: 3 }); });
+    await ev(() => { __BD.ui().worldHud.openSearch(); }); await sleep(300);
+    await shot('stage18-search.png');
+    await tapCtl('search-go'); await sleep(900);
+    const sres = await ev(() => { const ws = __BD.world(); return { sel: ws.selected, pulse: ws.pulse && { x: ws.pulse.x, y: ws.pulse.y }, sheet: __BD.ui().worldHud.sheetFor }; });
+    check('stage 18: Search (Any, Lv 3) pans to the nearest match, pulses a marker and opens its card', want && sres.sel === want.id && sres.pulse?.x === want.x && sres.sheet === want.id, JSON.stringify({ want: want && want.id, sres }));
+    await shot('stage18-search-result.png');
+    const none = await ev(async () => {
+      const st = __BD.store; const saved = st.creatures().filter((e) => e.level === 2).map((e) => [e, e.level]); saved.forEach(([e]) => { e.level = 3; });
+      const u = __BD.ui(); __BD.world().select(null); u.worldHud.searchQ.level = 2; u.worldHud.searchQ.type = 'any'; u.worldHud.openSearch();
+      return saved.length;
+    }); await sleep(300);
+    await tapCtl('search-go'); await sleep(200);
+    const toast = await ev(() => __BD.ui().toastText?.text ?? __BD.ui().toastBox.list?.find((o) => o.type === 'Text')?.text);
+    check('stage 18: no match → "No Lv 2 creatures near your base. Try teleporting closer to the Citadel."', /No Lv 2 creatures near your base\. Try teleporting closer to the Citadel\./.test(toast ?? ''), String(toast));
+    await ev(() => __BD.ui().worldHud.closeSheet());
+
+    // --- 9. v15 -> v16 migration
+    await ev(() => {
+      const st = __BD.store; st.save = () => {}; const raw = JSON.parse(JSON.stringify(st.state));
+      raw.version = 15; raw.lastSaved = Date.now();
+      const bots = raw.world.entities.filter((e) => e.bot);
+      raw.world = { seed: 5150, rngCursor: 3, nextId: 40, clock: 900, respawns: [{ ring: 1, at: 1200 }], entities: [
+        { id: 'base-local', kind: 'base', owner: 'local', name: 'Your Base', x: 43, y: 78 }, { id: 'citadel', kind: 'citadel', owner: 'neutral', x: 43, y: 43 }, ...bots,
+        { id: 'c5', kind: 'creature', owner: 'npc', x: 40, y: 70, ring: 0, level: 2, type: 'hound', busy: 'm7' },
+        { id: 'n3', kind: 'node', owner: 'npc', res: 'alloy', level: 1, amount: 100, max: 150, x: 45, y: 72, busy: 'm8', regrowAt: 0 }],
+        marches: [
+          { id: 'm7', owner: 'local', squadId: 'alpha', targetId: 'c5', phase: 'out', t: 3, travel: 12, back: 12, from: { x: 43, y: 78 }, to: { x: 40, y: 70 }, army: { lines: [] }, meta: { stamina: 10 } },
+          { id: 'm8', owner: 'local', squadId: 'bravo', targetId: 'n3', phase: 'gather', t: 50, travel: 11, back: 11, from: { x: 43, y: 78 }, to: { x: 45, y: 72 }, army: { lines: [] }, meta: {}, gather: { cap: 80, rate: 0.14, load: 37, level: 1 } }] };
+      raw.hunt.stamina = 40; raw.hunt.bestKill = 4;
+      localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw));
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+    const mg = await ev(() => { const s = __BD.store.state, w = s.world; const ms = w.marches.map((m) => ({ id: m.id, phase: m.phase, load: m.gather?.load })); return { v: s.version, seed: w.seed, clock: w.clock, base: w.entities.find((e) => e.id === 'base-local'), ring: w.entities.some((e) => 'ring' in e) || w.respawns.some((r) => 'ring' in r), cr: w.entities.filter((e) => e.kind === 'creature').length, nodes: w.entities.filter((e) => e.kind === 'node').length, bots: w.entities.filter((e) => e.bot).length, ms, stamina: s.hunt.stamina, best: s.hunt.bestKill, back: !!localStorage.getItem('brokenDawn.save.v1.backup-v15'), old: w.entities.some((e) => e.busy === 'm7' || e.busy === 'm8' || (e.kind === 'creature' && e.x === 40 && e.y === 70 && e.level === 2)) }; });
+    check('stage 18: v15 save → v16: same seed + clock, base kept, creatures + nodes regenerated (no ring fields), bots kept, backup-v15 kept', mg.v === 16 && mg.seed === 5150 && mg.clock >= 900 && mg.base.x === 43 && mg.base.y === 78 && !mg.ring && !mg.old && mg.cr >= 60 && mg.nodes >= 14 && mg.bots === 14 && mg.back, JSON.stringify(mg));
+    check('stage 18: v16 migration: a hunt whose creature is gone comes home (stamina refunded); a gathering squad comes home with its Alloy', mg.ms.length === 2 && mg.ms.every((m) => m.phase === 'back') && mg.ms.find((m) => m.id === 'm8')?.load === 37 && mg.stamina >= 50 && mg.best === 4, JSON.stringify(mg));
+    const a0 = await ev(() => __BD.store.state.resources.alloy);
+    const home = await ev(() => { const st = __BD.store; for (let i = 0; i < 40 && st.world.marches().length; i++) st.tick(1); return { left: st.world.marches().length, alloy: st.state.resources.alloy }; });
+    check('stage 18: the migrated gathering squad delivers its 37 Alloy', home.left === 0 && home.alloy - a0 >= 37 && home.alloy - a0 < 38.5, JSON.stringify({ a0, home }));
+    check('stage 18: no page errors', errors.length === 0, errors.join(' | '));
   } finally { await browser.close(); }
 }
 
@@ -2305,7 +2515,7 @@ async function runStage10(url, label) {
     const want = [10, 30, 120, 360, 1200, 3600, 10800, 17280, 27648, 44237, 70779, 113246, 181194, 259200, 259200, 259200, 259200, 259200, 259200];
     check('build times: Lv2–8 unchanged (10 s … 3 h), then x1.6 per level, no upgrade over 72 h', JSON.stringify(bt) === JSON.stringify(want), JSON.stringify(bt));
     const fresh = await ev(() => ({ v: __BD.store.state.version, items: __BD.store.state.items, gift: __BD.store.state.firstUpgradeGift }));
-    check('new game: save v13 with an empty inventory (7 speed-up kinds + resource bundles)', fresh.v === 15 && Object.keys(fresh.items).slice(0, 7).join() === 'm1,m5,m15,h1,h3,h8,h24' && Object.keys(fresh.items).some((k) => k.startsWith('res_')) && Object.values(fresh.items).every((n) => n === 0) && fresh.gift === false, JSON.stringify(fresh));
+    check('new game: save v13 with an empty inventory (7 speed-up kinds + resource bundles)', fresh.v === 16 && Object.keys(fresh.items).slice(0, 7).join() === 'm1,m5,m15,h1,h3,h8,h24' && Object.keys(fresh.items).some((k) => k.startsWith('res_')) && Object.values(fresh.items).every((n) => n === 0) && fresh.gift === false, JSON.stringify(fresh));
 
     // --- costs + auto plan (pure)
     const cc = await ev(() => { const S = __BD.store; const c = (x) => S.finishCoreCost.call({ jobLeft: () => x, itemsAllowed: () => true }, {}); const q = (x) => S.finishCoreCost.call({ jobLeft: () => x, itemsAllowed: () => false }, {}); return [c(1), c(300), c(301), c(3600), c(8 * 3600), q(30), q(600), q(601)]; });
@@ -2402,7 +2612,7 @@ async function runStage10(url, label) {
     await ev(() => { __BD.ui().closeModal(true); const st = __BD.store; st.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 10; delete raw.items; delete raw.firstUpgradeGift; raw.construction = [{ id: 'barracks', toLevel: 12, cost: 500, total: 1200 * 3 ** 6, progress: 5000 }]; raw.research.job = { id: 'shardYield', toLevel: 1, cost: { energy: 1, alloy: 1, shards: 1 }, total: 1800, progress: 600 }; raw.buildings.barracks.level = 11; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     const mg = await ev(() => { const s = __BD.store.state; return { v: s.version, j: s.construction[0], r: s.research.job, items: Object.values(s.items).every((n) => n === 0), gift: s.firstUpgradeGift, bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v10') || '{}').version }; });
-    check('v10 save migrates to v13: running upgrade keeps its progress, its total shrinks to the new 70,779 s; research untouched; empty items; backup kept', mg.v === 15 && mg.j?.id === 'barracks' && mg.j.total === 70779 && mg.j.progress >= 5000 && mg.j.progress < 5100 && mg.r?.progress >= 600 && mg.items && mg.gift === true && mg.bk === 10, JSON.stringify(mg));
+    check('v10 save migrates to v13: running upgrade keeps its progress, its total shrinks to the new 70,779 s; research untouched; empty items; backup kept', mg.v === 16 && mg.j?.id === 'barracks' && mg.j.total === 70779 && mg.j.progress >= 5000 && mg.j.progress < 5100 && mg.r?.progress >= 600 && mg.items && mg.gift === true && mg.bk === 10, JSON.stringify(mg));
     // --- stage 10b: item registry + Resources section
     const rb = await ev(() => { const st = __BD.store; const e0 = st.state.resources.energy, a0 = st.state.resources.alloy; st.grantBundle({ it_res_energy_1k: 3, it_res_alloy_10k: 1, it_bogus: 5 }); const u1 = st.useItem('res_energy_1k', 2); const bad = st.useItem('res_energy_1k', 5); const ua = st.useItem('res_alloy_10k', 1); const su = st.useItem('h1', 1); return { e: st.state.resources.energy - e0, a: st.state.resources.alloy - a0, left: st.itemCount('res_energy_1k'), u1: u1.ok, bad: bad.reason, ua: ua.ok, su: su.reason, sec: st.sectionCount('resource'), bogus: 'bogus' in st.state.items }; });
     check('resource bundles: granted via it_<id>, Use adds the resources (2× 1K Energy, 1× 10K Alloy), overuse refused, unknown ids ignored, speed-ups not usable here', rb.e === 2000 && rb.a === 10000 && rb.left === 1 && rb.u1 && /Not enough/.test(rb.bad) && rb.ua && /timer/.test(rb.su) && rb.sec === 1 && !rb.bogus, JSON.stringify(rb));
@@ -2671,7 +2881,7 @@ async function runStage16(url, label) {
       await Q.ev(([KEY, i0]) => { const s = JSON.parse(localStorage.getItem(KEY)); s.version = 14; s.world.entities = s.world.entities.filter((e) => e.kind !== 'node'); delete s.hunt.gathered; s.goals = { i: i0 }; localStorage.setItem(KEY, JSON.stringify(s)); __BD.store.save = () => {}; }, [KEY, i0]);
       await Q.page.reload({ waitUntil: 'domcontentloaded' }); await Q.ready();
       const r = await Q.ev(() => ({ v: __BD.store.state.version, i: __BD.store.state.goals.i, n: __BD.store.nodes().length, g: __BD.store.state.hunt.gathered, back: !!localStorage.getItem('brokenDawn.save.v1.backup-v14') }));
-      check(`v14 save → v15 (goal ${i0 + 1}): Alloy nodes seeded, goal index ${i0} → ${want}, backup kept`, r.v === 15 && r.i === want && r.n >= 10 && r.g === 0 && r.back, JSON.stringify(r));
+      check(`v14 save → v15 (goal ${i0 + 1}): Alloy nodes seeded, goal index ${i0} → ${want}, backup kept`, r.v === 16 && r.i === want && r.n >= 10 && r.g === 0 && r.back, JSON.stringify(r));
       await Q.ctx.close();
     }
     // --- layout: node sheet + gathering at every size
@@ -2777,7 +2987,7 @@ async function runStage14(url, label) {
       await Q.ev((KEY) => { const s = JSON.parse(localStorage.getItem(KEY)); s.version = 13; delete s.goals; s.buildings.commandCenter.level = 3; s.beacon.level = 4; s.hunt.kills = 12; localStorage.setItem(KEY, JSON.stringify(s)); __BD.store.save = () => {}; }, KEY);
       await Q.page.reload({ waitUntil: 'domcontentloaded' }); await Q.ready();
       const r = await Q.ev(() => ({ v: __BD.store.state.version, i: __BD.store.state.goals.i }));
-      check('v13 save → v14: goals fast-forward past met goals (CC 3) and stop at the first open one (30 troops)', r.v === 15 && r.i === 1, JSON.stringify(r));
+      check('v13 save → v14: goals fast-forward past met goals (CC 3) and stop at the first open one (30 troops)', r.v === 16 && r.i === 1, JSON.stringify(r));
       await Q.ctx.close();
     }
   } catch (e) {
@@ -2858,11 +3068,11 @@ async function runStage13(url, label) {
       return r;
     };
     let m = await migrate({ tutorial: { done: false, step: 4, rewarded: false, skipped: false }, energy: 100 });
-    check('stage 13 migration: v12 save partway through the old tutorial → v13, marked done and paid (+500 Energy), no coach', m.v === 15 && m.tu.done && m.tu.rewarded && m.e >= 599 && !m.t.visible && m.t.locked.length === 0, JSON.stringify(m));
+    check('stage 13 migration: v12 save partway through the old tutorial → v13, marked done and paid (+500 Energy), no coach', m.v === 16 && m.tu.done && m.tu.rewarded && m.e >= 599 && !m.t.visible && m.t.locked.length === 0, JSON.stringify(m));
     m = await migrate({ tutorial: { done: true, step: 8, rewarded: true, skipped: false }, energy: 100 });
-    check('stage 13 migration: finished v12 save stays done, not paid twice', m.v === 15 && m.tu.done && m.e < 200, JSON.stringify(m));
+    check('stage 13 migration: finished v12 save stays done, not paid twice', m.v === 16 && m.tu.done && m.e < 200, JSON.stringify(m));
     m = await migrate({ tutorial: { done: false, step: 0, rewarded: false, skipped: false } });
-    check('stage 13 migration: untouched v12 save gets the new onboarding (story at step 0)', m.v === 15 && !m.tu.done && m.tu.step === 0 && m.t.active, JSON.stringify(m));
+    check('stage 13 migration: untouched v12 save gets the new onboarding (story at step 0)', m.v === 16 && !m.tu.done && m.tu.step === 0 && m.t.active, JSON.stringify(m));
   } catch (e) {
     check('stage 13 suite ran without exceptions', false, e.message);
   } finally { await browser.close(); }
@@ -3009,7 +3219,7 @@ async function runStage8(url, label, takeShots) {
     await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(600);
     // ---------------------------------------------------------------- A. Daily Missions
     const m0 = await ev(() => { const st = __BD.store, s = st.state; return { v: s.version, day: s.missions.day, today: st.dayIndex(), tasks: st.missionList().map((t) => [t.id, t.goal, t.pts]), chests: st.missionChests().map((c) => `${c.at}:${c.tier}`), vis: __BD.ui().rightBtns.missions.visible, done: s.tutorial.done }; });
-    check('new game: save v13 with today\'s missions (local day)', m0.v === 15 && m0.day === m0.today, JSON.stringify(m0));
+    check('new game: save v13 with today\'s missions (local day)', m0.v === 16 && m0.day === m0.today, JSON.stringify(m0));
     check('7 daily tasks worth 110 points in total', m0.tasks.length === 7 && m0.tasks.reduce((a, t) => a + t[2], 0) === 110, JSON.stringify(m0.tasks));
     check('activity chests at 20/40/60/80/100: bronze, bronze, silver, silver, gold', m0.chests.join(',') === '20:bronze,40:bronze,60:silver,80:silver,100:gold', m0.chests.join(','));
     check('Missions stay hidden until the tutorial is done', !m0.vis && !m0.done, JSON.stringify({ vis: m0.vis, done: m0.done }));
@@ -3085,7 +3295,7 @@ async function runStage8(url, label, takeShots) {
     await ev(() => { __BD.store.save = () => {}; const raw = JSON.parse(localStorage.getItem('brokenDawn.save.v1')); raw.version = 9; delete raw.missions; delete raw.events; delete raw.hints; raw.lastSaved = Date.now(); localStorage.setItem('brokenDawn.save.v1', JSON.stringify(raw)); });
     await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.__BD?.ui()?.panel, null, { timeout: 60000 }); await sleep(500);
     const mig = await ev(() => { const s = __BD.store.state; return { v: s.version, day: s.missions.day === __BD.store.dayIndex(), p: Object.keys(s.missions.progress).length, ev: s.events && typeof s.events.marks === 'number', bk: JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v9') || '{}').version, lv: s.buildings.barracks.level, cores: s.resources.cores }; });
-    check('v9 save migrates to v13: missions start fresh today, events added, backup kept', mig.v === 15 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
+    check('v9 save migrates to v13: missions start fresh today, events added, backup kept', mig.v === 16 && mig.day && mig.p === 0 && mig.ev && mig.bk === 9 && mig.lv >= 2, JSON.stringify(mig));
 
     // --- screenshot: missions in progress
     await ev(() => { const st = __BD.store; st.state.missions.progress = { daily: 1, kills: 5, train: 30, build: 1, heal: 4 }; st.state.missions.claimed = ['daily', 'train']; st.state.missions.chests = [20]; st.save(); });
@@ -3296,6 +3506,7 @@ try {
   if (!process.env.ONLY || process.env.ONLY === '13') await runStage13(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '14') await runStage14(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '16') await runStage16(`http://localhost:${srv.address().port}/`, 'dist/ build');
+  if (!process.env.ONLY || process.env.ONLY === '18') await runStage18(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '17') await runStage17(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '9c') await runStage9c(`http://localhost:${srv.address().port}/`, 'dist/ build');
 } finally { srv.close(); }
