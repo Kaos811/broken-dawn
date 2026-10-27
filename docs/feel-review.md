@@ -32,6 +32,14 @@ I took screens and 40 ms frame sequences with `tests/stage17-shots.mjs`
 | 9 | Repeated `bump()` calls on the same text could stack and leave it oversized. | Small jitter on rapid claims. | bump() restarts cleanly from the base scale. |
 | 10 | No `prefers-reduced-motion` handling. | Accessibility. | Reduced motion turns off inertia, flying icons, number rolls, eased closes, squash and press springs. |
 
+### Second pass (after the first v0.12.0 deploy)
+| # | Finding | Fix |
+|---|---------|-----|
+| 11 | **The base was still while you watched it.** The Beacon pulsed, but nothing moved *between* buildings. The reference's colony always has traffic. | **Energy couriers:** six small wisps shuttle along gently curved paths between each building's front and the edge of the Beacon plaza. Teal wisps carry energy in and gold wisps carry light back, with a soft shadow, a little scurrying bob and a short trail. They are visual only (no input, no state), cost six images each, and are off under reduced motion. |
+| 12 | **Metal/ghost buttons had a hard-edged grey band across the top** (the gloss was a flat rectangle at 20% of the height). On tall tiles (the More sheet, Move, lane ✕) it read as a blocky stripe. | The gloss is now a sheen that fades out downward, capped at 24 px, so tall tiles keep a thin highlight. All button styles share it. |
+| 13 | **The Rewards note overlapped the "Claim all" button** when it wrapped to two lines. | The button now sits a fixed gap below the note, whatever its height. |
+| 14 | `select(null)` on the base re-opened an **empty building panel** that then lingered faintly behind other screens. | An empty selection now closes the panel, and closePanel also hides a stray visible panel. Stage 17 checks this. |
+
 ### Looked at, left alone (already good or not worth the risk tonight)
 - Ambient motion already exists: Beacon glow pulse, rings and motes, drifting embers, and glowing
   ground veins. With the frame-cap change it now reads smoothly.
@@ -41,7 +49,8 @@ I took screens and 40 ms frame sequences with `tests/stage17-shots.mjs`
   rearranging it is a design decision for Jason. Candidates: hide the rate text until tapped, and
   merge the Power sub-line into a tooltip.
 - **Pathing ant-style workers** (little troops walking between buildings) would be the next big
-  "alive" win. It is a larger feature, so I'm proposing it rather than doing it overnight.
+  "alive" win. The couriers (#11) are a lightweight version. Real walking soldier sprites that follow
+  the flagstone paths would need new art, so I'm proposing it rather than doing it overnight.
 
 ## Tests
 `ONLY=17` (stage 17 in `tests/e2e.mjs`) checks the following:
@@ -51,6 +60,7 @@ I took screens and 40 ms frame sequences with `tests/stage17-shots.mjs`
 - Rolling numbers and fly-to-HUD.
 - Inertia and smooth zoom.
 - The reduced-motion and `?sharp=0` fallbacks.
+- Idle couriers (running, no input, off under reduced motion) and that an empty selection closes the panel.
 - Onboarding at DPR 3, and no console errors.
 
 Under automation (`navigator.webdriver`), inertia and smooth zoom are off unless
