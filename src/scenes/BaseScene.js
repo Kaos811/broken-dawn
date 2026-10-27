@@ -38,6 +38,7 @@ export default class BaseScene extends Phaser.Scene {
     this.sprites = {};
     for (const id of BUILDING_IDS) this.createBuilding(id);
     this.syncDecos();
+    this.createCouriers();
 
     this.selectedId = null;  // building whose info panel is open
     this.moveId = null;      // building in move (or placement) mode
@@ -253,6 +254,66 @@ export default class BaseScene extends Phaser.Scene {
       scale: { start: 0.5, end: 0 }, alpha: { start: 0.6, end: 0 },
       tint: [PALETTE.gold, PALETTE.cyan, 0x8fffe0], blendMode: 'ADD', frequency: 160, quantity: 1,
     }).setDepth(6000);
+  }
+
+  // Idle life (stage 17): little energy couriers shuttle between placed buildings and the Beacon,
+  // like workers on colony paths. Purely visual: no input, no state. Off under reduced motion.
+  createCouriers() {
+    this.couriers = [];
+    if (REDUCED_MOTION) return;
+    for (let i = 0; i < 6; i++) {
+      const shadow = this.add.image(0, 0, 'glow').setTint(0x000000).setAlpha(0).setScale(0.26, 0.11).setDepth(1.3);
+      const body = this.add.image(0, 0, 'glow').setBlendMode(Phaser.BlendModes.ADD).setScale(0.2).setAlpha(0);
+      const trail = [0, 1].map(() => this.add.image(0, 0, 'glow').setBlendMode(Phaser.BlendModes.ADD).setAlpha(0));
+      this.couriers.push({ shadow, body, trail, t: 1, wait: 600 + i * 900, hist: [] });
+    }
+  }
+
+  launchCourier(k) {
+    const ids = BUILDING_IDS.filter((id) => store.isPlaced(id) && id !== this.moveId && id !== this.placeId);
+    if (!ids.length) { k.wait = 2000; return; }
+    const id = ids[Math.floor(Math.random() * ids.length)];
+    const b = store.state.buildings[id], size = BUILDINGS[id].footprint;
+    // ends sit just in front of each footprint (front corner of the building, edge of the Beacon
+    // plaza facing it) so the courier is visible instead of tucked under a sprite
+    const fa = footprintAnchor(b.gx, b.gy, size), bc = this.beaconCenter;
+    const home = { x: fa.x, y: fa.y + 14 };
+    const dx = home.x - bc.x, dy = (home.y - bc.y) * 2, dl = Math.hypot(dx, dy) || 1;
+    const port = { x: bc.x + (dx / dl) * 270, y: bc.y + (dy / dl) * 135 };
+    const out = Math.random() < 0.5;
+    const a = out ? home : port, z = out ? port : home;
+    // gentle sideways bow so the paths don't all overlap
+    const mx = (a.x + z.x) / 2, my = (a.y + z.y) / 2, nx = -(z.y - a.y), ny = z.x - a.x, nl = Math.hypot(nx, ny) || 1;
+    const bow = (Math.random() * 2 - 1) * 0.18 * nl;
+    k.a = a; k.z = z; k.c = { x: mx + (nx / nl) * bow, y: my + (ny / nl) * bow };
+    k.t = 0; k.dur = Math.max(1800, (Math.hypot(z.x - a.x, z.y - a.y) / 70) * 1000);
+    // outbound (to the Beacon) carries teal energy; return trips carry warm Beacon light
+    const key = out ? 'glow-cyan' : 'glow'; k.sc = out ? 2 : 1; k.hist.length = 0;
+    k.body.setTexture(key); k.trail.forEach((tr) => tr.setTexture(key));
+  }
+
+  updateCouriers(dtMs) {
+    for (const k of this.couriers ?? []) {
+      if (k.t >= 1) {
+        k.body.setAlpha(0); k.shadow.setAlpha(0); k.trail.forEach((tr) => tr.setAlpha(0));
+        k.wait -= dtMs;
+        if (k.wait <= 0) { this.launchCourier(k); k.wait = 900 + Math.random() * 2600; }
+        continue;
+      }
+      k.t = Math.min(1, k.t + dtMs / k.dur);
+      const t = k.t, u = 1 - t;
+      const x = u * u * k.a.x + 2 * u * t * k.c.x + t * t * k.z.x;
+      const y = u * u * k.a.y + 2 * u * t * k.c.y + t * t * k.z.y;
+      const hop = Math.abs(Math.sin(t * k.dur / 160)) * 5; // little scurrying bob
+      const fade = Math.min(1, t * 8, (1 - t) * 8);
+      k.body.setPosition(x, y - 10 - hop).setDepth(y + 1).setAlpha(fade).setScale((0.27 + 0.03 * Math.sin(t * 40)) * k.sc);
+      k.shadow.setPosition(x, y).setAlpha(0.35 * fade);
+      k.hist.unshift({ x, y: y - 10 - hop }); if (k.hist.length > 10) k.hist.length = 10;
+      k.trail.forEach((tr, i) => {
+        const h = k.hist[Math.min(k.hist.length - 1, 4 + i * 5)];
+        tr.setPosition(h.x, h.y).setDepth(y).setAlpha(fade * (0.4 - i * 0.15)).setScale((0.2 - i * 0.06) * k.sc);
+      });
+    }
   }
 
   createBeacon() {
@@ -810,6 +871,7 @@ export default class BaseScene extends Phaser.Scene {
   update(_t, dtMs) {
     this.syncRuin();
     this.drawConstruction(dtMs);
+    this.updateCouriers(Math.min(dtMs, 100));
     // Beacon energy rings + orbiting motes
     this.shardT += dtMs / 1000;
     const c = this.beaconCenter, ry = this.ringY;
