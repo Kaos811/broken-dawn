@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { WORLD, PALETTE, CREATURES, SQUADS, BASE_TIERS, baseTier, RES, GAME_WIDTH as LW, GAME_HEIGHT as LH } from '../config.js';
+import { installCamFeel } from '../ui/camfeel.js';
 import { store } from '../state/store.js';
 import { mulberry32 } from '../world/battle.js';
 import { LOCAL_OWNER, BASE_ID, CENTER, dist } from '../world/worldState.js';
@@ -51,8 +52,9 @@ export default class WorldScene extends Phaser.Scene {
     this.input.on('pointerupoutside', this.onUp, this);
     this.input.on('wheel', (p, _o, _dx, dy) => {
       if (this.ui()?.blocksPointer(p.x, p.y)) return;
-      this.zoomAt(p.x, p.y, this.zl * (dy > 0 ? 0.9 : 1.1));
+      this.wheelZoom(p.x, p.y, dy > 0 ? 0.9 : 1.1);
     });
+    installCamFeel(this, { minZ: () => WORLD.minZoom, maxZ: () => WORLD.maxZoom });
     this.unsubs = [
       store.on('hunt', (r) => this.battleFx(r)),
       store.on('reset', () => { this.select(null); this.syncAll(true); }),
@@ -360,6 +362,7 @@ export default class WorldScene extends Phaser.Scene {
     cam.scrollX = mx - cam.width / 2; cam.scrollY = my - cam.height / 2;
   }
   focusTile(x, y, zoom) {
+    this.stopGlide?.();
     const cam = this.cameras.main, p = tileToWorld(x, y);
     if (zoom) this.setZl(zoom);
     this.tweens.add({ targets: cam, scrollX: p.x - cam.width / 2, scrollY: p.y - cam.height / 2 + 120, duration: 350, ease: 'Cubic.easeOut', onUpdate: () => this.clampCamera() });
@@ -397,11 +400,11 @@ export default class WorldScene extends Phaser.Scene {
     if (downs.length >= 2) {
       const [a, b] = downs; const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       this.gesture = null;
-      this.pinch = { a: a.id, b: b.id, d0: Math.max(10, Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y)), z0: this.zl, w: this.screenToWorld(mid.x, mid.y) };
+      this.stopGlide(); this.pinch = { a: a.id, b: b.id, d0: Math.max(10, Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y)), z0: this.zl, w: this.screenToWorld(mid.x, mid.y) };
       return;
     }
     if (this.ui()?.blocksPointer(p.x, p.y)) { this.gesture = null; return; }
-    const cam = this.cameras.main;
+    const cam = this.cameras.main; this.stopGlide();
     this.gesture = { id: p.id, sx: p.x, sy: p.y, mode: 'pending', cam0: { x: cam.scrollX, y: cam.scrollY } };
   }
   onMove(p) {
@@ -415,9 +418,9 @@ export default class WorldScene extends Phaser.Scene {
     }
     const g = this.gesture;
     if (!g || p.id !== g.id || !p.isDown) return;
-    if (g.mode === 'pending' && Phaser.Math.Distance.Between(p.x, p.y, g.sx, g.sy) > TAP_SLOP) g.mode = 'pan';
+    if (g.mode === 'pending' && Phaser.Math.Distance.Between(p.x, p.y, g.sx, g.sy) > TAP_SLOP) { g.mode = 'pan'; this.beginPan(); }
     if (g.mode === 'pan') {
-      const cam = this.cameras.main;
+      const cam = this.cameras.main; this.trackPan(p);
       cam.scrollX = g.cam0.x - (p.x - g.sx) / this.zl; cam.scrollY = g.cam0.y - (p.y - g.sy) / this.zl;
       this.clampCamera();
     }
@@ -429,7 +432,7 @@ export default class WorldScene extends Phaser.Scene {
     if (g.mode === 'pending') {
       const w = this.screenToWorld(p.x, p.y);
       this.select(this.pick(w.x, w.y));
-    }
+    } else if (g.mode === 'pan') this.releasePan();
     this.gesture = null;
   }
 

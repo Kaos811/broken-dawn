@@ -19,7 +19,7 @@ function serveDist() {
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png' };
   const srv = createServer(async (req, res) => {
     try {
-      const p = join(ROOT, 'dist', req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
+      const u = req.url.split('?')[0]; const p = join(ROOT, 'dist', u === '/' ? 'index.html' : decodeURIComponent(u));
       const body = await readFile(p);
       res.writeHead(200, { 'content-type': types[extname(p)] ?? 'application/octet-stream' });
       res.end(body);
@@ -50,7 +50,7 @@ async function run(url, label, takeShots) {
   await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
 
   const ev = (fn, arg) => page.evaluate(fn, arg);
-  const cam = () => ev(() => { const c = __BD.base().cameras.main; return { zoom: c.zoom, x: c.scrollX, y: c.scrollY }; });
+  const cam = () => ev(() => { const c = __BD.base().cameras.main; return { zoom: __BD.base().zl, x: c.scrollX, y: c.scrollY }; });
   const state = () => ev(() => JSON.parse(JSON.stringify(__BD.store.state)));
   const power = () => ev(() => __BD.store.power.total);
   // page coords of a footprint centre, of a world point, of a UI (game-space) point
@@ -890,7 +890,7 @@ async function runStage3(url, label, takeShots) {
   const editSave = async (fn, arg) => { await ev(([fn, arg]) => { __BD.store.save = () => {}; const k = 'brokenDawn.save.v1'; const s = JSON.parse(localStorage.getItem(k)); new Function('s', 'arg', fn)(s, arg); localStorage.setItem(k, JSON.stringify(s)); }, [fn, arg]); await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); };
   // advance game time in 1 s steps until a predicate holds (marches, battles, healing)
   const runUntil = (pred, max = 120) => ev(([pred, max]) => { const f = new Function('st', `return (${pred})(st)`); for (let i = 0; i < max; i++) { if (f(__BD.store)) return i; __BD.store.tick(1); } return f(__BD.store) ? max : -1; }, [pred.toString(), max]);
-  const cam = () => ev(() => { const c = __BD.world().cameras.main; return { zoom: c.zoom, x: c.scrollX, y: c.scrollY }; });
+  const cam = () => ev(() => { const c = __BD.world().cameras.main; return { zoom: __BD.world().zl, x: c.scrollX, y: c.scrollY }; });
 
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
@@ -2008,7 +2008,7 @@ async function runStage7(url, label, takeShots) {
     check('Beacon Cores pill with a + button on the right', hud.cores === hud.c && hud.plus && hud.icons.includes('hud-core'));
     check('resource capsules use the new icons (Energy, Alloy, Shards, Troops)', ['hud-energy', 'hud-alloy', 'hud-shards', 'nav-troops'].every((k) => hud.icons.includes(k)), hud.icons.join(','));
     check('top HUD stays compact (≤ 190 game px at 390×844, no insets)', L.TOP_H <= 190 && L.SAFE.top === 0, JSON.stringify(L));
-    const visFrac = await ev(() => { const H = __BD.ui().scale.height, l = __BD.layout(); return (H - l.TOP_H - l.NAV_H) / H; });
+    const visFrac = await ev(() => { const H = __BD.H, l = __BD.layout(); return (H - l.TOP_H - l.NAV_H) / H; });
     check('the base keeps most of the screen (≥ 70% between HUD and nav)', visFrac >= 0.7, visFrac.toFixed(3));
     check('top HUD labels do not overlap', (await overlaps(0, L.TOP_H)).length === 0, (await overlaps(0, L.TOP_H)).join(', '));
     await shot('stage7-hud-base.png');
@@ -2055,8 +2055,8 @@ async function runStage7(url, label, takeShots) {
     check('nav order: World, Troops, [Base emblem], Armory, Squads, More', nav.map((t) => t.id).join(',') === 'world,troops,base,armory,squads,more' && nav[2].hero, nav.map((t) => t.id).join(','));
     check('World tab uses the planet globe icon (leftmost)', nav[0].id === 'world' && nav[0].key === 'nav-world' && nav[0].label === 'World');
     check('illustrated tab icons with labels', nav.filter((t) => !t.hero).every((t) => t.key === `nav-${t.id}` && t.label && t.label.length > 3), JSON.stringify(nav));
-    check('Base is the big centre emblem button (beacon-fortress medallion)', await ev(() => { const u = __BD.ui(), h = u.hero; return Math.abs(h.x - u.scale.width / 2) < 1 && h.em.texture.key === 'hud-base-emblem' && h.lab.text === 'BASE' && !u.textures.exists('hud-emblem') && h.em.displayWidth >= 120 && h.y - h.em.displayHeight / 2 < u.scale.height - __BD.layout().NAV_H; }));
-    check('nav labels do not overlap', (await overlaps(await ev(() => __BD.ui().scale.height - __BD.layout().NAV_H - __BD.layout().HERO_RISE), 99999)).length === 0);
+    check('Base is the big centre emblem button (beacon-fortress medallion)', await ev(() => { const u = __BD.ui(), h = u.hero; return Math.abs(h.x - 360) < 1 && h.em.texture.key === 'hud-base-emblem' && h.lab.text === 'BASE' && !u.textures.exists('hud-emblem') && h.em.displayWidth >= 120 && h.y - h.em.displayHeight / 2 < __BD.H - __BD.layout().NAV_H; }));
+    check('nav labels do not overlap', (await overlaps(await ev(() => __BD.H - __BD.layout().NAV_H - __BD.layout().HERO_RISE), 99999)).length === 0);
     const lifted = async (id) => ev((id) => { const u = __BD.ui(), t = u.tabs.find((x) => x.id === id), o = u.tabs.find((x) => !x.hero && x.id !== id); return u.activeTab === id && t.icon.y < o.icon.y && t.icon.scale > o.icon.scale && u.navGlow.visible && Math.abs(u.navGlow.x - t.cx) < 1 && t.label.style.color === '#ffb347'; }, id);
     check('the game opens on Base: the Base emblem is lit, no tab plate', await ev(() => { const u = __BD.ui(); return u.activeTab === 'base' && !u.worldMode && !u.screen && !u.navGlow.visible && u.hero.em.scale > u.hero.baseScale; }));
     check('Research queue button and More sheet use the new illustrated icons', await ev(() => { const u = __BD.ui(), q = u.queueBtns.research; return q.list.some((o) => o.texture?.key === 'more-research'); }));
@@ -2131,7 +2131,7 @@ async function runStage7(url, label, takeShots) {
     // --- 5. safe-area insets (notch + home indicator) and other phone sizes
     ({ ctx, page, errors } = await open({ width: 390, height: 844 }, { safe: { top: 47, bottom: 34 } }));
     const S = await page.evaluate(() => {
-      const u = __BD.ui(), l = __BD.layout(), H = u.scale.height;
+      const u = __BD.ui(), l = __BD.layout(), H = __BD.H;
       const t = u.tabs.filter((x) => !x.hero);
       return { l, H, avatarTop: u.avatar.y - u.avatar.displayHeight / 2, powerTop: u.powerText.y, labelsBottom: Math.max(...t.map((x) => x.label.y + x.label.height)), heroLab: u.hero.y + u.hero.lab.y + u.hero.lab.height };
     });
@@ -2139,7 +2139,7 @@ async function runStage7(url, label, takeShots) {
     check('…the portrait and Power sit below the top inset', S.avatarTop >= S.l.SAFE.top && S.powerTop >= S.l.SAFE.top, JSON.stringify(S));
     check('…tab labels and the Base emblem label sit above the home indicator', S.labelsBottom <= S.H - S.l.SAFE.bottom && S.heroLab <= S.H - S.l.SAFE.bottom, JSON.stringify(S));
     await page.evaluate(() => __BD.ui().openScreen('troops'));
-    check('…screens fit between the HUD and nav with insets', await page.evaluate(() => { const u = __BD.ui(), a = u.area, l = __BD.layout(); return a.y === l.TOP_H && a.y + a.h <= u.scale.height - l.NAV_H - l.HERO_RISE; }));
+    check('…screens fit between the HUD and nav with insets', await page.evaluate(() => { const u = __BD.ui(), a = u.area, l = __BD.layout(); return a.y === l.TOP_H && a.y + a.h <= __BD.H - l.NAV_H - l.HERO_RISE; }));
     await page.evaluate(() => __BD.ui().closeScreen());
     if (takeShots) { await sleep(400); await page.screenshot({ path: join(ROOT, 'screens', 'stage7-safe-area.png') }); console.log('      saved screens/stage7-safe-area.png'); }
     check('safe-area run: no console errors', errors.length === 0, errors.join(' | '));
@@ -2147,7 +2147,7 @@ async function runStage7(url, label, takeShots) {
     for (const vp of [{ width: 360, height: 640 }, { width: 430, height: 932 }, { width: 375, height: 667 }]) {
       ({ ctx, page, errors } = await open(vp));
       const r = await page.evaluate(() => {
-        const u = __BD.ui(), H = u.scale.height, l = __BD.layout();
+        const u = __BD.ui(), H = __BD.H, l = __BD.layout();
         u.openMore();
         const m = u.modal.sheetRect;
         const fits = m.y >= l.TOP_H && m.bottom <= H - l.NAV_H - l.HERO_RISE;
@@ -2398,6 +2398,122 @@ async function runStage10(url, label) {
 }
 
 // Stage 13: new-player onboarding. Layout at 6 phone sizes, Skip, Kael guarantee, v12 -> v13 migration.
+// Stage 17: game feel. Crisp HiDPI backbuffer with logical input, eased closes that never eat taps,
+// rolling HUD numbers + fly-to-HUD, camera inertia (opt-in under automation), reduced-motion.
+async function runStage17(url, label) {
+  console.log(`\n=== stage 17 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const open = async ({ dpr = 3, flags = { noTutorial: true }, reduced = false, q = '' } = {}) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: dpr, hasTouch: true, isMobile: true, reducedMotion: reduced ? 'reduce' : 'no-preference' });
+    if (flags) await ctx.addInitScript((f) => { window.__BD_TEST = f; }, flags);
+    const page = await ctx.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    const ev = (fn, arg) => page.evaluate(fn, arg);
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(800); };
+    await page.goto(url + q, { waitUntil: 'domcontentloaded' }); await ready(); await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+    return { ctx, page, ev, errors };
+  };
+  try {
+  {
+    const P = await open({ flags: { noTutorial: true, feel: true } });
+    const pf = await P.ev(() => __BD.perf());
+    check('stage 17: DPR-3 phone renders a supersampled backbuffer (RES > 1, canvas = 720·RES wide, layout height unchanged)', pf.res > 1.4 && pf.res <= 2 && pf.backbuffer[0] === Math.round(720 * pf.res) && pf.backbuffer[1] === Math.round(pf.layoutH * pf.res), JSON.stringify(pf));
+    // taps still land: tap the Command Center at its page position -> it is selected, panel opens
+    const cc = await P.ev(() => __BD.fpToPage('commandCenter'));
+    await P.page.mouse.click(cc.x, cc.y); await sleep(300);
+    for (let i = 0; i < 30 && (await P.ev(() => __BD.ui().panel.alpha < 0.99)); i++) await sleep(100);
+    const sel = await P.ev(() => ({ sel: __BD.base().selectedId, open: __BD.ui().panelOpenFor, vis: __BD.ui().panel.visible, a: __BD.ui().panel.alpha }));
+    check('stage 17: at RES > 1 a tap on a building selects it and its panel eases fully open', sel.sel === 'commandCenter' && sel.open === 'commandCenter' && sel.vis && sel.a > 0.99, JSON.stringify(sel));
+    // a nav tap lands too (UI camera coordinates are logical)
+    const tb = await P.ev(() => __BD.tabToPage('troops'));
+    await P.page.mouse.click(tb.x, tb.y); await sleep(450);
+    check('stage 17: at RES > 1 a nav tab tap opens its screen', await P.ev(() => __BD.ui().screen?.id === 'troops'));
+    const tb0 = await P.ev(() => __BD.tabToPage('base'));
+    await P.page.mouse.click(tb0.x, tb0.y);
+    const gone = await P.ev(() => ({ screen: __BD.ui().screen, ctl: __BD.controls().filter((c) => c.kind === 'button').length }));
+    for (let i = 0; i < 30 && (await P.ev(() => __BD.ui().children.list.some((o) => o.type === 'Container' && !o.active && o !== __BD.ui().panel))); i++) await sleep(100);
+    const after = await P.ev(() => ({ ghosts: __BD.ui().children.list.filter((o) => o.type === 'Container' && !o.active && o !== __BD.ui().panel).length }));
+    check('stage 17: closing a screen detaches it at once and its fade-out ghost is gone a moment later', gone.screen === null && after.ghosts === 0, JSON.stringify({ ...gone, ...after }));
+    // panel close: inactive immediately (taps pass through), hidden after the ease
+    await P.ev(() => __BD.ui().closePanel(true));
+    const pc0 = await P.ev(() => ({ active: __BD.ui().panel.active, blocks: __BD.ui().blocksPointer(360, __BD.ui().panelRect.y + 60) }));
+    await sleep(400);
+    const pc1 = await P.ev(() => __BD.ui().panel.visible);
+    check('stage 17: closing the building panel eases out without blocking map taps, then hides', !pc0.active && !pc0.blocks && pc1 === false, JSON.stringify({ ...pc0, vis: pc1 }));
+    // More sheet: closes eased, its buttons stop being controls at once
+    const mt = await P.ev(() => __BD.tabToPage('more'));
+    await P.page.mouse.click(mt.x, mt.y); await sleep(450);
+    const m0 = await P.ev(() => !!__BD.ui().modal?.isMore);
+    await P.ev(() => __BD.ui().closeModal());
+    const m1 = await P.ev(() => ({ modal: __BD.ui().modal, settings: __BD.controls().some((c) => /Settings/.test(c.label ?? '')) }));
+    check('stage 17: the More sheet closes with an eased fade and its buttons are gone immediately', m0 && m1.modal === null && !m1.settings, JSON.stringify({ m0, ...m1 }));
+    check('stage 17: layout stays clean at DPR 3', (await P.ev(() => __BD.layoutIssues())).length === 0, JSON.stringify(await P.ev(() => __BD.layoutIssues())).slice(0, 300));
+    check('stage 17: no console errors (DPR 3)', P.errors.length === 0, P.errors.join(' | ').slice(0, 300));
+    await P.ctx.close();
+  }
+  // motion checks run at DPR 2 (RES 1.125): the software renderer is too slow at 1170x2532 for timing checks
+  {
+    const P = await open({ dpr: 2, flags: { noTutorial: true, feel: true } });
+    // rolling numbers + fly-to-HUD on a lump gain
+    const f0 = await P.ev(() => __BD.feel().flies);
+    const r0 = await P.ev(() => { const s = __BD.store.state.resources; s.shards += 800; return { want: s.shards }; });
+    let mid = null;
+    for (let i = 0; i < 60; i++) { mid = await P.ev(() => ({ t: __BD.ui().shardText.text, flying: __BD.feel().flying })); if (mid.flying > 0 && Number(mid.t.replace(/,/g, '')) > 500) break; await sleep(30); }
+    for (let i = 0; i < 80 && (await P.ev(() => __BD.feel().flying > 0 || __BD.ui().shardText.text !== String(Math.floor(__BD.store.state.resources.shards)).replace(/\B(?=(\d{3})+(?!\d))/g, ','))); i++) await sleep(100);
+    const end = await P.ev(() => ({ t: __BD.ui().shardText.text, s: Math.floor(__BD.store.state.resources.shards), flies: __BD.feel().flies, flying: __BD.feel().flying }));
+    const num = (t) => Number(String(t).replace(/,/g, ''));
+    check('stage 17: a lump gain rolls the HUD number up (in between mid-way, exact at rest)', num(mid.t) < r0.want && num(mid.t) > r0.want - 800 && num(end.t) === end.s, JSON.stringify({ mid, end, want: r0.want }));
+    check('stage 17: a lump gain flies resource icons into the HUD and cleans them up', end.flies === f0 + 1 && mid.flying >= 3 && end.flying === 0, JSON.stringify({ f0, mid, end }));
+    // camera inertia: a flick keeps gliding after release, then stops
+    await P.ev(() => { const b = __BD.base(); b.setZl(0.8); b.cameras.main.centerOn(b.beaconCenter.x, b.beaconCenter.y); b.clampCamera(); });
+    await sleep(200);
+    const camXY = () => P.ev(() => { const c = __BD.base().cameras.main; return { x: c.scrollX, y: c.scrollY }; });
+    const e = await P.ev(() => __BD.gameToPage(500, 700));
+    await P.page.mouse.move(e.x, e.y); await P.page.mouse.down();
+    for (let i = 1; i <= 6; i++) { await P.page.mouse.move(e.x - i * 18, e.y - i * 6); await sleep(16); }
+    await P.page.mouse.up();
+    const g0 = await camXY(); await sleep(250); const g1 = await camXY();
+    let g2 = await camXY(), g3 = g2;
+    for (let i = 0; i < 40; i++) { await sleep(250); g3 = await camXY(); if (Math.abs(g3.x - g2.x) < 0.01) break; g2 = g3; }
+    check('stage 17: a flick on the base map glides on after release and then settles', g1.x - g0.x > 4 && Math.abs(g3.x - g2.x) < 0.01, JSON.stringify({ g0, g1, g2, g3 }));
+    // smooth wheel zoom eases to its target
+    const z0 = await P.ev(() => __BD.base().zl);
+    await P.page.mouse.move(195, 420); await P.page.mouse.wheel(0, -200);
+    const zMid = await P.ev(() => __BD.base().zl); let zEnd = zMid;
+    for (let i = 0; i < 40; i++) { await sleep(150); zEnd = await P.ev(() => __BD.base().zl); if (Math.abs(zEnd - Math.min(1.6, z0 * 1.1)) < 1e-6) break; }
+    check('stage 17: wheel zoom eases toward its 10% step instead of jumping', zMid < z0 * 1.1 - 1e-4 && Math.abs(zEnd - Math.min(1.6, z0 * 1.1)) < 1e-6, `${z0} -> ${zMid} -> ${zEnd}`);
+    check('stage 17: no console errors (motion checks)', P.errors.length === 0, P.errors.join(' | ').slice(0, 300));
+    await P.ctx.close();
+  }
+  {
+    // automation default: inertia off so other stages stay deterministic
+    const A = await open({ dpr: 2 });
+    check('stage 17: under automation without the feel flag, camera inertia is off', (await A.ev(() => __BD.feel().on)) === false);
+    await A.ctx.close();
+
+    // prefers-reduced-motion: no glides, no flying icons, numbers snap
+    const R = await open({ dpr: 2, flags: { noTutorial: true, feel: true }, reduced: true });
+    const rf = await R.ev(() => __BD.feel());
+    const rs = await R.ev(async () => { const s = __BD.store.state.resources; s.shards += 800; await new Promise((r) => setTimeout(r, 600)); return { t: __BD.ui().shardText.text, s: Math.floor(s.shards), flying: __BD.feel().flying }; });
+    check('stage 17: prefers-reduced-motion turns off inertia, flying icons and number rolls', rf.reduced && !rf.on && rs.flying === 0 && Number(rs.t.replace(/,/g, '')) === rs.s, JSON.stringify({ rf, rs }));
+    await R.ctx.close();
+
+    // ?sharp=0 falls back to the 720-px backbuffer
+    const S = await open({ q: '?sharp=0' });
+    const sp = await S.ev(() => __BD.perf());
+    check('stage 17: ?sharp=0 falls back to a 1x backbuffer', sp.res === 1 && sp.backbuffer[0] === 720, JSON.stringify(sp));
+    await S.ctx.close();
+
+    // onboarding still starts at DPR 3 and its first step is tappable
+    const T = await open({ flags: {} });
+    const tu = await T.ev(() => ({ active: __BD.tutorial().active }));
+    check('stage 17: onboarding still runs at DPR 3', tu.active, JSON.stringify(tu));
+    check('stage 17: no console errors (onboarding, DPR 3)', T.errors.length === 0, T.errors.join(' | ').slice(0, 300));
+    await T.ctx.close();
+  }
+  } finally { await browser.close(); }
+}
+
 async function runStage16(url, label) {
   console.log(`\n=== stage 16 · ${label}: ${url}`);
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -2653,7 +2769,7 @@ async function runStage13(url, label) {
       const P = await open(w, h);
       const issues = [];
       const card = async (name) => {
-        const r = await P.ev(() => { const t = __BD.tutorial(), u = __BD.ui(), tu = u.tutorial, H = u.scale.height; const y = tu.rect.y, ch = tu.cardH; const tg = t.target; const covered = !!tg && tg.y > y + 4 && tg.y < y + ch - 4 && tg.x > 16 && tg.x < u.scale.width - 16; return { vis: t.visible, top: y, bot: y + ch, H, covered, issues: __BD.layoutIssues() }; });
+        const r = await P.ev(() => { const t = __BD.tutorial(), u = __BD.ui(), tu = u.tutorial, H = __BD.H; const y = tu.rect.y, ch = tu.cardH; const tg = t.target; const covered = !!tg && tg.y > y + 4 && tg.y < y + ch - 4 && tg.x > 16 && tg.x < u.scale.width - 16; return { vis: t.visible, top: y, bot: y + ch, H, covered, issues: __BD.layoutIssues() }; });
         if (!r.vis) return;
         if (r.top < 0 || r.bot > r.H) issues.push(`${name}: card off screen (${r.top}..${r.bot} of ${r.H})`);
         if (r.covered) issues.push(`${name}: card covers its own pointer target`);
@@ -2667,7 +2783,7 @@ async function runStage13(url, label) {
       }
       await P.ev(() => __BD.ui().tutorial.celebrate({ art: 'ob-chest-open', title: 'Training complete!', sub: '+500 Energy, +2 Beacon Cores', chest: true }));
       await sleep(500);
-      const cb = await P.ev(() => { const c = __BD.ui().tutorial.celebrating, H = __BD.ui().scale.height; const b = c.getBounds ? c.list.filter((o) => o.type === 'Text').map((o) => o.getBounds()) : []; return b.every((r) => r.top >= 0 && r.bottom <= H && r.left >= -2 && r.right <= 1082); });
+      const cb = await P.ev(() => { const c = __BD.ui().tutorial.celebrating, H = __BD.H; const b = c.getBounds ? c.list.filter((o) => o.type === 'Text').map((o) => o.getBounds()) : []; return b.every((r) => r.top >= 0 && r.bottom <= H && r.left >= -2 && r.right <= 1082); });
       if (!cb) issues.push('celebration text off screen');
       check(`stage 13 layout ${w}x${h}: story, Lyra card at every step and the chest celebration fit (no overlap, pointer target visible)`, issues.length === 0, issues.slice(0, 8).join(' | '));
       check(`stage 13 layout ${w}x${h}: no console errors`, P.errors.length === 0, P.errors.slice(0, 3).join(' | '));
@@ -3072,7 +3188,7 @@ async function runStage8(url, label, takeShots) {
     const base = await pev(() => { const u = __BD.ui(), m = u.rightBtns.missions, e = u.rightBtns.event; return { m: m.visible, e: e.visible, lab: e.labelText.text, tm: e.timer.text, icon: e.list.some((o) => o.texture?.key === 'more-events'), ex: m.x, ey: e.y - m.y }; });
     check('base: Missions + live-event buttons on the right edge (Events star medallion, countdown)', base.m && base.e && base.lab === 'Rift Hunt' && /^\dd \d+h$|^\d+h \d+m$/.test(base.tm) && base.icon, JSON.stringify(base));
     const L8 = await pev(() => __BD.layout());
-    check('base HUD text has no overlaps with the right column showing', (await (async () => { const H = await pev(() => __BD.ui().scale.height); return pev(([y0, y1]) => { const ui = __BD.ui(), out = [], vis = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active || p.alpha === 0) return false; return true; }; const w = (o) => { if (o.type === 'Text' && o.text && vis(o)) out.push({ t: o.text, b: o.getBounds() }); (o.list ?? []).forEach(w); }; ui.children.list.forEach(w); const bad = []; for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) { const a = out[i].b, b = out[j].b; if (a.x < b.right - 1 && b.x < a.right - 1 && a.y < b.bottom - 1 && b.y < a.bottom - 1) bad.push(`${out[i].t}|${out[j].t}`); } return bad; }, [L8.TOP_H, H - L8.NAV_H]); })()).length === 0);
+    check('base HUD text has no overlaps with the right column showing', (await (async () => { const H = await pev(() => __BD.H); return pev(([y0, y1]) => { const ui = __BD.ui(), out = [], vis = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active || p.alpha === 0) return false; return true; }; const w = (o) => { if (o.type === 'Text' && o.text && vis(o)) out.push({ t: o.text, b: o.getBounds() }); (o.list ?? []).forEach(w); }; ui.children.list.forEach(w); const bad = []; for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) { const a = out[i].b, b = out[j].b; if (a.x < b.right - 1 && b.x < a.right - 1 && a.y < b.bottom - 1 && b.y < a.bottom - 1) bad.push(`${out[i].t}|${out[j].t}`); } return bad; }, [L8.TOP_H, H - L8.NAV_H]); })()).length === 0);
     await shot('stage8-base-buttons.png', page);
     await tab('world');
     check('World HUD uses the painted Stamina orb (no drawn bolt)', await pev(() => __BD.ui().worldHud.stIcon?.texture.key === 'hud-stamina' && __BD.ui().worldHud.stIcon.visible));
@@ -3140,6 +3256,7 @@ try {
   if (!process.env.ONLY || process.env.ONLY === '13') await runStage13(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '14') await runStage14(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '16') await runStage16(`http://localhost:${srv.address().port}/`, 'dist/ build');
+  if (!process.env.ONLY || process.env.ONLY === '17') await runStage17(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '9c') await runStage9c(`http://localhost:${srv.address().port}/`, 'dist/ build');
 } finally { srv.close(); }
 const failed = results.filter((r) => !r.ok);

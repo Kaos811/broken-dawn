@@ -92,26 +92,32 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
   const TW = Math.max(W, MIN_TAP), TH = Math.max(Hh, MIN_TAP);
   const hit = scene.add.rectangle(0, 0, W, Hh, 0x000000, 0.001)
     .setInteractive({ hitArea: new Phaser.Geom.Rectangle((W - TW) / 2, (Hh - TH) / 2, TW, TH), hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true });
-  c.add([skin, t, hit]);
+  // stage 17: an additive copy of the skin that brightens on press (a soft glow, not a hard flash)
+  const glow = scene.add.image(0, 1, '__DEFAULT').setOrigin(0.5).setScale(1 / RES).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+  c.add([skin, glow, t, hit]);
   let enabled = true, current = style, pressed = false;
   const draw = () => {
     const st = enabled ? current : 'disabled';
     const s = BUTTON_STYLES[st] ?? BUTTON_STYLES.ghost;
     const key = bake(scene, `btn-${st}-${W}x${Hh}`, W, Hh + 4, (g) => drawButtonSkin(g, W, Hh + 4, st));
-    skin.setTexture(key);
+    skin.setTexture(key); glow.setTexture(key);
     t.setColor(s.text).setShadow(0, st === 'gold' ? 1 : 2, s.shadow, 0, false, true);
   };
   const fit = () => { const max = W - 20; t.setScale(t.width > max ? max / t.width : 1); };
   draw(); fit();
   // juice: squash on press, springy release, click sound + a light haptic tick
-  const springTo = (s, ms, ease) => { if (!c.active) return; scene.tweens.killTweensOf(c); scene.tweens.add({ targets: c, scale: s, duration: ms, ease }); };
+  const live = () => { for (let p = c; p; p = p.parentContainer) if (!p.active) return false; return true; };
+  const springTo = (s, ms, ease) => { if (!c.active) return; scene.tweens.killTweensOf(c); if (REDUCED_MOTION) { c.setScale(1); return; } scene.tweens.add({ targets: c, scale: s, duration: ms, ease }); };
+  const glowTo = (a, ms) => { scene.tweens.killTweensOf(glow); scene.tweens.add({ targets: glow, alpha: a, duration: ms, ease: 'Quad.easeOut' }); };
   hit.on('pointerdown', () => {
-    pressed = true; springTo(0.93, 70, 'Quad.easeOut');
+    if (!live()) return; // a closing panel/modal fading out ignores taps
+    pressed = true; springTo(0.93, 70, 'Quad.easeOut'); if (enabled) glowTo(0.28, 60);
     if (enabled) { audio.play('tap'); audio.haptic(8); } else audio.play('error');
   });
-  hit.on('pointerout', () => { pressed = false; springTo(1, 120, 'Quad.easeOut'); });
+  hit.on('pointerout', () => { pressed = false; springTo(1, 120, 'Quad.easeOut'); glowTo(0, 160); });
   hit.on('pointerup', () => {
-    springTo(1, 220, 'Back.easeOut');
+    springTo(1, 220, 'Back.easeOut'); glowTo(0, 260);
+    if (!live()) { pressed = false; return; }
     // defer so handlers can safely destroy this button (e.g. closing a modal)
     if (pressed && enabled && !scene.scrollDragged) scene.time.delayedCall(0, () => onClick?.());
     pressed = false;

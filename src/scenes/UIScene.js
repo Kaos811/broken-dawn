@@ -52,7 +52,7 @@ export default class UIScene extends Phaser.Scene {
     this.replay = null;
     this.worldHud = createWorldHud(this, TOP_H, H);
     this.createToast();
-    this.fx = { floats: 0, bursts: 0, hits: 0, shakes: 0 };
+    this.fx = { floats: 0, bursts: 0, hits: 0, shakes: 0, flies: 0, flying: 0 };
     audio.init();
     audio.setTrack('base');
     this.tutorial = new Tutorial(this);
@@ -150,7 +150,7 @@ export default class UIScene extends Phaser.Scene {
     if (this.tip && this.tipBox.visible && x >= this.tipBox.x && x <= this.tipBox.x + 420 && y >= this.tipBox.y - 12 && y <= this.tipBox.y + 200) return true;
     if (this.worldHud?.blocks(x, y)) return true;
     if (this.tutorial?.blocks(x, y)) return true;
-    if (this.panel.visible && Phaser.Geom.Rectangle.Contains(this.panelRect, x, y)) return true;
+    if (this.panel.visible && this.panel.active && Phaser.Geom.Rectangle.Contains(this.panelRect, x, y)) return true;
     if (this.banner.visible && Phaser.Geom.Rectangle.Contains(this.bannerRect, x, y)) return true;
     if (this.placeChip?.visible && Phaser.Geom.Rectangle.Contains(this.placeChipRect, x, y)) return true;
     if (this.sideBlocks(x, y)) return true;
@@ -255,7 +255,7 @@ export default class UIScene extends Phaser.Scene {
 
     // Beacon Cores pill with "+" (tap either -> Beacon Core Rewards)
     const coreN0 = this.children.list.length;
-    this.add.image(516, T + 62, 'hud-core').setDisplaySize(46, 54);
+    (this.hudIcon ??= {}).cores = this.add.image(516, T + 62, 'hud-core').setDisplaySize(46, 54);
     text(this, 548, T + 34, 'Beacon Cores', 16, '#e7c8ff', { fontStyle: 'bold' });
     this.coreText = text(this, 548, T + 54, '0', 28, CORES.hex, { fontStyle: 'bold', stroke: '#05070a', strokeThickness: 3 });
     const coreHit = this.add.rectangle(594, T + 62, 232, 80, 0, 0.001).setInteractive({ useHandCursor: true });
@@ -270,12 +270,12 @@ export default class UIScene extends Phaser.Scene {
     // Resource capsules: Energy (+rate), Alloy, Shards, Troops (+ training). Tap -> source tooltip.
     const [en, al, sh, tr] = this.capsuleSlots();
     const cy = T + 146;
-    this.add.image(en[0] + 24, cy, 'hud-energy').setDisplaySize(19, 32);
+    this.hudIcon ??= {}; this.hudIcon.energy = this.add.image(en[0] + 24, cy, 'hud-energy').setDisplaySize(19, 32);
     this.energyText = text(this, en[0] + 42, cy, '0', 21, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0, 0.5);
     this.rateText = text(this, en[0] + en[1] - 14, cy, '+1.0/s', 13, PALETTE.textCyan, { fontStyle: 'bold' }).setOrigin(1, 0.5);
-    this.add.image(al[0] + 26, cy, 'hud-alloy').setDisplaySize(36, 25);
+    this.hudIcon.alloy = this.add.image(al[0] + 26, cy, 'hud-alloy').setDisplaySize(36, 25);
     this.alloyText = text(this, al[0] + 48, cy, '0', 21, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0, 0.5);
-    this.add.image(sh[0] + 24, cy, 'hud-shards').setDisplaySize(22, 32);
+    this.hudIcon.shards = this.add.image(sh[0] + 24, cy, 'hud-shards').setDisplaySize(22, 32);
     this.shardText = text(this, sh[0] + 42, cy, '0', 21, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0, 0.5);
     this.add.image(tr[0] + 24, cy, 'nav-troops').setDisplaySize(29, 34);
     this.troopText = text(this, tr[0] + 44, cy, '0', 20, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0, 0.5);
@@ -838,7 +838,7 @@ export default class UIScene extends Phaser.Scene {
 
   closeScreen() {
     if (!this.screen) return;
-    this.screen.container.destroy();
+    this.ghostOut(this.screen.container);
     this.screen = null;
     this.screenState.edit = null;
     this.activeTab = this.worldMode ? 'world' : 'base'; this.drawNav();
@@ -1179,10 +1179,16 @@ export default class UIScene extends Phaser.Scene {
   }
 
   openPanel(id) {
+    const was = this.panel.visible && this.panel.active;
     this.panelOpenFor = id;
-    this.panel.setVisible(true);
-    this.panel.y = 30; this.panel.alpha = 0;
-    this.tweens.add({ targets: this.panel, y: 0, alpha: 1, duration: 160, ease: 'Cubic.easeOut' });
+    this.tweens.killTweensOf(this.panel);
+    this.panel.setVisible(true).setActive(true);
+    if (REDUCED_MOTION) { this.panel.y = 0; this.panel.alpha = 1; }
+    else {
+      // stage 17: a softer rise with a hint of overshoot; switching buildings just re-settles
+      if (!was) { this.panel.y = 36; this.panel.alpha = 0; }
+      this.tweens.add({ targets: this.panel, y: 0, alpha: 1, duration: was ? 120 : 200, ease: 'Back.easeOut', easeParams: [0.9] });
+    }
     this.panelArtFor = null;
     this.refreshPanel();
   }
@@ -1190,7 +1196,12 @@ export default class UIScene extends Phaser.Scene {
   closePanel(notifyBase) {
     if (!this.panelOpenFor) return;
     this.panelOpenFor = null;
-    this.panel.setVisible(false);
+    this.tweens.killTweensOf(this.panel);
+    if (REDUCED_MOTION) this.panel.setVisible(false);
+    else {
+      this.panel.setActive(false);
+      this.tweens.add({ targets: this.panel, y: 30, alpha: 0, duration: 120, ease: 'Quad.easeIn', onComplete: () => { if (!this.panelOpenFor) this.panel.setVisible(false); } });
+    }
     if (notifyBase) this.game.events.emit('ui:panelClosed');
   }
 
@@ -1441,14 +1452,25 @@ export default class UIScene extends Phaser.Scene {
       c.add(bt);
     });
     c.alpha = 0;
-    this.tweens.add({ targets: c, alpha: 1, duration: 140 });
+    if (REDUCED_MOTION) c.alpha = 1; else { c.y = 14; this.tweens.add({ targets: c, alpha: 1, y: 0, duration: 170, ease: 'Cubic.easeOut' }); } // stage 17: rise + fade in
     c.panelRect = { x, y, w, h };
     c.kind = kind ?? null;
     this.modal = c;
     if (tab) { this.activeTab = tab; this.drawNav(); }
   }
-  closeModal() {
-    if (this.modal) { this.tweens.killTweensOf(this.modal); this.modal.destroy(); this.modal = null; }
+  // stage 17: closes ease out instead of popping. The old container is detached at once (inactive,
+  // no input, so taps and tests see it gone) and fades/drops for ~130 ms before it is destroyed.
+  ghostOut(c, instant) {
+    if (!c || !c.scene) return;
+    this.tweens.killTweensOf(c);
+    if (instant || REDUCED_MOTION) { c.destroy(); return; }
+    c.setActive(false);
+    const off = (o) => { o.disableInteractive?.(); o.list?.forEach(off); };
+    off(c);
+    this.tweens.add({ targets: c, alpha: 0, y: c.y + 12, duration: 130, ease: 'Quad.easeIn', onComplete: () => c.destroy() });
+  }
+  closeModal(instant) {
+    if (this.modal) { const m = this.modal; this.modal = null; this.ghostOut(m, instant); }
     const want = this.tabFor(this.screen?.id) ?? (this.worldMode ? 'world' : 'base');
     if (this.activeTab !== want) { this.activeTab = want; this.drawNav(); }
   }
@@ -1540,7 +1562,52 @@ export default class UIScene extends Phaser.Scene {
     this.tweens.add({ targets: this.toastBox, alpha: 0, delay: ms, duration: 400, onComplete: () => this.toastBox.setVisible(false) });
   }
 
-  bump(t) { this.tweens.add({ targets: t, scale: 1.18, duration: 120, yoyo: true }); }
+  bump(t) {
+    if (!t?.active) return;
+    if (t.bumpTw) { t.bumpTw.remove(); t.setScale(t.baseScale ?? 1); }
+    t.baseScale = t.scaleX;
+    if (REDUCED_MOTION) return;
+    t.bumpTw = this.tweens.add({ targets: t, scale: t.baseScale * 1.18, duration: 110, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { t.bumpTw = null; t.setScale(t.baseScale); } });
+  }
+
+  // stage 17: HUD numbers roll toward their value instead of snapping, and a lump gain (a collect,
+  // claim, loot or gather return) sends a few resource icons flying into the HUD slot it lands in.
+  roll(key, t, v, dtMs) {
+    const R = (this.rolls ??= {});
+    let r = R[key];
+    if (!r) r = R[key] = { shown: v, last: v };
+    const jump = v - r.last; r.last = v;
+    const lump = key === 'energy' ? Math.max(25, store.energyRate * 2) : key === 'power' ? 1e9 : key === 'alloy' ? Math.max(5, store.alloyRate * 2) : key === 'shards' ? Math.max(3, store.shardRate * 2) : 1;
+    if (jump >= lump && !store.simulating && this.time.now > 1500) { this.flyTo(key, jump); }
+    if (REDUCED_MOTION || Math.abs(v - r.shown) < 1 || Math.abs(v - r.shown) > 1e7) r.shown = v;
+    else r.shown += (v - r.shown) * (1 - Math.exp(-dtMs / 110));
+    const str = fmt(Math.abs(v - r.shown) < 1 ? v : r.shown);
+    if (t.text !== str) t.setText(str);
+  }
+
+  flyTo(key, amount) {
+    const icon = this.hudIcon?.[key];
+    if (!icon || REDUCED_MOTION || this.fx.flying > 18) return;
+    const recent = performance.now() - this.lastInput < 1500;
+    const p = this.input.activePointer;
+    const sx = recent ? Phaser.Math.Clamp(p.x, 40, W - 40) : W / 2, sy = recent ? Phaser.Math.Clamp(p.y, TOP_H + 40, H - NAV_H - 40) : H * 0.45;
+    const n = Phaser.Math.Clamp(Math.round(Math.log10(Math.max(amount, 1)) * 1.6) + 2, 3, 7);
+    const size = 30, tx = icon.x, ty = icon.y;
+    this.fx.flies++;
+    for (let i = 0; i < n; i++) {
+      const im = this.add.image(sx, sy, icon.texture.key).setDepth(430).setAlpha(0);
+      im.setScale(size / Math.max(im.width, im.height));
+      const s0 = im.scaleX, a = Math.random() * Math.PI * 2, d = 36 + Math.random() * 44;
+      this.fx.flying++;
+      this.tweens.chain({ targets: im, tweens: [
+        { x: sx + Math.cos(a) * d, y: sy + Math.sin(a) * d, alpha: 1, scale: s0 * 1.15, duration: 200, ease: 'Quad.easeOut', delay: i * 35 },
+        { x: tx, y: ty, scale: s0 * 0.7, duration: 420 + i * 25, ease: 'Cubic.easeIn', onComplete: () => {
+          im.destroy(); this.fx.flying--;
+          if (i === n - 1) { audio.play('tap'); this.bump(icon); }
+        } },
+      ] });
+    }
+  }
 
   // Floating reward number that pops, rises and fades (game coords).
   floatText(x, y, str, color = PALETTE.textGold, size = 30) {
@@ -1567,9 +1634,9 @@ export default class UIScene extends Phaser.Scene {
     this.tutorial.update(dtMs);
     this.updateFrameCap();
     const s = store.state, p = store.power;
-    this.energyText.setText(fmt(s.resources.energy));
+    this.roll('energy', this.energyText, s.resources.energy, dtMs);
     this.rateText.setText(`+${store.energyRate.toFixed(2)}/s`);
-    this.powerText.setText(fmt(p.total));
+    this.roll('power', this.powerText, p.total, dtMs);
     this.powerSub.setText(`Bldg ${fmt(p.building)} · Troops ${fmt(p.troop)}`);
     const pct = s.beacon.charge / BEACON.maxCharge;
     this.beaconLv.setText(`BEACON Lv ${s.beacon.level}`);
@@ -1581,9 +1648,9 @@ export default class UIScene extends Phaser.Scene {
     if (pct >= 1) bar.fillStyle(0xffffff, 0.25 + 0.25 * Math.sin(this.time.now / 200)).fillRect(20, by, 112, 7);
     bar.lineStyle(1, PALETTE.metalEdge, 1).strokeRect(20, by, 112, 7);
 
-    this.coreText.setText(fmt(s.resources.cores));
-    this.shardText.setText(fmt(s.resources.shards));
-    this.alloyText.setText(fmt(s.resources.alloy));
+    this.roll('cores', this.coreText, s.resources.cores, dtMs);
+    this.roll('shards', this.shardText, s.resources.shards, dtMs);
+    this.roll('alloy', this.alloyText, s.resources.alloy, dtMs);
     const q = store.queuedUnits();
     const tot = TROOP_IDS.reduce((n, t) => n + s.troops[t], 0);
     this.troopText.setText(`${fmt(tot)}${q ? ` (+${fmt(q)})` : ''}`);

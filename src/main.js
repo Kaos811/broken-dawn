@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, PALETTE, RES } from './config.js';
+import { GAME_WIDTH, GAME_HEIGHT, PALETTE, RES, REDUCED_MOTION } from './config.js';
+import { feelOn } from './ui/camfeel.js';
 import { installHiDpi } from './hidpi.js';
 import { store } from './state/store.js';
 import BootScene from './scenes/BootScene.js';
@@ -188,6 +189,7 @@ window.__BD = {
   layout: () => ({ ...layout }),
   res: RES,
   H: GAME_HEIGHT,
+  feel: () => ({ reduced: REDUCED_MOTION, on: feelOn(), flies: game.scene.getScene('UI')?.fx.flies ?? 0, flying: game.scene.getScene('UI')?.fx.flying ?? 0 }),
   perf: () => ({ res: RES, backbuffer: [game.canvas.width, game.canvas.height], capped: !!game.scene.getScene('UI')?.idleCapped, limitRate: game.loop._limitRate, fps: Math.round(game.loop.actualFps), layoutH: GAME_HEIGHT }),
   gameToPage(gx, gy) {
     const r = game.canvas.getBoundingClientRect();

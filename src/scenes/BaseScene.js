@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TOP_H, NAV_H } from '../ui/layout.js';
-import { MAP, PALETTE, BEACON, BUILDINGS, BUILDING_IDS, RES, GAME_WIDTH as LW, GAME_HEIGHT as LH } from '../config.js';
+import { installCamFeel } from '../ui/camfeel.js';
+import { MAP, PALETTE, BEACON, BUILDINGS, BUILDING_IDS, RES, REDUCED_MOTION, GAME_WIDTH as LW, GAME_HEIGHT as LH } from '../config.js';
 import { store } from '../state/store.js';
 import { isoToWorld, worldToIso, isPlatformTile, footprintAnchor, BEACON_CENTER, GROUND, TILE_RANGE } from '../systems/grid.js';
 import { SPRITE, DECO_KEYS } from '../art/baseArt.js';
@@ -56,8 +57,9 @@ export default class BaseScene extends Phaser.Scene {
     this.input.on('pointerupoutside', this.onUp, this);
     this.input.on('wheel', (p, _o, _dx, dy) => {
       if (this.ui()?.blocksPointer(p.x, p.y)) return;
-      this.zoomAt(p.x, p.y, this.zl * (dy > 0 ? 0.9 : 1.1));
+      this.wheelZoom(p.x, p.y, dy > 0 ? 0.9 : 1.1);
     });
+    installCamFeel(this, { minZ: () => this.minZoom(), maxZ: () => MAP.maxZoom });
 
     this.unsubs = [
       store.on('reset', () => { this.exitMoveMode(); this.clearSelection(); this.syncAll(); }),
@@ -439,6 +441,7 @@ export default class BaseScene extends Phaser.Scene {
     this.cameras.main.panEffect.reset();
     const w = this.screenToWorld(p.x, p.y);
     const hit = this.pick(w.x, w.y);
+    this.stopGlide();
     this.gesture = { id: p.id, sx: p.x, sy: p.y, hit, mode: 'pending', cam0: { x: this.cameras.main.scrollX, y: this.cameras.main.scrollY } };
     if (hit && hit === this.moveId) { this.beginDrag(hit, w); return; }
     if (hit && !this.placeId) {
@@ -464,7 +467,7 @@ export default class BaseScene extends Phaser.Scene {
     this.gesture = null;
     const [a, b] = downs;
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    this.pinch = { a: a.id, b: b.id, d0: Math.max(10, Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y)), z0: this.zl, w: this.screenToWorld(mid.x, mid.y) };
+    this.stopGlide(); this.pinch = { a: a.id, b: b.id, d0: Math.max(10, Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y)), z0: this.zl, w: this.screenToWorld(mid.x, mid.y) };
   }
 
   onMove(p) {
@@ -481,10 +484,10 @@ export default class BaseScene extends Phaser.Scene {
     const moved = Phaser.Math.Distance.Between(p.x, p.y, g.sx, g.sy);
     if (g.mode === 'pending' && moved > TAP_SLOP) {
       g.timer?.remove();
-      g.mode = 'pan';
+      g.mode = 'pan'; this.beginPan();
     }
     if (g.mode === 'pan') {
-      const cam = this.cameras.main;
+      const cam = this.cameras.main; this.trackPan(p);
       cam.scrollX = g.cam0.x - (p.x - g.sx) / this.zl;
       cam.scrollY = g.cam0.y - (p.y - g.sy) / this.zl;
       this.clampCamera();
@@ -505,6 +508,7 @@ export default class BaseScene extends Phaser.Scene {
     g.timer?.remove();
     if (g.mode === 'pending') this.onTap(g.hit, p);
     else if (g.mode === 'drag') this.endDrag(true);
+    else if (g.mode === 'pan') this.releasePan();
     this.gesture = null;
   }
 
@@ -525,7 +529,18 @@ export default class BaseScene extends Phaser.Scene {
     if (this.placeId) return;
     this.selectedId = id;
     this.drawOverlay();
+    this.squish(id === BEACON.id ? this.beaconSprite : this.sprites[id]?.img);
     this.game.events.emit('base:select', id);
+  }
+  // stage 17: a tapped building answers with a quick squash-and-settle, so selection feels physical
+  squish(img) {
+    if (!img?.active || REDUCED_MOTION) return;
+    if (img.squishTw) { img.squishTw.remove(); img.setScale(img.squishBase.x, img.squishBase.y); }
+    const bx = img.scaleX, by = img.scaleY;
+    img.squishBase = { x: bx, y: by };
+    img.setScale(bx * 1.04, by * 0.93);
+    img.squishTw = this.tweens.add({ targets: img, scaleX: bx, scaleY: by, duration: 280, ease: 'Back.easeOut', easeParams: [2.2],
+      onComplete: () => { img.squishTw = null; }, onStop: () => { img.squishTw = null; } });
   }
   clearSelection(notify = false) {
     if (!this.selectedId) return;
