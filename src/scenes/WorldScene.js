@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WORLD, PALETTE, CREATURES, SQUADS, BASE_TIERS, baseTier } from '../config.js';
+import { WORLD, PALETTE, CREATURES, SQUADS, BASE_TIERS, baseTier, RES, GAME_WIDTH as LW, GAME_HEIGHT as LH } from '../config.js';
 import { store } from '../state/store.js';
 import { mulberry32 } from '../world/battle.js';
 import { LOCAL_OWNER, BASE_ID, CENTER, dist } from '../world/worldState.js';
@@ -42,7 +42,7 @@ export default class WorldScene extends Phaser.Scene {
     this.selected = null;
     this.gesture = null; this.pinch = null;
 
-    cam.setZoom(WORLD.startZoom);
+    this.setZl(WORLD.startZoom);
     cam.centerOn(b.x, b.y);
 
     this.input.on('pointerdown', this.onDown, this);
@@ -51,7 +51,7 @@ export default class WorldScene extends Phaser.Scene {
     this.input.on('pointerupoutside', this.onUp, this);
     this.input.on('wheel', (p, _o, _dx, dy) => {
       if (this.ui()?.blocksPointer(p.x, p.y)) return;
-      this.zoomAt(p.x, p.y, cam.zoom * (dy > 0 ? 0.9 : 1.1));
+      this.zoomAt(p.x, p.y, this.zl * (dy > 0 ? 0.9 : 1.1));
     });
     this.unsubs = [
       store.on('hunt', (r) => this.battleFx(r)),
@@ -73,9 +73,9 @@ export default class WorldScene extends Phaser.Scene {
     this.fitLabel(this.labels[this.labels.length - 1]);
     return t;
   }
-  fitLabel(l, z = this.cameras.main.zoom) { l.t.setScale(1 / z); l.t.setVisible(z >= l.min && !l.t.hiddenByGame); }
+  fitLabel(l, z = this.zl) { l.t.setScale(1 / z); l.t.setVisible(z >= l.min && !l.t.hiddenByGame); }
   fitLabels(force = false) {
-    const z = this.cameras.main.zoom;
+    const z = this.zl;
     if (!force && z === this.labelZoom) return;
     this.labelZoom = z;
     this.labels = this.labels.filter((l) => l.t.active);
@@ -340,14 +340,17 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------- camera ---
-  screenToWorld(sx, sy) { const cam = this.cameras.main, cx = cam.width / 2, cy = cam.height / 2; return { x: cam.scrollX + cx + (sx - cx) / cam.zoom, y: cam.scrollY + cy + (sy - cy) / cam.zoom }; }
-  worldToScreen(wx, wy) { const cam = this.cameras.main, cx = cam.width / 2, cy = cam.height / 2; return { x: (wx - cam.scrollX - cx) * cam.zoom + cx, y: (wy - cam.scrollY - cy) * cam.zoom + cy }; }
+  // Stage 17: real camera zoom = RES x logical zoom (see BaseScene); screen coordinates stay logical.
+  get zl() { return this.cameras.main.zoom / RES; }
+  setZl(z) { this.cameras.main.setZoom(z * RES); }
+  screenToWorld(sx, sy) { const cam = this.cameras.main, cx = cam.width / 2, cy = cam.height / 2, z = this.zl; return { x: cam.scrollX + cx + (sx - LW / 2) / z, y: cam.scrollY + cy + (sy - LH / 2) / z }; }
+  worldToScreen(wx, wy) { const cam = this.cameras.main, cx = cam.width / 2, cy = cam.height / 2, z = this.zl; return { x: (wx - cam.scrollX - cx) * z + LW / 2, y: (wy - cam.scrollY - cy) * z + LH / 2 }; }
   tileToScreen(x, y) { const p = tileToWorld(x, y); return this.worldToScreen(p.x, p.y); }
   setZoomKeeping(z, wx, wy, sx, sy) {
     const cam = this.cameras.main;
-    cam.setZoom(Phaser.Math.Clamp(z, WORLD.minZoom, WORLD.maxZoom));
-    const cx = cam.width / 2, cy = cam.height / 2;
-    cam.scrollX = wx - cx - (sx - cx) / cam.zoom; cam.scrollY = wy - cy - (sy - cy) / cam.zoom;
+    this.setZl(Phaser.Math.Clamp(z, WORLD.minZoom, WORLD.maxZoom));
+    const cx = cam.width / 2, cy = cam.height / 2, zl = this.zl;
+    cam.scrollX = wx - cx - (sx - LW / 2) / zl; cam.scrollY = wy - cy - (sy - LH / 2) / zl;
     this.clampCamera();
   }
   zoomAt(sx, sy, z) { const w = this.screenToWorld(sx, sy); this.setZoomKeeping(z, w.x, w.y, sx, sy); }
@@ -358,7 +361,7 @@ export default class WorldScene extends Phaser.Scene {
   }
   focusTile(x, y, zoom) {
     const cam = this.cameras.main, p = tileToWorld(x, y);
-    if (zoom) cam.setZoom(zoom);
+    if (zoom) this.setZl(zoom);
     this.tweens.add({ targets: cam, scrollX: p.x - cam.width / 2, scrollY: p.y - cam.height / 2 + 120, duration: 350, ease: 'Cubic.easeOut', onUpdate: () => this.clampCamera() });
   }
   focusBase() { this.focusTile(WORLD.baseX, WORLD.baseY); }
@@ -394,7 +397,7 @@ export default class WorldScene extends Phaser.Scene {
     if (downs.length >= 2) {
       const [a, b] = downs; const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       this.gesture = null;
-      this.pinch = { a: a.id, b: b.id, d0: Math.max(10, Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y)), z0: this.cameras.main.zoom, w: this.screenToWorld(mid.x, mid.y) };
+      this.pinch = { a: a.id, b: b.id, d0: Math.max(10, Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y)), z0: this.zl, w: this.screenToWorld(mid.x, mid.y) };
       return;
     }
     if (this.ui()?.blocksPointer(p.x, p.y)) { this.gesture = null; return; }
@@ -415,7 +418,7 @@ export default class WorldScene extends Phaser.Scene {
     if (g.mode === 'pending' && Phaser.Math.Distance.Between(p.x, p.y, g.sx, g.sy) > TAP_SLOP) g.mode = 'pan';
     if (g.mode === 'pan') {
       const cam = this.cameras.main;
-      cam.scrollX = g.cam0.x - (p.x - g.sx) / cam.zoom; cam.scrollY = g.cam0.y - (p.y - g.sy) / cam.zoom;
+      cam.scrollX = g.cam0.x - (p.x - g.sx) / this.zl; cam.scrollY = g.cam0.y - (p.y - g.sy) / this.zl;
       this.clampCamera();
     }
   }

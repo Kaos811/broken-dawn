@@ -1,0 +1,36 @@
+// Stage 17 feel audit: screens + short frame sequences. PREFIX=before|after, DPR=3 (iPhone-like)
+import { chromium } from 'playwright-core';
+import { createServer } from 'http'; import { readFile } from 'fs/promises'; import { join, extname } from 'path';
+const PREFIX = process.env.PREFIX ?? 'before', DPR = +(process.env.DPR ?? 3);
+const ROOT='/workspace/broken-dawn/dist', T={'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.webp':'image/webp','.json':'application/json','.jpg':'image/jpeg'};
+const srv=createServer(async(q,r)=>{try{const p=join(ROOT,q.url==='/'?'index.html':decodeURIComponent(q.url.split('?')[0]));const b=await readFile(p);r.writeHead(200,{'content-type':T[extname(p)]??'application/octet-stream'});r.end(b);}catch{r.writeHead(404);r.end();}});
+await new Promise(r=>srv.listen(0,r));
+const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const ctx=await b.newContext({viewport:{width:390,height:844},deviceScaleFactor:DPR,hasTouch:true,isMobile:true});
+await ctx.addInitScript(()=>{window.__BD_TEST={noTutorial:true};});
+const p=await ctx.newPage(); const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+await p.goto(`http://localhost:${srv.address().port}/`,{waitUntil:'domcontentloaded'});
+await p.waitForFunction(()=>window.__BD?.controls?.().length>3,null,{timeout:60000});
+const w=(ms)=>p.waitForTimeout(ms); const ev=(f,a)=>p.evaluate(f,a);
+const dir='/workspace/broken-dawn/screens';
+const shot=async(n,ms=1400)=>{await w(ms);await p.screenshot({path:`${dir}/stage17-${PREFIX}-${n}.png`});};
+const seq=async(n,fn,frames=6,gap=40)=>{await ev(fn);for(let i=0;i<frames;i++){await p.screenshot({path:`${dir}/stage17-${PREFIX}-${n}-f${i}.png`,clip:{x:0,y:300,width:390,height:544}});await w(gap);}};
+await ev(()=>{const s=__BD.store;s.state.resources.energy=2e5;s.state.resources.alloy=5e4;s.state.resources.shards=5e4;s.emit('change');});
+await shot('base',2500);
+await p.screenshot({path:`${dir}/stage17-${PREFIX}-hud-crop.png`,clip:{x:0,y:0,width:390,height:200}});
+await seq('panel-open',()=>__BD.base().select('barracks'));
+await shot('panel',600);
+await p.screenshot({path:`${dir}/stage17-${PREFIX}-panel-crop.png`,clip:{x:0,y:520,width:390,height:324}});
+await ev(()=>{__BD.base().select(null);});
+await seq('screen-open',()=>__BD.ui().onTab('troops'));
+await shot('troops',600);
+await ev(()=>{__BD.ui().closeScreen();});
+await seq('more-open',()=>__BD.ui().onTab('more'));
+await shot('more',500);
+await ev(()=>{__BD.ui().closeModal(true);__BD.ui().openRewards();}); await shot('rewards',800);
+await ev(()=>{__BD.ui().closeModal(true);__BD.ui().onTab('world');}); await shot('world',1800);
+await ev(()=>{__BD.ui().hideWorld();}); await w(600);
+// perf sample: fps over 2 s while panning
+const fps=await ev(async()=>{const bs=__BD.base();const cam=bs.cameras.main;const t0=performance.now();let n=0;await new Promise(r=>{const f=()=>{n++;cam.scrollX+=2;if(performance.now()-t0<2000)requestAnimationFrame(f);else r();};requestAnimationFrame(f);});return Math.round(n/2);});
+console.log(JSON.stringify({fps,errs}));
+await b.close();srv.close();

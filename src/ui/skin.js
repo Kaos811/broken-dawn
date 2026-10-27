@@ -1,7 +1,7 @@
 // Stage 9 painted UI skin: pure Graphics helpers shared by every screen (no Text, no store).
 // Gold-and-teal look of the stage 7/8 HUD: ornate gold frames, gradient bodies, glossy buttons,
 // state-coloured row cards, glossy progress bars, red count badges and small vector glyphs.
-import { PALETTE } from '../config.js';
+import { PALETTE, RES } from '../config.js';
 
 export const SKIN = {
   gold: 0xffb347, goldHi: 0xffe2a6, goldMid: 0xd9922e, goldDk: 0x6b4a16, goldDeep: 0x2e1e06,
@@ -180,9 +180,10 @@ export function drawButtonSkin(g, w, h, style) {
 // Bake a Graphics drawing into a reusable texture (RenderTexture keeps WebGL gradients).
 export function bake(scene, key, w, h, draw) {
   if (scene.textures.exists(key)) return key;
-  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  // Stage 17: baked at RES x (display these at scale 1 / RES, or size them relative to the texture)
+  const g = scene.make.graphics({ x: 0, y: 0 }, false).setScale(RES);
   draw(g);
-  const rt = scene.make.renderTexture({ x: 0, y: 0, width: Math.ceil(w), height: Math.ceil(h) }, false);
+  const rt = scene.make.renderTexture({ x: 0, y: 0, width: Math.ceil(w * RES), height: Math.ceil(h * RES) }, false);
   rt.draw(g);
   rt.saveTexture(key);
   g.destroy();

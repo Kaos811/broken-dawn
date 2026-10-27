@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, PALETTE } from './config.js';
+import { GAME_WIDTH, GAME_HEIGHT, PALETTE, RES } from './config.js';
+import { installHiDpi } from './hidpi.js';
 import { store } from './state/store.js';
 import BootScene from './scenes/BootScene.js';
 import BaseScene from './scenes/BaseScene.js';
@@ -14,13 +15,15 @@ import * as layout from './ui/layout.js';
 import { BUILDINGS, BEACON, MAP, TUTORIAL } from './config.js';
 
 store.load();
+installHiDpi(Phaser, RES);
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
   backgroundColor: PALETTE.bg,
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
+  // backbuffer at RES x the logical layout (cameras zoom by RES; pointer coordinates stay logical)
+  width: Math.round(GAME_WIDTH * RES),
+  height: Math.round(GAME_HEIGHT * RES),
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   input: { activePointers: 3, mouse: { preventDefaultWheel: true } },
   render: { antialias: true, roundPixels: false },
@@ -183,7 +186,9 @@ window.__BD = {
   tutorial: () => game.scene.getScene('UI')?.tutorial?.stateForTest(),
   tutorialIds: TUTORIAL.ids,
   layout: () => ({ ...layout }),
-  perf: () => ({ capped: !!game.scene.getScene('UI')?.idleCapped, limitRate: game.loop._limitRate, fps: Math.round(game.loop.actualFps), layoutH: GAME_HEIGHT }),
+  res: RES,
+  H: GAME_HEIGHT,
+  perf: () => ({ res: RES, backbuffer: [game.canvas.width, game.canvas.height], capped: !!game.scene.getScene('UI')?.idleCapped, limitRate: game.loop._limitRate, fps: Math.round(game.loop.actualFps), layoutH: GAME_HEIGHT }),
   gameToPage(gx, gy) {
     const r = game.canvas.getBoundingClientRect();
     return { x: r.left + (gx / GAME_WIDTH) * r.width, y: r.top + (gy / GAME_HEIGHT) * r.height };

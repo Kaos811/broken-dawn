@@ -7,6 +7,22 @@
 export const GAME_WIDTH = 720;
 const aspect = typeof window !== 'undefined' && window.innerWidth > 0 ? window.innerHeight / window.innerWidth : 16 / 9;
 export const GAME_HEIGHT = Math.round(GAME_WIDTH * Math.min(21 / 9, Math.max(16 / 9, aspect)));
+// Stage 17: render resolution. The layout stays 720 logical px wide, but the canvas backbuffer is RES x
+// bigger so a 3x phone (1170 device px across) gets ~1:1 pixels instead of a blurry 720 px upscale.
+// RES = device px across the fitted canvas / 720, clamped 1..2 (GPU fill-rate). ?sharp=0 turns it off.
+const resFor = () => {
+  if (typeof window === 'undefined') return 1;
+  const q = new URLSearchParams(window.location?.search ?? '');
+  if (q.get('sharp') === '0' || window.__BD_TEST?.res === 1) return 1;
+  if (window.__BD_TEST?.res) return window.__BD_TEST.res;
+  const vw = window.innerWidth || GAME_WIDTH, vh = window.innerHeight || GAME_HEIGHT;
+  const cssW = Math.min(vw, vh * GAME_WIDTH / GAME_HEIGHT); // Scale.FIT
+  const r = (cssW * (window.devicePixelRatio || 1)) / GAME_WIDTH;
+  return Math.max(1, Math.min(2, Math.round(r * 8) / 8));
+};
+export const RES = resFor();
+// Respect the OS "reduce motion" setting: ambient loops, fly-to-HUD trails and camera glides are trimmed.
+export const REDUCED_MOTION = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 export const PALETTE = {
   bg: 0x07090d,

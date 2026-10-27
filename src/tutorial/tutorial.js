@@ -4,7 +4,7 @@
 // step introduces them (ui.unlocked(id), see TUTORIAL.unlockAt). Painted celebrations mark the milestones.
 // Skip (with a confirm) unlocks everything and pays the completion reward. After it: a "Next goal" chip and
 // one-time Lyra tips (Infirmary, Research, Edit Formation). Replayable from Settings.
-import { GAME_WIDTH as W, PALETTE, TUTORIAL, BEACON, TROOP_IDS, LEADERS, BUILDINGS } from '../config.js';
+import { GAME_WIDTH as W, GAME_HEIGHT, PALETTE, TUTORIAL, BEACON, TROOP_IDS, LEADERS, BUILDINGS } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, panelBg, fmt } from '../ui/widgets.js';
 import { audio } from '../audio/audio.js';
@@ -30,8 +30,8 @@ function buildingPos(ui, id) {
   const img = id === BEACON.id ? base.beaconSprite : base.sprites[id]?.img;
   if (!img) return null;
   const p = base.worldToScreen(img.x, img.y - img.displayHeight * 0.35);
-  const r = Math.max(50, img.displayWidth * base.cameras.main.zoom * 0.35);
-  const H = ui.scale.height;
+  const r = Math.max(50, img.displayWidth * base.zl * 0.35);
+  const H = GAME_HEIGHT;
   // stay clear of the HUD side columns (queue / quick buttons, ~100 px wide each) and the bottom panel
   const clear = p.y > TOP_H + 174 && p.y < H - NAV_H - 388 && p.x > 150 && p.x < W - 150;
   if (clear) { base._tutPan = null; return { x: p.x, y: p.y, r }; }
@@ -61,8 +61,8 @@ function creatureTarget(ui) {
     const e = store.world.get(id);
     if (!e || e.level > maxL || e.busy) continue;
     const p = ws.worldToScreen(s.img.x, s.img.y - 20);
-    if (p.y < TOP_H + 74 || p.y > ui.scale.height - NAV_H - 170 || p.x < 30 || p.x > W - 30) continue;
-    const d = (p.x - W / 2) ** 2 + (p.y - ui.scale.height / 2) ** 2;
+    if (p.y < TOP_H + 74 || p.y > GAME_HEIGHT - NAV_H - 170 || p.x < 30 || p.x > W - 30) continue;
+    const d = (p.x - W / 2) ** 2 + (p.y - GAME_HEIGHT / 2) ** 2;
     if (!best || d < best.d) best = { x: p.x, y: p.y, r: 46, d };
   }
   if (!best && !ws.tutFocused) {
@@ -316,7 +316,7 @@ export class Tutorial {
   }
 
   placeCard(target) {
-    const H = this.ui.scale.height;
+    const H = GAME_HEIGHT;
     const topY = TOP_H + 34, botY = H - NAV_H - HERO_RISE - this.cardH - 10;
     let y = topY;
     if (target && target.y < H * 0.5) y = botY;
@@ -343,7 +343,7 @@ export class Tutorial {
     if (!tg) { g.setVisible(false); this.hand.setVisible(false); sp.setVisible(false); return; }
     const k = (Math.sin(ui.time.now / 180) + 1) / 2;
     // soft spotlight: dim everything around a box on the target (taps still go through)
-    const H = ui.scale.height, R = tg.r + 14;
+    const H = GAME_HEIGHT, R = tg.r + 14;
     const x0 = Math.max(0, tg.x - R), x1 = Math.min(W, tg.x + R), y0 = Math.max(0, tg.y - R), y1 = Math.min(H, tg.y + R);
     sp.fillStyle(0x020306, 0.42).fillRect(0, 0, W, y0).fillRect(0, y1, W, H - y1).fillRect(0, y0, x0, y1 - y0).fillRect(x1, y0, W - x1, y1 - y0);
     sp.setVisible(true);
@@ -449,7 +449,7 @@ export class Tutorial {
 
   // ---------------------------------------------------------------- story panels --
   openStory() {
-    const ui = this.ui, H = ui.scale.height;
+    const ui = this.ui, H = GAME_HEIGHT;
     const c = this.story = ui.add.container(0, 0).setDepth(600);
     c.page = 0;
     const bg = ui.add.rectangle(W / 2, H / 2, W, H, 0x000000, 1).setInteractive();
@@ -491,7 +491,7 @@ export class Tutorial {
   // ---------------------------------------------------------------- celebrations --
   // Painted banner (or the open chest) with a title, a line under it, sparkles; tap (or the button) to close.
   celebrate({ art = 'ob-victory-banner', title, sub = '', btn = null, onBtn = null, loot = false, chest = false, quick = false }) {
-    const ui = this.ui, H = ui.scale.height;
+    const ui = this.ui, H = GAME_HEIGHT;
     this.closeCelebrate();
     const c = this.celebrating = ui.add.container(0, 0).setDepth(700);
     const dim = ui.add.rectangle(W / 2, H / 2, W, H, 0x020306, quick ? 0.45 : 0.7).setInteractive();
@@ -533,7 +533,7 @@ export class Tutorial {
     c.destroy(); this.celebrating = null;
   }
   flyLoot() {
-    const ui = this.ui, H = ui.scale.height;
+    const ui = this.ui, H = GAME_HEIGHT;
     const dest = [[ui.energyText, 'hud-energy'], [ui.alloyText, 'hud-alloy'], [ui.shardText, 'hud-shards'], [ui.coreText, 'hud-core']];
     dest.forEach(([t, key], j) => {
       if (!t || !ui.textures.exists(key)) return;

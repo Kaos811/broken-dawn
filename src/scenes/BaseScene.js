@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { TOP_H, NAV_H } from '../ui/layout.js';
-import { MAP, PALETTE, BEACON, BUILDINGS, BUILDING_IDS } from '../config.js';
+import { MAP, PALETTE, BEACON, BUILDINGS, BUILDING_IDS, RES, GAME_WIDTH as LW, GAME_HEIGHT as LH } from '../config.js';
 import { store } from '../state/store.js';
 import { isoToWorld, worldToIso, isPlatformTile, footprintAnchor, BEACON_CENTER, GROUND, TILE_RANGE } from '../systems/grid.js';
 import { SPRITE, DECO_KEYS } from '../art/baseArt.js';
@@ -46,7 +46,7 @@ export default class BaseScene extends Phaser.Scene {
     this.pinch = null;
 
     const cam = this.cameras.main;
-    cam.setZoom(Phaser.Math.Clamp(MAP.startZoom, this.minZoom(), MAP.maxZoom));
+    this.setZl(Phaser.Math.Clamp(MAP.startZoom, this.minZoom(), MAP.maxZoom));
     cam.centerOn(this.beaconCenter.x, this.beaconCenter.y - 60);
     this.clampCamera();
 
@@ -56,7 +56,7 @@ export default class BaseScene extends Phaser.Scene {
     this.input.on('pointerupoutside', this.onUp, this);
     this.input.on('wheel', (p, _o, _dx, dy) => {
       if (this.ui()?.blocksPointer(p.x, p.y)) return;
-      this.zoomAt(p.x, p.y, cam.zoom * (dy > 0 ? 0.9 : 1.1));
+      this.zoomAt(p.x, p.y, this.zl * (dy > 0 ? 0.9 : 1.1));
     });
 
     this.unsubs = [
@@ -361,35 +361,38 @@ export default class BaseScene extends Phaser.Scene {
   syncLabels() { BUILDING_IDS.forEach((id) => this.syncLabel(id)); this.syncBeaconLabel(); }
 
   // --------------------------------------------------------- camera ------
+  // Stage 17: the canvas renders at RES x the 720-wide logical layout (crisp on high-DPR phones), so
+  // the camera's real zoom is RES x the logical zoom `zl`; pointer / screen coordinates stay logical.
+  get zl() { return this.cameras.main.zoom / RES; }
+  setZl(z) { this.cameras.main.setZoom(z * RES); }
   screenToWorld(sx, sy) {
-    const cam = this.cameras.main;
+    const cam = this.cameras.main, z = this.zl;
     const cx = cam.width / 2, cy = cam.height / 2;
-    return { x: cam.scrollX + cx + (sx - cx) / cam.zoom, y: cam.scrollY + cy + (sy - cy) / cam.zoom };
+    return { x: cam.scrollX + cx + (sx - LW / 2) / z, y: cam.scrollY + cy + (sy - LH / 2) / z };
   }
   worldToScreen(wx, wy) {
-    const cam = this.cameras.main;
+    const cam = this.cameras.main, z = this.zl;
     const cx = cam.width / 2, cy = cam.height / 2;
-    return { x: (wx - cam.scrollX - cx) * cam.zoom + cx, y: (wy - cam.scrollY - cy) * cam.zoom + cy };
+    return { x: (wx - cam.scrollX - cx) * z + LW / 2, y: (wy - cam.scrollY - cy) * z + LH / 2 };
   }
   // never zoom out past the painted ground
   minZoom() {
-    const cam = this.cameras.main;
-    return Math.max(MAP.minZoom, cam.width / GROUND.w, cam.height / GROUND.h);
+    return Math.max(MAP.minZoom, LW / GROUND.w, LH / GROUND.h);
   }
   // Set zoom while keeping world point (wx,wy) under screen point (sx,sy).
   setZoomKeeping(z, wx, wy, sx, sy) {
     const cam = this.cameras.main;
-    cam.setZoom(Phaser.Math.Clamp(z, this.minZoom(), MAP.maxZoom));
-    const cx = cam.width / 2, cy = cam.height / 2;
-    cam.scrollX = wx - cx - (sx - cx) / cam.zoom;
-    cam.scrollY = wy - cy - (sy - cy) / cam.zoom;
+    this.setZl(Phaser.Math.Clamp(z, this.minZoom(), MAP.maxZoom));
+    const cx = cam.width / 2, cy = cam.height / 2, zl = this.zl;
+    cam.scrollX = wx - cx - (sx - LW / 2) / zl;
+    cam.scrollY = wy - cy - (sy - LH / 2) / zl;
     this.clampCamera();
   }
   zoomAt(sx, sy, z) { const w = this.screenToWorld(sx, sy); this.setZoomKeeping(z, w.x, w.y, sx, sy); }
   // keep the whole viewport on painted ground (no void at the edges)
   clampCamera() {
-    const cam = this.cameras.main;
-    const hw = cam.width / 2 / cam.zoom, hh = cam.height / 2 / cam.zoom;
+    const cam = this.cameras.main, z = this.zl;
+    const hw = LW / 2 / z, hh = LH / 2 / z;
     const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Phaser.Math.Clamp(v, lo, hi));
     const mx = clamp(cam.scrollX + cam.width / 2, GROUND.x + hw, GROUND.x + GROUND.w - hw);
     const my = clamp(cam.scrollY + cam.height / 2, GROUND.y + hh, GROUND.y + GROUND.h - hh);
@@ -399,10 +402,11 @@ export default class BaseScene extends Phaser.Scene {
   focus(id, ms = 380) {
     const img = id === BEACON.id ? this.beaconSprite : this.sprites[id]?.img;
     if (!img) return;
-    const cam = this.cameras.main;
-    const hw = cam.width / 2 / cam.zoom, hh = cam.height / 2 / cam.zoom;
+    const cam = this.cameras.main, z = this.zl;
+    const hw = LW / 2 / z, hh = LH / 2 / z;
     const tx = Phaser.Math.Clamp(img.x, GROUND.x + hw, GROUND.x + GROUND.w - hw);
-    const ty = Phaser.Math.Clamp(img.y - img.displayHeight * 0.2 + 120 / cam.zoom, GROUND.y + hh, GROUND.y + GROUND.h - hh);
+    const ty = Phaser.Math.Clamp(img.y - img.displayHeight * 0.2 + 120 / z, GROUND.y + hh, GROUND.y + GROUND.h - hh);
+    this.stopGlide?.();
     if (ms) cam.pan(tx, ty, ms, 'Sine.easeInOut'); else { cam.centerOn(tx, ty); this.clampCamera(); }
   }
 
@@ -460,7 +464,7 @@ export default class BaseScene extends Phaser.Scene {
     this.gesture = null;
     const [a, b] = downs;
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    this.pinch = { a: a.id, b: b.id, d0: Math.max(10, Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y)), z0: this.cameras.main.zoom, w: this.screenToWorld(mid.x, mid.y) };
+    this.pinch = { a: a.id, b: b.id, d0: Math.max(10, Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y)), z0: this.zl, w: this.screenToWorld(mid.x, mid.y) };
   }
 
   onMove(p) {
@@ -481,8 +485,8 @@ export default class BaseScene extends Phaser.Scene {
     }
     if (g.mode === 'pan') {
       const cam = this.cameras.main;
-      cam.scrollX = g.cam0.x - (p.x - g.sx) / cam.zoom;
-      cam.scrollY = g.cam0.y - (p.y - g.sy) / cam.zoom;
+      cam.scrollX = g.cam0.x - (p.x - g.sx) / this.zl;
+      cam.scrollY = g.cam0.y - (p.y - g.sy) / this.zl;
       this.clampCamera();
     } else if (g.mode === 'drag') {
       g.lastScreen = { x: p.x, y: p.y };
@@ -820,12 +824,12 @@ export default class BaseScene extends Phaser.Scene {
     const g = this.gesture;
     if (g?.mode === 'drag' && g.lastScreen) {
       const cam = this.cameras.main, s = g.lastScreen;
-      const top = HUD_TOP + 20, bottom = cam.height - NAV_H - 20;
+      const top = HUD_TOP + 20, bottom = LH - NAV_H - 20;
       let vx = 0, vy = 0;
-      if (s.x < EDGE_PAN) vx = -1; else if (s.x > cam.width - EDGE_PAN) vx = 1;
+      if (s.x < EDGE_PAN) vx = -1; else if (s.x > LW - EDGE_PAN) vx = 1;
       if (s.y < top + EDGE_PAN && s.y > 0) vy = -1; else if (s.y > bottom - EDGE_PAN) vy = 1;
       if (vx || vy) {
-        const sp = (dtMs / 1000) * 520 / cam.zoom;
+        const sp = (dtMs / 1000) * 520 / this.zl;
         cam.scrollX += vx * sp; cam.scrollY += vy * sp; this.clampCamera();
         this.updateDrag();
       }

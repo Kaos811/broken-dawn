@@ -176,7 +176,7 @@ export function itemIcon(ui, c, def, x, y, size) {
       g.fillGradientStyle(0x2a313b, 0x2a313b, 0x07090d, 0x07090d, 1, 1, 1, 1).fillPoints(oct(10, 10, 76, 76, 13), true);
       g.fillStyle(0xffffff, 0.1).fillRect(14, 12, 68, 8);
     });
-    const pl = ui.add.image(x, y, key).setScale(size / 96); out.push(pl);
+    const pl = ui.add.image(x, y, key); pl.setScale(size / pl.width); out.push(pl);
   }
   const k = painted ? def.icon : (def.fallbackIcon && ui.textures.exists(def.fallbackIcon) ? def.fallbackIcon : null);
   if (k) { const im = ui.add.image(x, y - (painted ? 0 : size * 0.06), k); im.setScale((painted ? size : size * 0.62) / Math.max(im.width, im.height)); out.push(im); }

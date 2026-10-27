@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PALETTE } from '../config.js';
+import { PALETTE, RES, REDUCED_MOTION } from '../config.js';
 import { audio } from '../audio/audio.js';
 import { SKIN, drawFrame, lerpC, bake, drawButtonSkin, BUTTON_STYLES } from './skin.js';
 
@@ -86,7 +86,7 @@ export const MIN_TAP = 80;
 export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size = 26 } = {}) {
   const c = scene.add.container(x, y);
   const W = Math.round(w), Hh = Math.round(h);
-  const skin = scene.add.image(0, 1, '__DEFAULT').setOrigin(0.5);
+  const skin = scene.add.image(0, 1, '__DEFAULT').setOrigin(0.5).setScale(1 / RES); // skins bake at RES x
   const t = text(scene, 0, -1, label, size, '#fff', { fontStyle: 'bold' }).setOrigin(0.5);
   // visual-size rect (bounds match the drawn button) with a padded input area of at least MIN_TAP
   const TW = Math.max(W, MIN_TAP), TH = Math.max(Hh, MIN_TAP);

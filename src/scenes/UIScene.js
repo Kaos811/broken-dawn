@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH as W, GAME_HEIGHT as H, PALETTE, BEACON, BUILDINGS, ECONOMY, BARRACKS, TROOP_CLASSES, TROOP_IDS, SQUADS, TROOPS } from '../config.js';
+import { GAME_WIDTH as W, GAME_HEIGHT as H, RES, REDUCED_MOTION, PALETTE, BEACON, BUILDINGS, ECONOMY, BARRACKS, TROOP_CLASSES, TROOP_IDS, SQUADS, TROOPS } from '../config.js';
 import { fmtClock } from '../ui/widgets.js';
 import { store } from '../state/store.js';
 import { buildingPower } from '../systems/power.js';
@@ -33,6 +33,8 @@ export default class UIScene extends Phaser.Scene {
   constructor() { super('UI'); }
 
   create() {
+    // Stage 17: the canvas is RES x the logical layout; the UI camera maps logical px onto it.
+    this.cameras.main.setOrigin(0, 0).setZoom(RES);
     installScrolling(this);
     this.panelOpenFor = null;
     this.modal = null;
@@ -161,9 +163,9 @@ export default class UIScene extends Phaser.Scene {
   // (RenderTexture, not generateTexture: that goes through the Canvas renderer, which drops gradients.)
   bake(key, w, h, draw) {
     if (this.textures.exists(key)) this.textures.remove(key);
-    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    const g = this.make.graphics({ x: 0, y: 0 }, false).setScale(RES); // RES x, shown at 1 / RES
     draw(g);
-    const rt = this.make.renderTexture({ x: 0, y: 0, width: Math.ceil(w), height: Math.ceil(h) }, false);
+    const rt = this.make.renderTexture({ x: 0, y: 0, width: Math.ceil(w * RES), height: Math.ceil(h * RES) }, false);
     rt.draw(g);
     rt.saveTexture(key);
     g.destroy();
@@ -219,7 +221,7 @@ export default class UIScene extends Phaser.Scene {
       g.fillStyle(0x3a2608, 1).fillCircle(74, T + 70, 57);
       g.fillStyle(0x05070a, 1).fillCircle(74, T + 70, 55);
     });
-    this.add.image(0, 0, 'hud-top-bg').setOrigin(0, 0);
+    this.add.image(0, 0, 'hud-top-bg').setOrigin(0, 0).setScale(1 / RES);
     this.add.rectangle(W / 2, TOP_H / 2, W, TOP_H, 0, 0.001).setInteractive(); // swallow taps
 
     // Commander portrait (tap -> Base Power / profile) with the commander (Beacon) level badge
@@ -545,7 +547,7 @@ export default class UIScene extends Phaser.Scene {
       // bottom rim
       g.lineStyle(2, 0x000000, 0.6).lineBetween(0, H + o - 1, W, H + o - 1);
     });
-    this.add.image(0, texTop, 'hud-nav-bg').setOrigin(0, 0);
+    this.add.image(0, texTop, 'hud-nav-bg').setOrigin(0, 0).setScale(1 / RES);
     this.navBlock = this.add.rectangle(W / 2, y0 + NAV_H / 2, W, NAV_H, 0, 0.001).setInteractive();
     this.navActive = this.add.graphics();
     this.navGlow = this.add.image(0, y0 + 46, 'glow').setBlendMode('ADD').setTint(PALETTE.gold).setAlpha(0).setScale(1.2);

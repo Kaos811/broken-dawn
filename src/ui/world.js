@@ -1,7 +1,7 @@
 // World-map UI (lives in the UI scene, drawn over the World scene): stamina + Auto strip, squad march
 // bar, creature attack sheet, battle report card, battle replay and the reports list.
 import Phaser from 'phaser';
-import { GAME_WIDTH as W, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES, GATHER } from '../config.js';
+import { GAME_WIDTH as W, GAME_HEIGHT, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES, GATHER } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, fmt, fmtClock, panelBg } from './widgets.js';
 import { drawBar, drawCard } from './skin.js';
@@ -357,7 +357,7 @@ export function openReports(ui) {
 export function playReplay(ui, report) {
   ui.closeReplay?.();
   const res = store.replayOf(report);
-  const H = ui.scale.height;
+  const H = GAME_HEIGHT;
   const c = ui.add.container(0, 0).setDepth(320);
   ui.replay = c;
   c.add(ui.add.rectangle(W / 2, H / 2, W, H, 0x020305, 0.94).setInteractive());
