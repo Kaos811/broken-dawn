@@ -2,6 +2,17 @@
 // (file://) and the dist/ build (served over http) at a 390x844 phone viewport.
 //   npm run build && npm test
 import { chromium } from 'playwright-core';
+// Playwright's 30 s default for navigation and waits is tight when the shared box is under memory
+// pressure (swiftshader page boots occasionally stall); give every context 90 s. Game timing
+// checks use their own clocks and are unaffected.
+{
+  const launch0 = chromium.launch.bind(chromium);
+  chromium.launch = async (...a) => {
+    const b = await launch0(...a); const nc = b.newContext.bind(b);
+    b.newContext = async (...o) => { const c = await nc(...o); c.setDefaultTimeout(90000); c.setDefaultNavigationTimeout(90000); return c; };
+    return b;
+  };
+}
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
