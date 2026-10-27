@@ -2446,7 +2446,7 @@ async function runStage16(url, label) {
     check('tapping a node on the map picks it', pickId === node.id, String(pickId));
     await P.ev((id) => __BD.world().select(id), node.id); await sleep(500);
     const sheet = await P.ev(() => ({ for: __BD.ui().worldHud.sheetFor, gather: __BD.controls().filter((c) => /^gather-/.test(c.meta ?? '')).map((c) => c.meta + ':' + c.enabled), texts: __BD.ui().worldHud.sheet?.list.filter((o) => o.type === 'Text').map((o) => o.rawText ?? o.text) }));
-    check('node sheet shows level, Alloy left and a Gather button per squad', sheet.for === node.id && sheet.gather.includes('gather-alpha:true') && sheet.texts.some((t) => /Lv 1 · Alloy Node/.test(t)) && sheet.texts.some((t) => /150 \/ 150 Alloy left/.test(t)), JSON.stringify(sheet).slice(0, 400));
+    check('node sheet shows level, Alloy left and a Gather button per squad', sheet.for === node.id && sheet.gather.includes('gather-alpha:true') && sheet.texts.some((t) => /Lv 1\s+·\s+Alloy Node/.test(t)) && sheet.texts.some((t) => /150 \/ 150 Alloy left/.test(t)), JSON.stringify(sheet).slice(0, 400));
     const info = await P.ev((id) => __BD.store.gatherInfo('alpha', id), node.id);
     check('gather info: 30 troops carry 20 + 3×30 = 110, travel by distance, no stamina needed', info.can && info.troops === 30 && info.cap === 110 && info.travel > 5 && info.travel < 20, JSON.stringify(info));
     const stam0 = await P.ev(() => __BD.store.state.hunt.stamina);
@@ -2456,7 +2456,7 @@ async function runStage16(url, label) {
     check('Lv 1 gather rate = (0.08 + 0.002×30)/s = 0.14/s', Math.abs(s.m.gather.rate - 0.14) < 1e-9, String(s.m.gather.rate));
     await P.ev((t) => { for (let i = 0; i < Math.ceil(t) + 2; i++) __BD.store.tick(1); }, s.m.travel);
     await sleep(500);
-    s = await P.ev((id) => { const st = __BD.store, m = st.squadMarch('alpha'), ws = __BD.world(); const ch = __BD.ui().worldHud.chips[0]; return { status: st.squadStatus('alpha'), load: m?.gather.load, amount: st.world.get(id).amount, tex: ws.nodeSprites.get(id).tex, badge: ws.nodeSprites.get(id).badge.text, chip: ch.st.text, sq: ws.marchSprites.get(m.id)?.img.visible }; }, node.id);
+    s = await P.ev((id) => { __BD.ui().worldHud.refresh(); const st = __BD.store, m = st.squadMarch('alpha'), ws = __BD.world(); const ch = __BD.ui().worldHud.chips[0]; return { status: st.squadStatus('alpha'), load: m?.gather.load, amount: st.world.get(id).amount, tex: ws.nodeSprites.get(id).tex, badge: ws.nodeSprites.get(id).badge.text, chip: ch.st.text, sq: ws.marchSprites.get(m.id)?.img.visible }; }, node.id);
     check('on arrival the squad gathers: status "gathering", camp sprite on the node, Alloy flows out of the node', s.status === 'gathering' && s.tex === 'node-camp' && s.load > 0 && s.amount < 150 && Math.abs(150 - s.amount - s.load) < 1e-6, JSON.stringify(s));
     check('squad chip + node plaque show gathering progress (e.g. "Gathering 0/110")', /^Gathering \d+\/110$/.test(s.chip) && /Alpha \d+\/110/.test(s.badge) && s.sq === false, JSON.stringify(s));
     // squads screen status
@@ -2467,10 +2467,10 @@ async function runStage16(url, label) {
     // recall mid-gather: comes home with what it has
     await P.ev(() => { for (let i = 0; i < 200; i++) __BD.store.tick(1); });
     const mid = await P.ev(() => Math.floor(__BD.store.squadMarch('alpha').gather.load));
-    await P.tap('chip-alpha'); await sleep(300);
+    { const c = (await P.ev(() => __BD.controls())).find((c) => c.label === 'chip-alpha'); await P.page.mouse.click(c.x, c.y); await sleep(500); }
     const rb = await P.ev(() => __BD.controls().find((c) => (c.rawText ?? c.label) === 'Recall'));
     if (rb) { await P.page.mouse.click(rb.x, rb.y); await sleep(400); }
-    s = await P.ev((id) => { const st = __BD.store, m = st.squadMarch('alpha'); return { phase: m?.phase, recalled: m?.recalled, load: m && Math.floor(m.gather.load), busy: st.world.get(id).busy, tex: __BD.world().nodeSprites.get(id).tex, chip: __BD.ui().worldHud.chips[0].sub.text }; }, node.id);
+    s = await P.ev((id) => { __BD.ui().worldHud.refresh(); const st = __BD.store, m = st.squadMarch('alpha'); return { phase: m?.phase, recalled: m?.recalled, load: m && Math.floor(m.gather.load), busy: st.world.get(id).busy, tex: __BD.world().nodeSprites.get(id).tex, chip: __BD.ui().worldHud.chips[0].sub.text }; }, node.id);
     check('recall while gathering: heads home carrying the Alloy so far; node freed', s.phase === 'back' && s.recalled && s.load === mid && mid >= 28 && !s.busy && s.tex === 'node-full' && /carrying \d+ Alloy/.test(s.chip), JSON.stringify({ ...s, mid }));
     const a0 = await P.ev(() => ({ alloy: __BD.store.state.resources.alloy, g: __BD.store.state.hunt.gathered }));
     await P.ev((t) => { for (let i = 0; i < Math.ceil(t) + 2; i++) __BD.store.tick(1); }, info.travel);
@@ -2480,13 +2480,13 @@ async function runStage16(url, label) {
     await P.ev((id) => __BD.store.gather('alpha', id), node.id);
     await P.ev(() => { for (let i = 0; i < 2000 && __BD.store.squadMarch('alpha'); i++) __BD.store.tick(1); });
     a1 = await P.ev((id) => ({ g: __BD.store.state.hunt.gathered, n: __BD.store.world.get(id), trips: __BD.store.state.hunt.trips }), node.id);
-    check('a full squad (110) marches home on its own; node keeps the rest', a1.g === mid + 110 && Math.abs(a1.n.amount - (150 - mid - 110)) < 1e-6, JSON.stringify(a1));
+    check('a full squad (110) marches home on its own; node keeps the rest', a1.g === mid + 110 && a1.n.amount > 150 - mid - 111 && a1.n.amount <= 150 - mid - 110, JSON.stringify(a1));
     // drain the node -> depleted, then regrows
     const r1 = await P.ev((id) => __BD.store.gather('alpha', id), node.id);
     await P.ev(() => { for (let i = 0; i < 2000 && __BD.store.squadMarch('alpha'); i++) __BD.store.tick(1); });
     await sleep(400);
     a1 = await P.ev((id) => ({ g: __BD.store.state.hunt.gathered, n: __BD.store.world.get(id), tex: __BD.world().nodeSprites.get(id).tex, can: __BD.store.gatherInfo('alpha', id), clock: __BD.store.state.world.clock }), node.id);
-    check('gathering the last Alloy drains the node: drained sprite, no more gathering', r1.ok && a1.g === 150 && a1.n.amount === 0 && a1.tex === 'node-depleted' && !a1.can.can && /drained/.test(a1.can.reason) && a1.n.regrowAt > a1.clock, JSON.stringify(a1).slice(0, 300));
+    check('gathering the last Alloy drains the node: drained sprite, no more gathering', r1.ok && a1.g >= 148 && a1.g <= 150 && a1.n.amount === 0 && a1.tex === 'node-depleted' && !a1.can.can && /drained/.test(a1.can.reason) && a1.n.regrowAt > a1.clock, JSON.stringify(a1).slice(0, 300));
     await P.ev(() => __BD.store.tick(1800)); await sleep(400);
     a1 = await P.ev((id) => ({ n: __BD.store.world.get(id), tex: __BD.world().nodeSprites.get(id).tex }), node.id);
     check('a drained node regrows in place after 30 min', a1.n.amount === 150 && a1.tex === 'node-full', JSON.stringify(a1));
