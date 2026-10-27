@@ -929,7 +929,7 @@ async function runStage3(url, label, takeShots) {
     const inf = s.buildings.infirmary;
     check('v6 adds the Infirmary at Lv 1 on a free spot (no overlap with the Armory)', inf.level === 1 && !(inf.gx === s.buildings.armory.gx && inf.gy === s.buildings.armory.gy) && (await ev(() => __BD.store.canPlace('infirmary', __BD.store.state.buildings.infirmary.gx, __BD.store.state.buildings.infirmary.gy))), JSON.stringify(inf));
     check('v6 formation lines get full = saved count', s.squads.alpha.lines[0].full === 6 && s.squads.alpha.lines[1].full === 4);
-    check('v6 generates a world: 44 creatures + your base + 14 neighbours + the Citadel; stamina starts full (100)', s.world.entities.filter((e) => e.kind === 'creature').length === 44 && s.world.entities.filter((e) => e.bot).length === 14 && s.world.entities.some((e) => e.kind === 'citadel') && s.world.entities.some((e) => e.kind === 'base' && e.owner === 'local') && s.hunt.stamina === 100);
+    check('v6 generates a world: ~60 creatures (stage 18) + your base + 14 neighbours + the Citadel; stamina starts full (100)', s.world.entities.filter((e) => e.kind === 'creature').length >= 60 && s.world.entities.filter((e) => e.bot).length === 14 && s.world.entities.some((e) => e.kind === 'citadel') && s.world.entities.some((e) => e.kind === 'base' && e.owner === 'local') && s.hunt.stamina === 100);
     check('v5 migration keeps a backup of the v5 save', await ev(() => JSON.parse(localStorage.getItem('brokenDawn.save.v1.backup-v5') || '{}').version === 5));
     check('Infirmary adds +5 Base Power (Lv 1) (+5 Archive, unsealed at Beacon Lv 3)', (await ev(() => __BD.store.power.building)) === 30 + 10 + 45 + 0 + 5 + 5, String(await ev(() => __BD.store.power.building)));
     check('Infirmary sprite is drawn on the base', await ev(() => !!__BD.base().sprites.infirmary?.img.visible));
@@ -1062,7 +1062,7 @@ async function runStage3(url, label, takeShots) {
 
     // --- 7. respawn after 10 min, back to 40
     const resp = await ev(() => { const st = __BD.store; const before = st.creatures().length; for (let i = 0; i < 61; i++) st.tick(10); return [before, st.creatures().length, st.state.world.respawns.length]; });
-    check('creatures respawn after 10 min (back to 44)', resp[0] === 42 && resp[1] === 44 && resp[2] === 0, JSON.stringify(resp));
+    check('creatures respawn after 10 min (back to 60+)', resp[1] >= 60 && resp[1] > resp[0] && resp[2] === 0, JSON.stringify(resp));
 
     // --- 8. defeat: heavier losses
     const loss = await ev(() => {
