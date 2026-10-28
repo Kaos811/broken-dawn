@@ -142,20 +142,19 @@ export default class WorldScene extends Phaser.Scene {
       else if (k < 0.62) this.prop(x, y, `ruin-${1 + Math.floor(rnd() * 3)}`, { w: 110 + rnd() * 90, depth: 0.8, alpha: 0.9, flip: rnd() > 0.5 });
       else if (k < 0.7) this.prop(x, y, 'lair-tower', { w: 110 + rnd() * 40, depth: 2 + y / SIZE, flip: rnd() > 0.5 });
     }
-    // Rift Citadel + golden contested dome (LOCKED)
+    // Rift Citadel + pale-teal contested dome (LOCKED)
     const cw = WORLD.citadelRadius * 2 * T;
-    this.domeGlow = this.add.image(c.x, c.y, 'wmap', 'glow-gold').setBlendMode('ADD').setScale(cw * 1.5 / 128).setAlpha(0.45).setDepth(2.4);
+    this.domeGlow = this.add.image(c.x, c.y, 'wmap', 'glow-teal').setBlendMode('ADD').setScale(cw * 1.4 / 128).setAlpha(0.3).setTint(0x9fe6dc).setDepth(2.4);
     this.citadel = this.add.image(c.x, c.y - 0.6 * T, 'wmap', 'citadel').setDepth(2.5);
     this.citadel.setScale(cw / this.citadel.width);
     const ctop = this.citadel.y - this.citadel.displayHeight / 2;
     this.coreGlow = this.add.image(c.x, ctop + this.citadel.displayHeight * 0.09, 'wmap', 'glow-teal').setBlendMode('ADD').setScale(2.4).setDepth(2.6);
-    // golden contested dome: crackling rings over the Citadel (static graphics, one draw)
-    const dome = this.add.graphics().setDepth(2.7).setBlendMode('ADD');
-    const R = (WORLD.citadelRadius + 0.6) * T;
-    for (let k = 0; k < 3; k++) { dome.lineStyle(18 - k * 5, PALETTE.gold, 0.08 + k * 0.05).strokeEllipse(c.x, c.y + 0.4 * T, R * 2, R * 1.25); }
-    dome.lineStyle(4, 0xffd27f, 0.75).strokeEllipse(c.x, c.y + 0.4 * T, R * 2, R * 1.25);
-    for (let k = 0; k < 4; k++) { const sx = 2 - k * 0.35; dome.lineStyle(3, 0xffd27f, 0.45).beginPath(); dome.arc(c.x, c.y + 0.4 * T, R, Math.PI * (1 + 0.04 * k), Math.PI * (2 - 0.04 * k), false); dome.strokePath(); dome.lineStyle(2, 0xffd27f, 0.3).strokeEllipse(c.x, c.y + 0.4 * T - R * 0.15 * k, R * sx * 0.98, R * 0.3 * (4 - k) / 2); }
-    this.tweens.add({ targets: [this.domeGlow, dome], alpha: { from: 0.45, to: 0.85 }, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    // contested dome: a soft translucent shell drawn BEHIND the Citadel sprite (no hard lines over the art)
+    const dome = this.add.graphics().setDepth(2.45).setBlendMode('ADD');
+    const R = (WORLD.citadelRadius + 0.6) * T, dy = c.y + 0.4 * T, DOME = 0x9fe6dc;
+    for (let k = 0; k < 6; k++) dome.fillStyle(DOME, 0.018).fillEllipse(c.x, dy, R * 2 * (1 - k * 0.06), R * 1.25 * (1 - k * 0.06));
+    [[44, 0.035], [28, 0.05], [16, 0.07], [7, 0.1]].forEach(([w, a]) => { dome.lineStyle(w, DOME, a); dome.beginPath(); dome.arc(c.x, dy, R, Math.PI * 1.02, Math.PI * 1.98, false); dome.strokePath(); dome.lineStyle(w, DOME, a * 0.8).strokeEllipse(c.x, dy, R * 2, R * 1.25); });
+    this.tweens.add({ targets: [this.domeGlow, dome], alpha: { from: 0.6, to: 0.9 }, duration: 2600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.tweens.add({ targets: this.coreGlow, alpha: 0.4, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.plaque(c.x, c.y + R * 0.62 + 20, '🔒 RIFT CITADEL', { size: 28, color: PALETTE.textGold, depth: 42 });
     this.plaque(c.x, c.y + R * 0.62 + 20, 'contested dome · alliance war coming', { size: 19, bold: false, color: '#ffd27f', depth: 42, min: 0.4 }).setData('below', 1);

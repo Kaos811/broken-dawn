@@ -51,8 +51,10 @@ def components(mask):
                         if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not lab[ny, nx]: lab[ny, nx] = n; q.append((ny, nx))
                 boxes.append((cnt, n, xs[0], ys[0], xs[1], ys[1]))
     return lab, boxes
-def slice_sheet(path, count, order, bridge=1):
+def slice_sheet(path, count, order, bridge=1, rgb_from=None):
     a = np.asarray(key(Image.open(path).convert('RGB'), enclosed=True, gold=False, enc_res=40, enc_k=0.55)).copy()
+    if rgb_from:  # stage 18b: same cut-out/anchors as `path`, colours from a recoloured copy of the sheet (Beacon-gold glows)
+        a[..., :3] = np.asarray(key(Image.open(rgb_from).convert('RGB'), enclosed=True, gold=False, enc_res=40, enc_k=0.55))[..., :3]
     S = 4
     small = a[::S, ::S, 3] > 60
     if bridge > 1: small = np.asarray(Image.fromarray((small * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(bridge))) > 0  # bridge thin flag poles
@@ -89,7 +91,7 @@ def split_flag(img):
     return Image.fromarray(base.astype(np.uint8), 'RGBA'), Image.fromarray(flag.astype(np.uint8), 'RGBA')
 
 RAW = '/workspace/artwork/raw/'
-tiers = slice_sheet(RAW + 'world-base-tiers.jpg', 5, lambda b: b[2], bridge=3)
+tiers = slice_sheet(RAW + 'world-base-tiers.jpg', 5, lambda b: b[2], bridge=3, rgb_from=RAW + 'base-tiers-gold.jpg')
 for i, t in enumerate(tiers):
     base_l, flag_l = split_flag(t)
     pieces[f'base-t{i + 1}'] = base_l; pieces[f'flag-t{i + 1}'] = flag_l
