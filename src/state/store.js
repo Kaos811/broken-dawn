@@ -1374,7 +1374,7 @@ class Store extends Emitter {
   squadStatus(id) {
     if (!this.squadUnlocked(id)) return 'locked';
     const m = this.squadMarch(id);
-    if (m) return m.phase === 'out' ? 'marching' : m.phase === 'gather' ? 'gathering' : 'returning';
+    if (m) return m.phase === 'rally' ? 'rallying' : m.phase === 'out' ? 'marching' : m.phase === 'gather' ? 'gathering' : 'returning';
     return this.squadSoldiers(id) > 0 || this.refillable(id) > 0 ? 'home' : 'empty';
   }
   refillable(id) {
@@ -1446,10 +1446,13 @@ class Store extends Emitter {
     const home = this.basePos();
     let best = null, bd = Infinity;
     for (const e of this.world.entities(kind)) {
-      if (e.level !== level || e.busy) continue;
+      if (e.busy) continue;
+      const boss = kind === 'creature' && !!CREATURES[e.type]?.rallyOnly;
+      if ((type === 'behemoth') !== boss) continue; // 'any' never finds a rally boss; 'behemoth' finds only them
+      if (!boss && e.level !== level) continue;
       if (kind === 'creature' && type !== 'any' && e.type !== type) continue;
       if (kind === 'node' && !(e.amount >= 1)) continue;
-      const d = dist(e, home);
+      const d = dist(e, home) + (boss ? Math.abs(e.level - level) * 1000 : 0);
       if (d < bd || (d === bd && e.id < best.id)) { bd = d; best = e; }
     }
     return best;
@@ -1689,6 +1692,8 @@ class Store extends Emitter {
   rallyDayRoll() { const d = this.dayIndex(), r = this.state.rally; if (r.day !== d) { r.day = d; r.today = 0; } return r; }
   ralliesLeft() { return Math.max(0, RALLY.perDay - this.rallyDayRoll().today); }
   myRally() { return this.world.rallyFor(LOCAL_OWNER); }
+  rallyPower() { const r = this.myRally(); return r ? r.members.reduce((n, m) => n + m.power, 0) : 0; }
+  rallyOdds() { const r = this.myRally(), t = r && this.world.get(r.targetId); return odds(this.rallyPower() / RALLY.oddsMargin, t ? this.creaturePowerOf(t) : 1); }
   rallyDuration(timer) { return globalThis.__BD_TEST?.fast ? timer / RALLY.testScale : timer; }
   rallyInfo(squadId, targetId, timer = RALLY.defaultTimer) {
     const t = this.world.get(targetId);
@@ -1715,7 +1720,7 @@ class Store extends Emitter {
     // expected rally Power: you + the allies a timer this long usually gathers (avg ally strength)
     const avg = (RALLY.allyPower[0] + RALLY.allyPower[1]) / 2;
     out.expected = Math.round(out.power * (1 + Math.max(out.allies * avg, RALLY.warden.power)));
-    out.odds = odds(out.expected, out.enemy);
+    out.odds = odds(out.expected / RALLY.oddsMargin, out.enemy);
     out.can = !out.reason;
     return out;
   }

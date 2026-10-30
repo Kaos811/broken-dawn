@@ -574,7 +574,8 @@ export const typePower = (type, level) => Math.round(creaturePower(level, !!CREA
 // Stage 19 (after The Ants' lizard rallies): Rift Behemoth rallies. See docs/stage19-plan.md.
 export const RALLY = {
   levels: [5, 10, 15, 20, 25],      // one Behemoth per level on the map at a time; Lv 25 only near the Citadel
-  bossMult: 2.0,                    // boss Power = elite creature Power x this (tuned: ~70% win at best solo level +2, 10 min rally)
+  bossMult: 2.0,
+  oddsMargin: 1.25,                 // one huge boss unit out-trades its Power figure: rally odds read Power / this                    // boss Power = elite creature Power x this (tuned: ~70% win at best solo level +2, 10 min rally)
   lifetime: 7200,                   // a Behemoth wanders off after 2 h
   respawn: 600,                     // ...and a new one of that level appears 10 min after a kill / despawn
   timers: [60, 300, 600],           // rally timer choices (s); default 5 min
