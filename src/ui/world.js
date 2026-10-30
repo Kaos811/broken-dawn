@@ -1,7 +1,7 @@
 // World-map UI (lives in the UI scene, drawn over the World scene): stamina + Auto strip, squad march
 // bar, creature attack sheet, battle report card, battle replay and the reports list.
 import Phaser from 'phaser';
-import { GAME_WIDTH as W, GAME_HEIGHT, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES, GATHER, NORMAL_CREATURES } from '../config.js';
+import { GAME_WIDTH as W, GAME_HEIGHT, PALETTE, CREATURES, SQUADS, TROOPS, TROOP_CLASSES, STAMINA, WORLD, CORES, GATHER, NORMAL_CREATURES, RALLY } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, fmt, fmtClock, panelBg } from './widgets.js';
 import { drawBar, drawCard } from './skin.js';
@@ -104,9 +104,15 @@ export function createWorldHud(ui, TOP_H, H) {
     rep.setLabel(h.reports.length ? `Reports (${h.reports.length})` : 'Reports');
     for (const ch of hud.chips) {
       const status = store.squadStatus(ch.id), m = store.squadMarch(ch.id);
-      const col = { home: PALETTE.cyan, marching: PALETTE.cyan, gathering: 0x2fe0c8, returning: PALETTE.gold, locked: 0x3b4452, empty: 0xff4d5e }[status];
+      const col = { home: PALETTE.cyan, rallying: 0x2fe0c8, marching: PALETTE.cyan, gathering: 0x2fe0c8, returning: PALETTE.gold, locked: 0x3b4452, empty: 0xff4d5e }[status];
       ch.cg.clear(); drawCard(ch.cg, ch.x, by + 6, chipW, bh - 12, { state: status === 'locked' ? 'locked' : status === 'marching' || status === 'gathering' ? 'progress' : 'normal', color: col, cut: 8 });
       if (status === 'locked') { ch.st.setText(`Locked`).setColor('#5d6878'); ch.sub.setText(`CC Lv ${SQUADS[ch.id].unlockCC}`); continue; }
+      if (m?.phase === 'rally') { // stage 19: waiting at home for allies
+        const r = store.myRally(), left = r ? Math.max(0, r.launchAt - store.world.w.clock) : 0;
+        ch.st.setText(`Rally ${fmtClock(left)}`).setColor('#7ff5e2');
+        ch.sub.setText(`${r ? r.members.length - 1 : 0}/${RALLY.slots} joined · tap`);
+        continue;
+      }
       if (m?.gather) { // stage 16: gathering march
         const g = m.gather, load = Math.floor(g.load);
         if (m.phase === 'out') { ch.st.setText(`→ Alloy Lv ${g.level}  ${fmtClock(m.travel - m.t)}`).setColor(PALETTE.textCyan); ch.sub.setText('tap to recall'); }
@@ -150,6 +156,7 @@ function attackPower(id) {
 function onChip(ui, hud, id) {
   const m = store.squadMarch(id);
   const ws = ui.scene.get('World');
+  if (m?.phase === 'rally') { openRallyPanel(ui); return; }
   if (!m) {
     if (store.squadStatus(id) === 'empty') ui.toast(`${sqName(id)} has no healthy troops. Train in the Barracks, heal in the Infirmary, or set a formation in Squads.`, 3000);
     ws.focusBase();
@@ -188,6 +195,7 @@ function openSheet(ui, hud, id, barY) {
   const e = store.world.get(id);
   if (e?.kind === 'node') { openNodeSheet(ui, hud, e, barY); return; }
   if (!e || e.kind !== 'creature') return;
+  if (CREATURES[e.type]?.rallyOnly) { openBossSheet(ui, hud, e, barY); return; }
   const T = CREATURES[e.type];
   const sh = 470, x = 16, w = W - 32, y = barY - 10 - sh;
   hud.sheetRect.setTo(x, y, w, sh);
@@ -238,6 +246,144 @@ function openSheet(ui, hud, id, barY) {
   };
   hud.sheetRefresh();
   ui.flushInput();
+}
+
+// Stage 19: Rift Behemoth sheet: too big to fight alone. Pick a rally timer (longer = more allies), then
+// "Rally · <squad>" starts a rally; your squad waits at home while allies join, then everyone marches.
+function openBossSheet(ui, hud, e, barY) {
+  const id = e.id, T = CREATURES[e.type];
+  const sh = 520, x = 16, w = W - 32, y = barY - 10 - sh;
+  hud.sheetRect.setTo(x, y, w, sh);
+  const c = ui.add.container(0, 0).setDepth(25);
+  hud.sheet = c; hud.sheetFor = id;
+  const g = ui.add.graphics();
+  panelBg(g, x, y, w, sh, { accent: T.color, stroke: T.color });
+  c.add([g, ui.add.rectangle(x + w / 2, y + sh / 2, w, sh, 0, 0.001).setInteractive()]);
+  c.add(ui.add.image(x + 86, y + 92, 'cr-behemoth').setScale(0.62));
+  c.add(text(ui, x + 170, y + 18, `Lv ${e.level}  ·  ${T.name}`, 30, T.hex, { fontStyle: 'bold' }));
+  c.add(text(ui, x + 170, y + 56, 'WORLD BOSS  ·  RALLY ONLY', 16, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 }));
+  c.add(text(ui, x + 170, y + 80, RALLY.hint, 17, PALETTE.textDim, { wordWrap: { width: w - 240 }, lineSpacing: 3 }));
+  c.add(button(ui, x + w - 38, y + 36, 52, 52, '✕', () => { ui.scene.get('World').select(null); }, { style: 'ghost', size: 24 }));
+  const power = store.creaturePowerOf(e), loot = store.rallyRewards(e), tr = store.trophyFor(e.level);
+  c.add(ui.add.image(x + w - 70, y + 196, `trophy-${tr.id}`).setScale(0.62));
+  const info = text(ui, x + 24, y + 166, '', 19, PALETTE.text, { lineSpacing: 6 }); c.add(info);
+  hud.rallyTimer = hud.rallyTimer ?? RALLY.defaultTimer;
+  const tw = 150;
+  const tbs = RALLY.timers.map((t, i) => {
+    const b = button(ui, x + 24 + tw / 2 + i * (tw + 10), y + 296, tw, 52, `${t / 60} min`, () => { hud.rallyTimer = t; hud.sheetRefresh(); }, { style: 'ghost', size: 20 });
+    b.chip = `rally-timer-${t}`; c.add(b); return { t, b };
+  });
+  const tnote = text(ui, x + 24 + 3 * (tw + 10), y + 282, '', 16, PALETTE.textDim, { wordWrap: { width: w - 3 * (tw + 10) - 48 } }); c.add(tnote);
+  const rows = TROOPS.squadIds.map((sid, i) => {
+    const ry = y + 340 + i * 58;
+    const b = button(ui, x + 24 + 150, ry + 26, 300, 52, `Rally · ${sqName(sid)}`, () => {
+      const r = store.startRally(sid, id, hud.rallyTimer);
+      if (!r.ok) { ui.toast(r.reason); return; }
+      ui.toast(`Rally started vs Lv ${e.level} ${T.short}  ·  −${RALLY.stamina} stamina. Allies are on their way.`, 2200);
+      ui.scene.get('World').select(null);
+      openRallyPanel(ui);
+    }, { style: 'gold', size: 21 });
+    b.chip = `rally-${sid}`;
+    const t = text(ui, x + 340, ry + 12, '', 18, PALETTE.text);
+    c.add([b, t]);
+    return { sid, b, t };
+  });
+  hud.sheetRefresh = () => {
+    if (!store.world.get(id)) { ui.scene.get('World').select(null); return; }
+    const fk = !store.state.rally.firstKills.includes(e.level);
+    info.setText([
+      `Power ${fmt(power)}   ·   ${where(e)}`,
+      `Win: +${fmt(loot.energy)} Energy  +${fmt(loot.alloy)} Alloy  +${fmt(loot.shards)} Shards`,
+      `+ ${tr.name}${fk ? `  ·  first kill +${RALLY.firstKillCores} Cores` : ''}`,
+      `Rallies today ${RALLY.perDay - store.ralliesLeft()}/${RALLY.perDay}  ·  ${RALLY.stamina} stamina`,
+    ].join('\n'));
+    for (const tb of tbs) tb.b.setStyle(tb.t === hud.rallyTimer ? 'cyan' : 'ghost');
+    tnote.setText(`~${RALLY.allies[hud.rallyTimer]} allies join`);
+    for (const r of rows) {
+      const a = store.rallyInfo(r.sid, id, hud.rallyTimer);
+      r.b.setEnabled(a.can);
+      if (store.squadStatus(r.sid) === 'locked') r.t.setText(`Locked (CC Lv ${SQUADS[r.sid].unlockCC})`).setColor('#5d6878');
+      else if (a.can) r.t.setText(`~${fmt(a.expected)} vs ${fmt(power)}  ·  ${a.odds.label}`).setColor(a.odds.color);
+      else r.t.setText(a.reason).setColor('#ff8a95');
+    }
+  };
+  hud.sheetRefresh();
+  ui.flushInput();
+}
+
+// Stage 19: the rally panel: countdown ring, 5 member slots (you + 4 allies), combined Power vs the boss
+// with live odds, Launch now (needs one ally) and Cancel (stamina refunded).
+export function openRallyPanel(ui) {
+  const r0 = store.myRally();
+  if (!r0) return;
+  const tgt = store.world.get(r0.targetId);
+  const T = CREATURES.behemoth;
+  ui.openOverlay({
+    title: null, h: 900,
+    build: (c, r, close) => {
+      const cx = r.x + r.w / 2, x0 = r.x + 32;
+      const g = ui.add.graphics(); c.add(g);
+      c.add(ui.add.image(r.x + 92, r.y + 92, 'rally-banner').setScale(0.7));
+      c.add(text(ui, cx + 40, r.y + 26, 'RALLY', 44, '#7ff5e2', { fontStyle: 'bold', letterSpacing: 6, stroke: '#04241f', strokeThickness: 6 }).setOrigin(0.5, 0));
+      c.add(text(ui, cx + 40, r.y + 84, `vs Lv ${r0.level} ${T.name}${tgt ? `  ·  X:${tgt.x} Y:${tgt.y}` : ''}`, 20, PALETTE.textGold).setOrigin(0.5, 0));
+      const ring = ui.add.graphics(); c.add(ring);
+      const rcx = cx, rcy = r.y + 250, rr = 86;
+      const clock = text(ui, rcx, rcy - 6, '', 40, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0.5); c.add(clock);
+      const phase = text(ui, rcx, rcy + 34, '', 16, PALETTE.textDim, { letterSpacing: 2 }).setOrigin(0.5); c.add(phase);
+      const slots = [];
+      const sw = (r.w - 64 - 4 * 10) / 5;
+      for (let i = 0; i < 1 + RALLY.slots; i++) {
+        const sx = x0 + i * (sw + 10), sy = r.y + 380;
+        const sg = ui.add.graphics(); c.add(sg);
+        const nm = text(ui, sx + sw / 2, sy + 104, '', 15, PALETTE.text, { align: 'center', wordWrap: { width: sw - 8 } }).setOrigin(0.5, 0);
+        const pw = text(ui, sx + sw / 2, sy + 150, '', 16, PALETTE.textCyan, { fontStyle: 'bold' }).setOrigin(0.5, 0);
+        const ic = text(ui, sx + sw / 2, sy + 52, '', 40, PALETTE.text).setOrigin(0.5);
+        c.add([nm, pw, ic]);
+        slots.push({ sx, sy, sg, nm, pw, ic });
+      }
+      const bar = ui.add.graphics(); c.add(bar);
+      const pl = text(ui, x0, r.y + 576, '', 20, PALETTE.text, { fontStyle: 'bold' }); c.add(pl);
+      const od = text(ui, r.x + r.w - 32, r.y + 576, '', 20, PALETTE.text, { fontStyle: 'bold' }).setOrigin(1, 0); c.add(od);
+      const note = text(ui, x0, r.y + 650, '', 16, PALETTE.textDim, { wordWrap: { width: r.w - 64 }, lineSpacing: 4 }); c.add(note);
+      const launch = button(ui, cx - 150, r.y + r.h - 150, 280, 72, 'Launch now', () => { const o = store.launchRallyNow(); if (!o.ok) ui.toast(o.reason); else { ui.toast('The rally marches!', 1400); close(); } }, { style: 'gold', size: 25 });
+      launch.chip = 'rally-launch';
+      const cancel = button(ui, cx + 150, r.y + r.h - 150, 280, 72, 'Cancel rally', () => { const o = store.cancelRally(); ui.toast(o.ok ? `Rally cancelled  ·  +${RALLY.stamina} stamina back` : o.reason); if (o.ok) close(); }, { style: 'danger', size: 25 });
+      cancel.chip = 'rally-cancel';
+      c.add([launch, cancel]);
+      const enemy = tgt ? store.creaturePowerOf(tgt) : 1;
+      const draw = () => {
+        if (!c.active) return;
+        const rl = store.myRally();
+        if (!rl || rl.phase !== 'gather') { ui.time.delayedCall(10, close); return; }
+        const now = store.world.w.clock, left = Math.max(0, rl.launchAt - now), k = 1 - left / rl.duration;
+        ring.clear();
+        ring.lineStyle(14, 0x1b2a33, 1).strokeCircle(rcx, rcy, rr);
+        ring.lineStyle(14, 0x2fe0c8, 1).beginPath().arc(rcx, rcy, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k, false).strokePath();
+        clock.setText(fmtClock(left)); phase.setText('MARCHES IN');
+        const tot = rl.members.reduce((n, m) => n + m.power, 0);
+        slots.forEach((s, i) => {
+          const m = rl.members[i];
+          s.sg.clear();
+          drawCard(s.sg, s.sx, s.sy, sw, 186, { state: m ? 'normal' : 'locked', color: m ? (m.kind === 'leader' ? PALETTE.gold : m.kind === 'npc' ? 0x2fe0c8 : PALETTE.cyan) : 0x3b4452, cut: 8 });
+          const pend = !m && rl.plan[i - 1] && !rl.plan[i - 1].joined;
+          s.ic.setText(m ? (m.kind === 'leader' ? '👑' : m.kind === 'npc' ? '🛡' : '⚔') : pend ? '…' : '＋');
+          s.nm.setText(m ? m.name : pend ? `on the way\n${fmtClock(Math.max(0, rl.plan[i - 1].at - now))}` : 'open');
+          s.pw.setText(m ? fmt(m.power) : '');
+        });
+        const o = store.rallyOdds();
+        bar.clear();
+        drawBar(bar, x0, r.y + 612, r.w - 64, 22, Math.min(1, tot / (enemy * RALLY.oddsMargin * 2)), { color: o.color });
+        bar.lineStyle(3, 0xffffff, 0.8).lineBetween(x0 + (r.w - 64) / 2, r.y + 606, x0 + (r.w - 64) / 2, r.y + 640);
+        pl.setText(`Rally Power ${fmt(tot)}  vs  ${fmt(enemy)}`);
+        od.setText(o.label).setColor(o.color);
+        note.setText(rl.members.length < 2 ? `Waiting for allies. If fewer than ${RALLY.warden.minAllies} join, the Rift Warden joins ${RALLY.warden.before}s before launch.` : 'Allies send troops in your formation. Rewards are shared; you lead, so you keep the Trophy.');
+        launch.setEnabled(rl.members.length >= 2);
+      };
+      draw();
+      const ev = ui.time.addEvent({ delay: 250, loop: true, callback: draw });
+      c.once('destroy', () => ev.remove());
+    },
+  });
 }
 
 // Stage 16: Alloy node sheet (level, Alloy left, one Gather button per squad).
@@ -349,7 +495,7 @@ function openTileSheet(ui, hud, t, barY) {
 }
 
 // ---------------------------------------------------------- stage 18: search --
-const SEARCH_TYPES = ['any', ...NORMAL_CREATURES, 'wyrm', 'node'];
+const SEARCH_TYPES = ['any', ...NORMAL_CREATURES, 'wyrm', 'behemoth', 'node'];
 function openSearch(ui, hud, barY) {
   closeSheet(ui, hud);
   const ws = ui.scene.get('World');
@@ -364,7 +510,7 @@ function openSearch(ui, hud, barY) {
   c.add([g, ui.add.rectangle(x + w / 2, y + sh / 2, w, sh, 0, 0.001).setInteractive()]);
   c.add(text(ui, x + 24, y + 18, '🔍 Search the map', 28, PALETTE.textCyan, { fontStyle: 'bold' }));
   c.add(button(ui, x + w - 38, y + 36, 52, 52, '✕', () => closeSheet(ui, hud), { style: 'ghost', size: 24 }));
-  const bw = (w - 48 - 6 * 6) / 7;
+  const bw = (w - 48 - 7 * 6) / 8;
   const chips = SEARCH_TYPES.map((tp, i) => {
     const label = tp === 'any' ? 'Any' : tp === 'node' ? 'Alloy' : CREATURES[tp].short ?? CREATURES[tp].name;
     const b = button(ui, x + 24 + bw / 2 + i * (bw + 6), y + 100, bw, 52, label, () => { q.type = tp; clampQ(); sync(); }, { style: 'ghost', size: 16 });
@@ -372,7 +518,7 @@ function openSearch(ui, hud, barY) {
     c.add(b);
     return { tp, b };
   });
-  const maxFor = () => (q.type === 'node' ? GATHER.levels.length : store.maxAttackLevel());
+  const maxFor = () => (q.type === 'node' ? GATHER.levels.length : q.type === 'behemoth' ? Math.max(...RALLY.levels) : store.maxAttackLevel());
   const clampQ = () => { q.level = Math.max(1, Math.min(maxFor(), q.level)); };
   const minus = button(ui, x + 24 + 40, y + 180, 70, 60, '−', () => { q.level--; clampQ(); sync(); }, { style: 'ghost', size: 30 });
   const lvl = text(ui, x + 24 + 170, y + 180, '', 28, PALETTE.text, { fontStyle: 'bold' }).setOrigin(0.5);
@@ -382,6 +528,7 @@ function openSearch(ui, hud, barY) {
   const go = button(ui, x + w / 2, y + 270, w - 48, 64, 'Search', () => {
     const kind = q.type === 'node' ? 'node' : 'creature';
     const e = store.searchWorld({ kind, type: kind === 'node' ? 'any' : q.type, level: q.level });
+    if (!e && q.type === 'behemoth') { ui.toast('Every Behemoth is down or rallied. They return within 10 min.', 2600); return; }
     if (!e) {
       ui.toast(kind === 'node' ? `No free Lv ${q.level} Alloy nodes right now.` : `No Lv ${q.level} creatures near your base. Try teleporting closer to the Citadel.`, 2600);
       return;
@@ -398,7 +545,7 @@ function openSearch(ui, hud, barY) {
     for (const ch of chips) ch.b.setStyle(ch.tp === q.type ? 'gold' : 'ghost');
     lvl.setText(`Lv ${q.level}`);
     minus.setEnabled(q.level > 1); plus.setEnabled(q.level < maxFor());
-    hint.setText(q.type === 'node' ? 'Nearest free Alloy node of this level.' : `Nearest free creature of this level to your base (up to Lv ${store.maxAttackLevel()}).`);
+    hint.setText(q.type === 'behemoth' ? 'Rift Behemoth nearest this level (rally only).' : q.type === 'node' ? 'Nearest free Alloy node of this level.' : `Nearest free creature of this level to your base (up to Lv ${store.maxAttackLevel()}).`);
   };
   clampQ(); sync();
   ui.flushInput();
@@ -407,8 +554,9 @@ function openSearch(ui, hud, barY) {
 // ------------------------------------------------------------ report card --
 export function openReport(ui, report) {
   const T = CREATURES[report.target.type];
+  const RY = report.rally ? 230 : 0; // stage 19: rally section (trophy + who contributed)
   ui.openOverlay({
-    title: null, h: 980,
+    title: null, h: 980 + RY,
     build: (c, r, close) => {
       const x0 = r.x + 32, cx = r.x + r.w / 2;
       const g = ui.add.graphics(); c.add(g);
@@ -437,7 +585,21 @@ export function openReport(ui, report) {
           if (L.cores) ui.time.delayedCall(420, () => { if (c.active) c.add(ui.floatText(x0 + 260, y + 62, `+${L.cores} Core`, CORES.hex, 34)); });
         } else show(1);
       } else lootT.setText('None. The creature held its ground.');
-      if (L.cores) c.add(text(ui, x0, y + 64, `+${L.cores} Beacon ${L.cores === 1 ? 'Core' : 'Cores'}  ·  first Lv ${report.target.level} kill`, 21, CORES.hex, { fontStyle: 'bold' }));
+      if (L.cores) c.add(text(ui, x0, y + 64, `+${L.cores} Beacon ${L.cores === 1 ? 'Core' : 'Cores'}  ·  first Lv ${report.target.level} ${report.rally ? 'Behemoth ' : ''}kill`, 21, CORES.hex, { fontStyle: 'bold' }));
+      if (report.rally) {
+        const ty = y + 104;
+        sectionHeader(ui, c, x0, ty, 'RALLY', { w: r.w - 64, color: '#7ff5e2', rule: 0x2fe0c8 });
+        if (report.trophy) {
+          const ti = ui.add.image(x0 + 60, ty + 100, `trophy-${report.trophy.id}`).setScale(0.8); c.add(ti);
+          ui.tweens.add({ targets: ti, scale: { from: 0.3, to: 0.8 }, duration: 500, ease: 'Back.easeOut' });
+          const bun = Object.entries(report.trophy.bundle).map(([k, v]) => `+${fmt(v)} ${k.startsWith('su_') ? `${k.slice(3)} speed-up` : k}`).join('  ');
+          c.add(text(ui, x0 + 130, ty + 40, report.trophy.name, 24, PALETTE.textGold, { fontStyle: 'bold' }));
+          c.add(text(ui, x0 + 130, ty + 72, bun + (report.daily ? `\nFirst rally win today: +${fmt(report.daily.energy)} Energy +1 15m speed-up` : ''), 17, PALETTE.text, { lineSpacing: 4 }));
+        } else c.add(text(ui, x0, ty + 40, 'No Trophy. The Behemoth held. Try a longer timer for more allies.', 18, PALETTE.textDim));
+        const cb = (report.contrib ?? []).map((m) => `${m.name} ${m.share}%`).join('  ·  ');
+        c.add(text(ui, x0, ty + 160, cb, 16, PALETTE.textCyan, { wordWrap: { width: r.w - 64 } }));
+        y += RY;
+      }
       // casualties
       y += 118;
       const cs = report.casualties;

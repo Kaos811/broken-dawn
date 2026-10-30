@@ -94,6 +94,8 @@ export default class UIScene extends Phaser.Scene {
       store.on('settings', () => this.refreshSettings?.()),
       store.on('squad', (_id, d) => { if (d && d.after !== d.before) this.bump(this.powerText); }),
       store.on('hunt', (r) => this.onHunt(r)),
+      store.on('rallyJoin', (ev) => { if (ev.rally.owner === 'local' && !this.modal) this.toast(`${ev.member.name} joined your rally (+${fmt(ev.member.power)} Power)`, 1600); }),
+      store.on('rallyLaunch', () => this.toast('Rally launched: the army marches on the Behemoth!', 1800)),
       store.on('marchHome', (m) => { if (!m.meta?.auto) this.toast(`${SQ[m.squadId].name} is back at base`, 1400); }),
       store.on('gathered', (d) => { this.toast(d.amount ? `${SQ[d.squadId].name} is back with +${fmt(d.amount)} Alloy` : `${SQ[d.squadId].name} is back at base`, 1800); if (d.amount) { audio.play('reward'); this.floatText?.(this.alloyText ? this.alloyText.x + this.alloyText.width + 30 : W / 2, SAFE.top + 70, `+${fmt(d.amount)}`, '#bfc8d6'); } }),
       store.on('research', (id, lv, d) => {
@@ -1513,7 +1515,7 @@ export default class UIScene extends Phaser.Scene {
         }, { style: 'gold', size: 22 }); rep.chip = 'replay-tutorial'; c.add(rep);
         // game
         sectionHeader(this, c, x0, r.y + 650, 'GAME', { w: r.w - 64 });
-        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.13.1 (stage 18b: Beacon-gold bases)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
+        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.14.0 (stage 19: Rift Behemoth rallies)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
         const rs = button(this, r.x + r.w / 2, r.y + 836, 300, 64, 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
         this.refreshSettings = () => {
           if (!c.active) { this.refreshSettings = null; return; }

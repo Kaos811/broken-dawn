@@ -130,7 +130,7 @@ function renderDetails(ui, c, a, api, st, y0) {
     const g = m?.gather, load = g ? Math.floor(g.load) : 0;
     const what = !m ? '' : g
       ? (m.phase === 'out' ? `Marching to a Lv ${g.level} Alloy node` : m.phase === 'gather' ? `Gathering Alloy: ${load}/${g.cap}` : `Returning with ${load} Alloy`)
-      : (m.phase === 'out' ? `Marching to Lv ${tgt?.level ?? '?'}` : 'Returning to base');
+      : m.phase === 'rally' ? 'Leading a rally (waiting for allies)' : (m.phase === 'out' ? `Marching to Lv ${tgt?.level ?? '?'}` : 'Returning to base');
     status.setText(m ? `${what} · formation locked until it's back` : 'Only healthy troops march. Refill tops lines up from reserve');
   });
   void march;

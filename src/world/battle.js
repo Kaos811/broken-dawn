@@ -123,3 +123,16 @@ export function odds(atkPower, defPower) {
   if (r >= 0.9) return { label: 'Even fight', color: '#ffb347', ratio: r };
   return { label: 'Risky', color: '#ff6f7b', ratio: r };
 }
+
+// Stage 19: one rally army from many members. Line i of every member merges into line i (same troop
+// type: members mirror the leader's formation, so per-unit stats come from the leader's line; counts add).
+// Returns { army, shares } where shares[k] = member k's fraction of the merged Power (for casualties + report).
+export function mergeArmies(members, name = 'Rally') {
+  const lead = members[0]?.army;
+  if (!lead) return { army: { name, owner: 'local', kind: 'rally', lines: [] }, shares: [] };
+  const lines = lead.lines.map((l, i) => ({ ...l, count: members.reduce((n, m) => n + (m.army.lines[i]?.type === l.type ? Math.max(0, m.army.lines[i].count) : 0), 0) }));
+  const army = { ...lead, name, kind: 'rally', lines };
+  const pw = members.map((m) => combatPower(m.army));
+  const tot = pw.reduce((a, b) => a + b, 0) || 1;
+  return { army, shares: pw.map((p) => p / tot) };
+}

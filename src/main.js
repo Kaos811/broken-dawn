@@ -7,8 +7,12 @@ import BootScene from './scenes/BootScene.js';
 import BaseScene from './scenes/BaseScene.js';
 import UIScene from './scenes/UIScene.js';
 import WorldScene from './scenes/WorldScene.js';
-import { resolveBattle, combatPower } from './world/battle.js';
-import { creatureArmy, squadArmy } from './world/armies.js';
+import { resolveBattle, combatPower, mergeArmies } from './world/battle.js';
+import { creatureArmy, squadArmy, scaleArmy } from './world/armies.js';
+import { BotRallyAgent } from './world/rallyBots.js';
+import { RALLY, typePower } from './config.js';
+import { openRallyPanel, openReport, playReplay } from './ui/world.js';
+import { eventScore } from './systems/events.js';
 import { createWorld, gradientLevel, levelAtTile, dist, BASE_POS, CENTER, seedBotBases } from './world/worldState.js';
 import { audio } from './audio/audio.js';
 import * as gridMath from './systems/grid.js';
@@ -73,7 +77,8 @@ window.__BD = {
   ui: () => game.scene.getScene('UI'),
   world: () => game.scene.getScene('World'),
   // pure world/battle helpers (tests + debugging)
-  dev: { resolveBattle, combatPower, creatureArmy, squadArmy, createWorld, gradientLevel, levelAtTile, dist, BASE_POS, CENTER, seedBotBases },
+  dev: { resolveBattle, combatPower, creatureArmy, squadArmy, createWorld, gradientLevel, levelAtTile, dist, BASE_POS, CENTER, seedBotBases,
+    mergeArmies, scaleArmy, BotRallyAgent, RALLY, typePower, openRallyPanel, openReport, playReplay, eventScore },
   // creature / tile -> page (CSS px) coordinates on the World map
   tileToPage(x, y) {
     const s = game.scene.getScene('World').tileToScreen(x, y);

@@ -1,7 +1,7 @@
 // Generic world model: a flat list of ENTITIES (creatures, player bases) with positions and owners,
 // plus MARCHES moving between them. Plain JSON so it can be saved locally today and served by a
 // shared backend later (see README "PvP path"). No Phaser, no store.
-import { WORLD, CREATURES, NORMAL_CREATURES, creaturePower, ALLIANCES, GATHER } from '../config.js';
+import { WORLD, CREATURES, NORMAL_CREATURES, typePower, ALLIANCES, GATHER, RALLY } from '../config.js';
 import { mulberry32, hashSeed } from './battle.js';
 
 export const LOCAL_OWNER = 'local';
@@ -66,7 +66,7 @@ export function spawnCreature(world, opts = {}) {
 // WORLD.near.radius of `home`, including one at maxL and (while maxL <= 2) one Lv 1. Returns spawned ones.
 export function ensureNearCreatures(world, home, maxL) {
   const R = WORLD.near.radius, out = [];
-  const near = () => world.entities.filter((e) => e.kind === 'creature' && e.level <= maxL && dist(e, home) <= R);
+  const near = () => world.entities.filter((e) => e.kind === 'creature' && !CREATURES[e.type]?.rallyOnly && e.level <= maxL && dist(e, home) <= R);
   const push = (e) => { if (e) out.push(e); return e; };
   if (maxL <= 2 && !near().some((e) => e.level === 1)) push(spawnCreature(world, { near: home, radius: 7.25, minDist: 3, level: 1, maxLevel: 1 }));
   if (!near().some((e) => e.level === maxL)) push(spawnCreature(world, { near: home, radius: R - 0.75, minDist: 3, level: maxL, maxLevel: maxL }));
@@ -136,7 +136,7 @@ export function seedNodes(world) {
 
 // Fresh world. `base` keeps an existing base position (save migration); default = the new-player spot.
 export function createWorld(seed = (Math.random() * 2 ** 31) >>> 0, base = BASE_POS) {
-  const world = { seed, rngCursor: 0, nextId: 1, clock: 0, entities: [], respawns: [], marches: [] };
+  const world = { seed, rngCursor: 0, nextId: 1, clock: 0, entities: [], respawns: [], marches: [], rallies: [], bossAt: {} };
   world.entities.push({ id: BASE_ID, kind: 'base', owner: LOCAL_OWNER, name: 'Your Base', x: base.x, y: base.y });
   world.entities.push({ id: CITADEL_ID, kind: 'citadel', owner: 'neutral', name: 'Rift Citadel', locked: true, x: CENTER.x, y: CENTER.y });
   world.entities.push(...seedBotBases(seed, WORLD.bots, [base]));
@@ -145,10 +145,42 @@ export function createWorld(seed = (Math.random() * 2 ** 31) >>> 0, base = BASE_
   for (let L = 1; L <= WORLD.maxLevel; L++) spawnCreature(world, { level: L });
   ensureNearCreatures(world, base, 1);
   while (world.entities.filter((e) => e.kind === 'creature').length < WORLD.creatures) if (!spawnCreature(world)) break;
+  ensureBehemoths(world); // stage 19
   return world;
 }
 
-export const creatureInfo = (e) => ({ ...CREATURES[e.type], level: e.level, power: creaturePower(e.level, !!CREATURES[e.type].elite) });
+export const creatureInfo = (e) => ({ ...CREATURES[e.type], level: e.level, power: typePower(e.type, e.level) });
+
+// ---- stage 19: Rift Behemoths (rally-only world bosses). One per RALLY level on the map at a time.
+export const isBoss = (e) => e?.kind === 'creature' && !!CREATURES[e.type]?.rallyOnly;
+export function spawnBehemoth(world, level) {
+  const rng = nextRng(world, 'boss');
+  for (let tries = 0; tries < 800; tries++) {
+    let x, y;
+    if (level > WORLD.maxLevel) { // Lv 25: only right outside the Citadel dome
+      const a = rng() * Math.PI * 2, r = WORLD.citadelRadius + 2.5 + rng() * 4;
+      x = Math.round(CENTER.x + Math.cos(a) * r); y = Math.round(CENTER.y + Math.sin(a) * r);
+    } else { x = 2 + Math.floor(rng() * (WORLD.size - 4)); y = 2 + Math.floor(rng() * (WORLD.size - 4)); }
+    if (!freeSpot(world, x, y, WORLD.minSpacing + 0.8)) continue;
+    if (level <= WORLD.maxLevel && Math.abs(gradientLevel(dist({ x, y }, CENTER)) - level) > 1.5) continue;
+    const e = { id: `c${world.nextId++}`, kind: 'creature', owner: 'npc', x, y, level, type: 'behemoth', busy: null, expires: world.clock + RALLY.lifetime };
+    world.entities.push(e);
+    return e;
+  }
+  return null;
+}
+// Any Behemoth level missing (and past its respawn time) gets a fresh one. Returns the spawned entities.
+export function ensureBehemoths(world) {
+  const out = [];
+  world.bossAt = world.bossAt ?? {};
+  for (const L of RALLY.levels) {
+    if (world.entities.some((e) => e.type === 'behemoth' && e.level === L)) continue;
+    if ((world.bossAt[L] ?? 0) > world.clock) continue;
+    const e = spawnBehemoth(world, L);
+    if (e) { out.push(e); delete world.bossAt[L]; } else world.bossAt[L] = world.clock + 30;
+  }
+  return out;
+}
 
 // Validates + repairs a loaded world. Returns null if it's unusable (caller regenerates).
 export function sanitizeWorld(w) {
@@ -156,12 +188,13 @@ export function sanitizeWorld(w) {
   const n = (v, d) => (Number.isFinite(v) ? v : d);
   const out = {
     seed: n(w.seed, 1) >>> 0, rngCursor: Math.max(0, Math.floor(n(w.rngCursor, 0))), nextId: Math.max(1, Math.floor(n(w.nextId, 1))), clock: Math.max(0, n(w.clock, 0)),
-    entities: [], respawns: [], marches: [],
+    entities: [], respawns: [], marches: [], rallies: [], bossAt: {},
   };
+  for (const L of RALLY.levels) if (Number.isFinite(w.bossAt?.[L])) out.bossAt[L] = w.bossAt[L];
   const ids = new Set();
   for (const e of w.entities) {
     if (!e || ids.has(e.id)) continue;
-    if (e.kind === 'creature' && CREATURES[e.type] && e.level >= 1 && e.level <= WORLD.maxLevel) {
+    if (e.kind === 'creature' && CREATURES[e.type] && (CREATURES[e.type].rallyOnly ? RALLY.levels.includes(e.level) : e.level >= 1 && e.level <= WORLD.maxLevel)) {
       out.entities.push({ id: String(e.id), kind: 'creature', owner: 'npc', x: n(e.x, 0), y: n(e.y, 0), level: Math.floor(e.level), type: e.type, busy: null, expires: n(e.expires, out.clock + WORLD.lifetime[0]) });
       ids.add(e.id);
     } else if (e.kind === 'base') {
@@ -187,15 +220,22 @@ export function sanitizeWorld(w) {
   if (!out.entities.some((e) => e.bot)) out.entities.push(...seedBotBases(out.seed));
   for (const r of Array.isArray(w.respawns) ? w.respawns : []) if (Number.isFinite(r?.at)) out.respawns.push({ at: r.at });
   for (const m of Array.isArray(w.marches) ? w.marches : []) {
-    if (!m || !['out', 'back', 'gather'].includes(m.phase) || !m.army || !Array.isArray(m.army.lines)) continue;
+    if (!m || !['out', 'back', 'gather', 'rally'].includes(m.phase) || !m.army || !Array.isArray(m.army.lines)) continue;
     const t = out.entities.find((e) => e.id === m.targetId);
     if ((m.phase === 'out' || m.phase === 'gather') && !t) { m.phase = 'back'; m.t = 0; } // target vanished: just come home
-    if (t && (m.phase === 'out' || m.phase === 'gather')) t.busy = m.id;
+    if (m.phase === 'rally' && !(t && Array.isArray(w.rallies) && w.rallies.some((r) => r?.marchId === m.id))) continue; // orphaned rally: drop (squad is home)
+    if (t && (m.phase === 'out' || m.phase === 'gather' || m.phase === 'rally')) t.busy = m.id;
     const g = m.gather ? { gather: { cap: Math.max(1, n(m.gather.cap, 1)), rate: Math.max(0, n(m.gather.rate, 0)), load: Math.max(0, n(m.gather.load, 0)), level: Math.max(1, Math.floor(n(m.gather.level, 1))) } } : {};
     out.marches.push({ ...m, ...g, t: Math.max(0, n(m.t, 0)), travel: Math.max(0.1, n(m.travel, 5)), back: Math.max(0.1, n(m.back, n(m.travel, 5))) });
   }
+  for (const r of Array.isArray(w.rallies) ? w.rallies : []) {
+    const m = out.marches.find((x) => x.id === r?.marchId);
+    if (!m || !Array.isArray(r.members) || !Number.isFinite(r.launchAt)) continue;
+    out.rallies.push({ ...r, members: r.members.filter((x) => x && Array.isArray(x.army?.lines)), plan: Array.isArray(r.plan) ? r.plan : [] });
+  }
+  if (!out.entities.some((e) => e.type === 'behemoth')) ensureBehemoths(out);
   // top up anything that went missing (e.g. a creature lost to a bad save)
-  for (let k = out.entities.filter((e) => e.kind === 'creature').length + out.respawns.length; k < WORLD.creatures; k++) spawnCreature(out);
+  for (let k = out.entities.filter((e) => e.kind === 'creature' && !isBoss(e)).length + out.respawns.length; k < WORLD.creatures; k++) spawnCreature(out);
   if (!out.entities.some((e) => e.kind === 'node')) seedNodes(out);
   return out;
 }

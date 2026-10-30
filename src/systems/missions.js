@@ -7,7 +7,7 @@ import { MISSIONS, STAMINA, TUTORIAL } from '../config.js';
 export const defaultMissions = () => ({ day: null, progress: {}, claimed: [], chests: [] });
 
 // Which mission an action feeds (kind -> task id). 'kill' may also feed 'push' (see track()).
-const FEEDS = { daily: 'daily', kill: 'kills', train: 'train', upgradeStart: 'build', researchStart: 'research', shardUp: 'research', heal: 'heal' };
+const FEEDS = { daily: 'daily', kill: 'kills', train: 'train', upgradeStart: 'build', researchStart: 'research', shardUp: 'research', heal: 'heal', rally: 'rally' };
 
 export function sanitizeMissions(raw) {
   const d = defaultMissions();

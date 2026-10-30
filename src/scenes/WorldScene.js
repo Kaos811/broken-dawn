@@ -234,16 +234,21 @@ export default class WorldScene extends Phaser.Scene {
       let s = this.crSprites.get(e.id);
       const p = tileToWorld(e.x, e.y);
       if (!s) {
-        const elite = !!CREATURES[e.type].elite;
+        const elite = !!CREATURES[e.type].elite, boss = !!CREATURES[e.type].rallyOnly;
         const lf = LAIR_OF[e.type] ?? 'lair-crater';
         const lair = this.add.image(p.x, p.y + 4, 'wmap', lf).setOrigin(0.5, 0.6).setDepth(0.9);
-        lair.setScale(LAIR_W[lf] / lair.width);
-        const img = this.add.image(p.x, p.y - 14, `cr-${e.type}`).setScale(elite ? 0.8 : 0.6).setDepth(10 + p.y / SIZE);
+        lair.setScale((LAIR_W[lf] ?? 160) * (boss ? 1.6 : 1) / lair.width);
+        const img = this.add.image(p.x, p.y - (boss ? 34 : 14), `cr-${e.type}`).setScale(boss ? 1.25 : elite ? 0.8 : 0.6).setDepth(10 + p.y / SIZE);
+        if (boss) img.setData('boss', true);
         const badge = this.plaque(p.x, p.y + 30, '', { size: 22, depth: 11, min: 0.33 });
         const lock = this.add.text(p.x + 30, p.y - 54, '', { fontSize: '1px' }).setVisible(false); // lock shown in the plaque
         s = { img, badge, lock, lair, e };
         this.crSprites.set(e.id, s);
-        if (!force) { img.setAlpha(0).setScale(0.2); this.tweens.add({ targets: img, alpha: 1, scale: elite ? 0.8 : 0.6, duration: 500, ease: 'Back.easeOut' }); }
+        if (!force) { img.setAlpha(0).setScale(0.2); this.tweens.add({ targets: img, alpha: 1, scale: boss ? 1.25 : elite ? 0.8 : 0.6, duration: 500, ease: 'Back.easeOut' }); }
+      }
+      if (CREATURES[e.type].rallyOnly) { // stage 19: world boss: never "locked", rallied -> crossed swords
+        s.badge.setText(`${e.busy ? '⚔ ' : ''}BEHEMOTH Lv ${e.level}`).setColor('#7ff5e2');
+        continue;
       }
       const locked = e.level > maxL;
       s.badge.setText(`${locked ? '🔒 ' : e.busy ? '⚔ ' : ''}Lv ${e.level}`).setColor(locked ? '#9aa6b8' : (CREATURES[e.type].elite ? '#ffb347' : '#ffffff'));
@@ -280,11 +285,42 @@ export default class WorldScene extends Phaser.Scene {
     for (const [id, s] of this.nodeSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); this.nodeSprites.delete(id); if (this.selected === id) this.select(null); }
   }
 
+  // Stage 19: rally FX: banner over your base, dotted lines from allies' bases, emblem on the Behemoth.
+  drawRally(g) {
+    const r = store.myRally();
+    const fx = this.rallyFx ?? (this.rallyFx = {});
+    const on = !!r && r.phase === 'gather';
+    if (!on) { if (fx.banner) { fx.banner.destroy(); fx.emblem.destroy(); this.rallyFx = {}; } return; }
+    const home = tileToWorld(store.basePos().x, store.basePos().y), tgt = store.world.get(r.targetId);
+    if (!fx.banner) {
+      fx.banner = this.add.image(home.x + 54, home.y - 70, 'rally-banner').setScale(0.42).setDepth(30);
+      this.tweens.add({ targets: fx.banner, angle: { from: -4, to: 4 }, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      fx.emblem = this.add.image(0, 0, 'rally-emblem').setScale(0.5).setDepth(30);
+      this.tweens.add({ targets: fx.emblem, scale: 0.6, duration: 700, yoyo: true, repeat: -1 });
+    }
+    fx.banner.setPosition(home.x + 54, home.y - 70);
+    if (tgt) { const tp = tileToWorld(tgt.x, tgt.y); fx.emblem.setPosition(tp.x, tp.y - 150).setVisible(true); } else fx.emblem.setVisible(false);
+    const now = store.world.w.clock, off = (this.time.now / 30) % 24;
+    for (const p of r.plan) {
+      const b = store.world.get(p.botId);
+      if (!b) continue;
+      const a = tileToWorld(b.x, b.y);
+      const done = p.joined, k = done ? 1 : Math.max(0, Math.min(1, (now - r.start) / Math.max(1, p.at - r.start)));
+      const len = Math.hypot(home.x - a.x, home.y - a.y), n = Math.floor(len / 24);
+      g.fillStyle(done ? 0x2fe0c8 : 0xcfd8e3, done ? 0.9 : 0.55);
+      for (let i = 0; i < n; i++) { const t = (i * 24 + off) / len; if (t > 1) break; g.fillCircle(a.x + (home.x - a.x) * t, a.y + (home.y - a.y) * t, 4); }
+      if (!done) { g.fillStyle(0xffffff, 1).fillCircle(a.x + (home.x - a.x) * k, a.y + (home.y - a.y) * k, 9); g.lineStyle(3, 0x2fe0c8, 1).strokeCircle(a.x + (home.x - a.x) * k, a.y + (home.y - a.y) * k, 12); }
+    }
+    if (tgt) { const tp = tileToWorld(tgt.x, tgt.y); g.lineStyle(3, 0x2fe0c8, 0.35).lineBetween(home.x, home.y, tp.x, tp.y); }
+  }
+
   drawMarches() {
     const g = this.marchG; g.clear();
     const live = new Set();
+    this.drawRally(g);
     for (const m of store.world.marches(LOCAL_OWNER)) {
       live.add(m.id);
+      if (m.phase === 'rally') continue; // waiting at home: drawn by drawRally
       const a = tileToWorld(m.from.x, m.from.y), b = tileToWorld(m.to.x, m.to.y);
       const k = m.phase === 'gather' ? 1 : m.phase === 'out' ? Math.min(1, m.t / m.travel) : Math.max(0, 1 - m.t / m.back) * (m.recalled ? Math.min(1, m.back / m.travel) : 1);
       const x = a.x + (b.x - a.x) * k, y = a.y + (b.y - a.y) * k;
@@ -294,6 +330,8 @@ export default class WorldScene extends Phaser.Scene {
         if (s) { s.img.setVisible(false); s.label.hiddenByGame = true; s.label.setVisible(false); }
         continue;
       }
+      const rl = !!m.meta?.rally;
+      if (rl) g.lineStyle(22, 0x2fe0c8, 0.22).lineBetween(a.x, a.y, b.x, b.y).lineStyle(10, 0x2fe0c8, 0.5).lineBetween(a.x, a.y, b.x, b.y); // stage 19: thick rally line
       g.lineStyle(8, col, 0.12).lineBetween(a.x, a.y, b.x, b.y);
       // dashed path
       const len = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(1, Math.floor(len / 28)), off = (this.time.now / 40) % 28;
@@ -311,7 +349,8 @@ export default class WorldScene extends Phaser.Scene {
       const left = m.phase === 'out' ? m.travel - m.t : m.back - m.t;
       if (s.label.hiddenByGame) { s.label.hiddenByGame = false; this.fitLabel({ t: s.label, min: 0 }); s.img.setVisible(true); }
       s.img.setPosition(x, y).setTint(m.phase === 'out' ? 0xffffff : 0xffd27f);
-      s.label.setPosition(x, y - 30).setText(`${SQUADS[m.squadId].name} ${m.phase === 'out' ? '→' : '↩'} ${Math.ceil(Math.max(0, left))}s`).setColor(m.phase === 'out' ? '#3ff0ff' : PALETTE.textGold);
+      if (rl) s.img.setScale(1.5);
+      s.label.setPosition(x, y - 30).setText(`${rl ? 'Rally' : SQUADS[m.squadId].name} ${m.phase === 'out' ? '→' : '↩'} ${Math.ceil(Math.max(0, left))}s`).setColor(m.phase === 'out' ? '#3ff0ff' : PALETTE.textGold);
     }
     for (const [id, s] of this.marchSprites) if (!live.has(id)) { s.img.destroy(); s.label.destroy(); this.marchSprites.delete(id); }
   }

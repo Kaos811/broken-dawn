@@ -402,7 +402,7 @@ export const ECONOMY = {
 
 // The key keeps its stage-1 name so existing saves load; the version inside is migrated.
 export const SAVE_KEY = 'brokenDawn.save.v1';
-export const SAVE_VERSION = 16; // v16: zoneless world, gradient levels, teleport (stage 18); v15: Alloy gathering nodes (stage 16); v14: chapter goals + crew help (stage 14); v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
+export const SAVE_VERSION = 17; // v17: Rift Behemoth rallies (stage 19); v16: zoneless world, gradient levels, teleport (stage 18); v15: Alloy gathering nodes (stage 16); v14: chapter goals + crew help (stage 14); v13: new-player onboarding (stage 13); v12: painted world map, Citadel at the centre (world regenerated); v11: speed-up items (stage 10); v10: daily missions + events (stage 8); v9: painted Base (bigger map, buildings hidden until unlocked); v8: sound + tutorial; v7: research + troop tiers; v3: parallel training lanes; v4: Beacon Cores, rewards, gear levels; v5: building upgrade timers; v6: World hunts + Infirmary
 
 // ---------------------------------------------------------------- STAGE 3 --
 
@@ -559,9 +559,48 @@ export const CREATURES = {
     unit: { hp: 900, atk: 40, def: 18 }, targets: 'front', tags: ['elite'], brood: 'scuttler', broodShare: 0.4,
     desc: 'Elite. A great serpent of the dusk with a brood of Scuttlers. Appears at every 5th level and pays double first-kill Cores.',
   },
+  // Stage 19: rally-only world boss. Too big to fight alone: start a rally and allies join.
+  behemoth: {
+    id: 'behemoth', calib: 0.84, name: 'Rift Behemoth', short: 'Behemoth', color: 0x2fe0c8, hex: '#6ff5e2', elite: true, boss: true, rallyOnly: true,
+    unit: { hp: 2400, atk: 90, def: 30 }, targets: 'front', tags: ['elite', 'boss'], brood: 'hound', broodShare: 0.35,
+    desc: 'World boss. Too big to fight alone: start a rally and allies will join.',
+  },
 };
 export const CREATURE_IDS = Object.keys(CREATURES);
 export const NORMAL_CREATURES = ['scuttler', 'drone', 'hound', 'golem'];
+// Combat Power of any creature type at a level (rally bosses are RALLY.bossMult x an elite).
+export const typePower = (type, level) => Math.round(creaturePower(level, !!CREATURES[type]?.elite) * (CREATURES[type]?.rallyOnly ? RALLY.bossMult : 1));
+
+// Stage 19 (after The Ants' lizard rallies): Rift Behemoth rallies. See docs/stage19-plan.md.
+export const RALLY = {
+  levels: [5, 10, 15, 20, 25],      // one Behemoth per level on the map at a time; Lv 25 only near the Citadel
+  bossMult: 2.0,
+  oddsMargin: 1.25,                 // one huge boss unit out-trades its Power figure: rally odds read Power / this                    // boss Power = elite creature Power x this (tuned: ~70% win at best solo level +2, 10 min rally)
+  lifetime: 7200,                   // a Behemoth wanders off after 2 h
+  respawn: 600,                     // ...and a new one of that level appears 10 min after a kill / despawn
+  timers: [60, 300, 600],           // rally timer choices (s); default 5 min
+  defaultTimer: 300,
+  testScale: 30,                    // __BD_TEST.fast: timers / 30 (10 min -> 20 s)
+  stamina: 20,                      // per rally started (refunded on cancel)
+  perDay: 5,                        // rallies you can start a day
+  slots: 4,                         // ally join slots (+ you = 5)
+  joinAt: [0.15, 0.4, 0.65, 0.85],  // when allies join (fraction of the timer)
+  allies: { 60: 2, 300: 3, 600: 4 },// bot allies that join for each timer
+  allyPower: [0.55, 0.85],          // each bot ally = 55-85% of your squad's Power (seeded per bot)
+  warden: { power: 0.6, before: 3, minAllies: 2 }, // Rift Warden NPC joins at T-3 s if fewer than 2 allies did
+  rewardMult: 2.5,                  // leader's kill rewards = hunt rewards x 2.5
+  firstKillCores: 3,                // first rally kill per Behemoth level (15 total)
+  joinerShare: 0.6,                 // (future) joiner rewards = 60% of the leader's
+  dailyFirst: { energy: 1500, su_m15: 1 }, // bonus chest for the first rally kill each day
+  trophies: [
+    { id: 'bronze', name: 'Bronze Trophy', level: 5, rolls: [[{ su_m15: 2 }, 3], [{ energy: 3000 }, 2], [{ alloy: 300 }, 2]] },
+    { id: 'silver', name: 'Silver Trophy', level: 10, rolls: [[{ su_h1: 1 }, 3], [{ energy: 6000 }, 2], [{ shards: 120 }, 2]] },
+    { id: 'gold', name: 'Gold Trophy', level: 15, rolls: [[{ su_h1: 2 }, 4], [{ alloy: 1000 }, 2], [{ shards: 200 }, 2]] },
+    { id: 'rift', name: 'Rift Trophy', level: 20, rolls: [[{ su_h3: 1 }, 5], [{ su_h1: 3 }, 3], [{ shards: 400 }, 2]] },
+    { id: 'dawn', name: 'Dawn Trophy', level: 25, rolls: [[{ su_h8: 1 }, 5], [{ su_h3: 2 }, 3], [{ cores: 1, shards: 500 }, 2]] },
+  ],
+  hint: 'Too big to fight alone. Start a rally and allies will join.',
+};
 
 // Battle tuning (see src/world/battle.js).
 export const BATTLE = {
@@ -649,6 +688,7 @@ export const MISSIONS = {
     { id: 'research', name: 'Start a research', alt: 'Raise a leader star or gear level', goal: 1, pts: 15 },
     { id: 'heal', name: 'Heal 10 wounded troops', goal: 10, pts: 15 },
     { id: 'push', name: 'Win a hunt at top level (or 1 below)', goal: 1, pts: 20 },
+    { id: 'rally', name: 'Join or lead 1 rally', goal: 1, pts: 20 }, // stage 19
   ],
   // Activity chests. L = Beacon level. Only the 100-point chest pays a Beacon Core (1 a day).
   chests: [

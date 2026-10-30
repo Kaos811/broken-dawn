@@ -8,7 +8,11 @@ import crDrone from '../art/world/creatures/cr-drone.webp';
 import crHound from '../art/world/creatures/cr-hound.webp';
 import crGolem from '../art/world/creatures/cr-golem.webp';
 import crWyrm from '../art/world/creatures/cr-wyrm.webp';
-const CR_ART = { scuttler: crScuttler, drone: crDrone, hound: crHound, golem: crGolem, wyrm: crWyrm };
+import crBehemoth from '../art/world/creatures/cr-behemoth.webp';
+const CR_ART = { scuttler: crScuttler, drone: crDrone, hound: crHound, golem: crGolem, wyrm: crWyrm, behemoth: crBehemoth };
+// stage 19: rally art (banner on a rallying base, crossed-swords emblem, 5 trophies: bronze..dawn)
+const RALLY_ART = import.meta.glob('../art/rally/*.webp', { eager: true, import: 'default' });
+const TROPHY_IDS = ['bronze', 'silver', 'gold', 'rift', 'dawn'];
 import Phaser from 'phaser';
 import { PALETTE, MAP } from '../config.js';
 import { makePortraitTextures } from '../art/portraits.js';
@@ -79,6 +83,10 @@ export default class BootScene extends Phaser.Scene {
     this.load.atlas('wmap', worldAtlasPng, worldAtlasJson);
     this.load.image('wmap-ground', worldGround);
     for (const [path, url] of Object.entries(OB_ART)) this.load.image(`ob-${path.split('/').pop().replace('.webp', '')}`, url);
+    for (const [path, url] of Object.entries(RALLY_ART)) {
+      const n = path.split('/').pop().replace('.webp', ''), m = /^trophy-(\d)$/.exec(n);
+      this.load.image(m ? `trophy-${TROPHY_IDS[m[1] - 1]}` : n, url);
+    }
     for (const [id, url] of Object.entries(CR_ART)) this.load.image(`cr-${id}`, url); // painted map monsters (256x256)
   }
 
