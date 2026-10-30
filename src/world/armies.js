@@ -1,5 +1,5 @@
 // Builds plain-data armies for the battle resolver. Pure functions of plain state.
-import { CREATURES, TROOP_CLASSES, LEADERS, GEAR, GACHA, UPGRADES, BATTLE, SQUADS, creaturePower } from '../config.js';
+import { CREATURES, TROOP_CLASSES, LEADERS, GEAR, GACHA, UPGRADES, BATTLE, SQUADS, typePower } from '../config.js';
 import { lineValue } from './battle.js';
 import { researchMods } from '../systems/research.js';
 
@@ -23,7 +23,7 @@ function creatureLine(typeId, level, share, target, { boss = false } = {}) {
 // A creature's army. Elites (Dusk Wyrm) = 1 boss unit + a Scuttler brood in front.
 export function creatureArmy(typeId, level) {
   const T = CREATURES[typeId];
-  const P = creaturePower(level, !!T.elite);
+  const P = typePower(typeId, level);
   if (T.elite) {
     const brood = creatureLine(T.brood, level, T.broodShare, P);
     const boss = creatureLine(typeId, level, 1 - T.broodShare, P, { boss: true });
@@ -66,4 +66,9 @@ export function squadArmy(state, squadId) {
     return out;
   });
   return { name: `${squadId[0].toUpperCase()}${squadId.slice(1)} Squad`, owner: 'local', kind: 'squad', squadId, lines };
+}
+
+// Stage 19: scale an army's line counts (a bot ally mirrors the leader's formation at some % of its Power).
+export function scaleArmy(army, f, extra = {}) {
+  return { ...army, ...extra, lines: army.lines.map((l) => ({ ...l, count: l.count > 0 ? Math.max(1, Math.round(l.count * f)) : 0 })) };
 }

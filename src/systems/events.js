@@ -31,6 +31,7 @@ export function eventScore(type, kind, n, meta) {
     if (kind === 'researchDone') return 80 * (meta.level ?? 1);
     if (kind === 'train') return 2 * (meta.tier ?? 1) * n;
   }
+  if (type === 'riftHunt' && kind === 'rallyKill') return 60 * (meta.level ?? 1); // stage 19
   if (type === 'riftHunt' && kind === 'kill') return 10 * (meta.level ?? 1) * (meta.elite ? 2 : 1);
   return 0;
 }

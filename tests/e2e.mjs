@@ -3220,7 +3220,7 @@ async function runStage8(url, label, takeShots) {
     // ---------------------------------------------------------------- A. Daily Missions
     const m0 = await ev(() => { const st = __BD.store, s = st.state; return { v: s.version, day: s.missions.day, today: st.dayIndex(), tasks: st.missionList().map((t) => [t.id, t.goal, t.pts]), chests: st.missionChests().map((c) => `${c.at}:${c.tier}`), vis: __BD.ui().rightBtns.missions.visible, done: s.tutorial.done }; });
     check('new game: save v13 with today\'s missions (local day)', m0.v === 16 && m0.day === m0.today, JSON.stringify(m0));
-    check('7 daily tasks worth 110 points in total', m0.tasks.length === 7 && m0.tasks.reduce((a, t) => a + t[2], 0) === 110, JSON.stringify(m0.tasks));
+    check('8 daily tasks worth 130 points in total', m0.tasks.length === 8 && m0.tasks.reduce((a, t) => a + t[2], 0) === 130, JSON.stringify(m0.tasks));
     check('activity chests at 20/40/60/80/100: bronze, bronze, silver, silver, gold', m0.chests.join(',') === '20:bronze,40:bronze,60:silver,80:silver,100:gold', m0.chests.join(','));
     check('Missions stay hidden until the tutorial is done', !m0.vis && !m0.done, JSON.stringify({ vis: m0.vis, done: m0.done }));
     await ev(() => __BD.store.skipTutorial()); await sleep(400);

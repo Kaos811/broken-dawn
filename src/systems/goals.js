@@ -23,6 +23,8 @@ export const GOALS = [
   { text: 'Raise the Beacon to Lv 4', goal: 4, cur: (s) => s.beacon.level, go: 'beacon', reward: { energy: 1200, alloy: 120, su_h1: 1 } },
   { text: 'Finish a research level', goal: 1, cur: researched, go: 'archive', reward: { energy: 1000, su_m15: 2 } },
   { ...L('commandCenter', 5, 'Command Center'), reward: { energy: 1500, alloy: 150 } },
+  // stage 19: lead or join a rally that kills a Rift Behemoth (RALLY_GOAL_INDEX below must match this slot)
+  { text: 'Rally the Rift: defeat a Behemoth', goal: 1, cur: (s) => s.rally?.total ?? 0, go: 'world', reward: { cores: 1, energy: 2000, su_h1: 1 } },
   { text: 'Have 100 troops', goal: 100, cur: troops, go: 'troops', reward: { energy: 1500, su_h1: 1 } },
   { text: 'Defeat 40 creatures', goal: 40, cur: (s) => s.hunt.kills, go: 'world', reward: { stamina: 30, shards: 80 } },
   { text: 'Raise the Beacon to Lv 5', goal: 5, cur: (s) => s.beacon.level, go: 'beacon', reward: { energy: 2500, alloy: 250, su_h1: 1 } },
@@ -31,6 +33,7 @@ export const GOALS = [
 ];
 
 export const GATHER_GOAL_INDEX = 4;
+export const RALLY_GOAL_INDEX = 11;
 export const defaultGoals = () => ({ i: 0 });
 export function sanitizeGoals(raw) { const i = Math.floor(Number(raw?.i)); return { i: Number.isFinite(i) ? Math.min(GOALS.length, Math.max(0, i)) : 0 }; }
 // v14 migration: skip goals an existing save has already met (no back-pay), stopping at the first open one

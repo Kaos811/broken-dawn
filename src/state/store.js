@@ -7,7 +7,7 @@ import {
   LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION, SPEEDUPS,
   INFIRMARY, CASUALTIES, STAMINA, WORLD, HUNT_REWARDS, CREATURES, creaturePower, MAP,
   CLASS_IDS, TIERS, MAX_TIER, PROMOTE, RESEARCH, RESEARCH_IDS, RESEARCH_TUNING, healBase, classOf, tierOf, nextTier,
-  AUDIO, TUTORIAL, TELEPORT, gatherCap, gatherRate,
+  AUDIO, TUTORIAL, TELEPORT, gatherCap, gatherRate, RALLY, typePower,
 } from '../config.js';
 import { researchMods, researchLevel, archiveUnlocked } from '../systems/research.js';
 import { isValidPlacement, nearestFree, BEACON_TILE } from '../systems/grid.js';
@@ -15,9 +15,9 @@ import { basePower, squadPower, squadSoldiers, troopPowerBreakdown } from '../sy
 import { LocalWorldService } from '../world/worldService.js';
 import { createWorld, sanitizeWorld, dist, marchSeconds, LOCAL_OWNER, BASE_ID } from '../world/worldState.js';
 import { squadArmy } from '../world/armies.js';
-import { combatPower, resolveBattle, odds } from '../world/battle.js';
+import { combatPower, resolveBattle, odds, hashSeed, mulberry32 as wrng } from '../world/battle.js';
 import { defaultMissions, sanitizeMissions, missionMethods } from '../systems/missions.js';
-import { defaultGoals, sanitizeGoals, fastForwardGoals, goalMethods, GATHER_GOAL_INDEX } from '../systems/goals.js';
+import { defaultGoals, sanitizeGoals, fastForwardGoals, goalMethods, GATHER_GOAL_INDEX, RALLY_GOAL_INDEX } from '../systems/goals.js';
 import { defaultEvents, sanitizeEvents, eventMethods } from '../systems/events.js';
 import { emptySpeedups, sanitizeSpeedups, speedupMethods } from '../systems/speedups.js';
 import { LocalEventService } from '../events/eventService.js';
@@ -34,6 +34,8 @@ const emptySquad = () => ({ level: 1, lines: emptyLines(), leader: null, armor: 
 const ORIGINS = [...TROOPS.squadIds, 'reserve'];
 const emptyWounded = () => Object.fromEntries(TROOP_IDS.map((t) => [t, Object.fromEntries(ORIGINS.map((o) => [o, 0]))]));
 const defaultSettings = () => ({ music: AUDIO.music, sfx: AUDIO.sfx, muted: AUDIO.muted, haptics: AUDIO.haptics });
+// stage 19: rallies vs Rift Behemoths (per-day count, trophies won, first kill per Behemoth level)
+const defaultRally = () => ({ day: null, today: 0, trophies: {}, firstKills: [], total: 0, led: 0, joined: 0 });
 const defaultHunt = () => ({ stamina: STAMINA.max, staminaCarry: 0, auto: false, bestKill: 0, firstKills: [], kills: 0, losses: 0, dead: 0, reports: [], reportSeq: 0, gathered: 0, trips: 0 });
 
 function defaultState() {
@@ -61,6 +63,7 @@ function defaultState() {
     claims: { beacon: [], milestones: [] },  // one-time Core rewards already claimed
     construction: [],       // running upgrades: [{ id, toLevel, cost, total, progress }] (progress in seconds)
     gacha: { sinceEpic: 0, sinceLegendary: 0, total: 0, history: [] },
+    rally: defaultRally(),
     hunt: defaultHunt(),                       // stage 3: player-side hunt progress (stamina, kills, reports)
     infirmary: { wounded: emptyWounded(), queue: [] }, // wounded[type][origin squad] + healing batches
     world: createWorld(),                      // stage 3: shared-world model (entities + marches), see worldService
@@ -270,6 +273,12 @@ export function migrate(raw) {
     }
     raw.version = 16;
   }
+  if (num(raw.version, 1) < 17) {
+    // v17 (stage 19): Rift Behemoths are seeded into the existing world by sanitizeWorld (no regen);
+    // rally state starts empty; the new 'Rally the Rift' goal slots in after CC 5 (no back-pay).
+    if (raw.goals && Number(raw.goals.i) >= RALLY_GOAL_INDEX) raw = { ...raw, goals: { ...raw.goals, i: Number(raw.goals.i) + 1 } };
+    raw.version = 17;
+  }
   return raw;
 }
 
@@ -419,6 +428,12 @@ function sanitize(raw) {
   // Stage 10
   s.items = sanitizeSpeedups(raw.items);
   s.firstUpgradeGift = raw.firstUpgradeGift === true;
+  // Stage 19
+  const ra = raw.rally ?? {};
+  const tids = RALLY.trophies.map((t) => t.id);
+  s.rally = { ...defaultRally(), day: Number.isFinite(ra.day) ? Math.floor(ra.day) : null, today: Math.min(99, int(ra.today)), total: int(ra.total), led: int(ra.led), joined: int(ra.joined),
+    firstKills: [...new Set((Array.isArray(ra.firstKills) ? ra.firstKills : []).filter((l) => RALLY.levels.includes(l)))],
+    trophies: Object.fromEntries(tids.map((id) => [id, int(ra.trophies?.[id])]).filter(([, n]) => n > 0)) };
   return s;
 }
 
@@ -1439,7 +1454,7 @@ class Store extends Emitter {
     }
     return best;
   }
-  creaturePowerOf(e) { return creaturePower(e.level, !!CREATURES[e.type]?.elite); }
+  creaturePowerOf(e) { return typePower(e.type, e.level); }
   firstKillCores(level) {
     if (this.state.hunt.firstKills.includes(level)) return 0;
     return level % 5 === 0 ? CORES.battle.firstKillElite : CORES.battle.firstKill;
@@ -1454,7 +1469,8 @@ class Store extends Emitter {
     const out = { can: false, reason: null, target: t, travel: 0, power: 0, enemy: 0 };
     if (!t) { out.reason = 'Target is gone'; return out; }
     out.enemy = this.creaturePowerOf(t);
-    if (!this.squadUnlocked(squadId)) out.reason = `Unlocks at Command Center Lv ${SQUADS[squadId].unlockCC}`;
+    if (CREATURES[t.type]?.rallyOnly) out.reason = 'Rally required: start a rally';
+    else if (!this.squadUnlocked(squadId)) out.reason = `Unlocks at Command Center Lv ${SQUADS[squadId].unlockCC}`;
     else if (this.squadMarch(squadId)) out.reason = `${SQUADS[squadId].name} is already out`;
     else if (this.squadSoldiers(squadId) + this.refillable(squadId) < 1) out.reason = `No healthy troops in ${SQUADS[squadId].name}`;
     else if (t.kind === 'creature' && t.level > this.maxAttackLevel()) out.reason = `Defeat a Lv ${t.level - 1} creature first`;
@@ -1539,6 +1555,7 @@ class Store extends Emitter {
   recall(squadId) {
     const m = this.squadMarch(squadId);
     if (!m) return { ok: false, reason: 'Not out' };
+    if (m.phase === 'rally') return this.cancelRally();
     const r = this.world.recallMarch(m.id);
     if (!r.ok) return r;
     this.state.hunt.stamina = Math.min(STAMINA.overCap, this.state.hunt.stamina + (m.meta?.stamina ?? 0)); // refund
@@ -1556,7 +1573,7 @@ class Store extends Emitter {
     sq.lines.forEach((l, i) => { l.count = saved[i]; });
     if (power <= 0) return null;
     const home = this.world.homeOf(LOCAL_OWNER), maxL = this.maxAttackLevel();
-    const ok = this.creatures().filter((e) => !e.busy && e.level <= maxL && power >= WORLD.autoMargin * this.creaturePowerOf(e));
+    const ok = this.creatures().filter((e) => !e.busy && !CREATURES[e.type]?.rallyOnly && e.level <= maxL && power >= WORLD.autoMargin * this.creaturePowerOf(e));
     ok.sort((a, b) => b.level - a.level || dist(a, home) - dist(b, home));
     return ok[0] ?? null;
   }
@@ -1576,6 +1593,9 @@ class Store extends Emitter {
     const events = this.world.tick(dt);
     for (const ev of events) {
       if (ev.type === 'battle') this.onBattle(ev);
+      else if (ev.type === 'rallyBattle') this.onRallyBattle(ev);
+      else if (ev.type === 'rallyCancel') this.onRallyCancel(ev);
+      else if ((ev.type === 'rallyJoin' || ev.type === 'rallyLaunch') && !this.simulating) this.emit(ev.type, ev);
       else if (ev.type === 'home' && ev.march.gather) this.onGatherHome(ev.march);
       else if (ev.type === 'home' && !this.simulating) this.emit('marchHome', ev.march);
     }
@@ -1663,6 +1683,122 @@ class Store extends Emitter {
       acc.dead += casualties.deadTotal ?? 0; acc.wounded += casualties.woundedTotal ?? 0;
     }
     if (!this.simulating) this.emit('hunt', report, { before, after: this.power.total });
+    return report;
+  }
+  // ---- Rallies (stage 19) ------------------------------------------------------------------------
+  rallyDayRoll() { const d = this.dayIndex(), r = this.state.rally; if (r.day !== d) { r.day = d; r.today = 0; } return r; }
+  ralliesLeft() { return Math.max(0, RALLY.perDay - this.rallyDayRoll().today); }
+  myRally() { return this.world.rallyFor(LOCAL_OWNER); }
+  rallyDuration(timer) { return globalThis.__BD_TEST?.fast ? timer / RALLY.testScale : timer; }
+  rallyInfo(squadId, targetId, timer = RALLY.defaultTimer) {
+    const t = this.world.get(targetId);
+    const out = { can: false, reason: null, target: t, travel: 0, power: 0, enemy: 0, allies: RALLY.allies[timer] ?? 0, timer, left: this.ralliesLeft() };
+    if (!t) { out.reason = 'Target is gone'; return out; }
+    out.enemy = this.creaturePowerOf(t);
+    if (!CREATURES[t.type]?.rallyOnly) out.reason = 'Only world bosses need a rally';
+    else if (!RALLY.timers.includes(timer)) out.reason = 'Pick a rally timer';
+    else if (!this.squadUnlocked(squadId)) out.reason = `Unlocks at Command Center Lv ${SQUADS[squadId].unlockCC}`;
+    else if (this.squadMarch(squadId)) out.reason = `${SQUADS[squadId].name} is already out`;
+    else if (this.squadSoldiers(squadId) + this.refillable(squadId) < 1) out.reason = `No healthy troops in ${SQUADS[squadId].name}`;
+    else if (this.myRally()) out.reason = 'You are already leading a rally';
+    else if (out.left < 1) out.reason = `Daily rally limit reached (${RALLY.perDay})`;
+    else if (this.state.hunt.stamina < RALLY.stamina) out.reason = `Need ${RALLY.stamina} stamina`;
+    const speed = this.mods.march;
+    const c = this.world.canRally({ owner: LOCAL_OWNER, squadId, targetId, speed });
+    if (!out.reason && !c.ok) out.reason = c.reason;
+    out.travel = c.travel ?? marchSeconds(dist(t, this.basePos())) / speed;
+    const sq = this.state.squads[squadId];
+    const saved = sq.lines.map((l) => l.count);
+    if (!this.squadMarch(squadId)) for (const l of sq.lines) if (l.type && l.full > l.count) l.count += Math.min(l.full - l.count, this.readyCount(l.type));
+    out.power = this.squadCombatPower(squadId);
+    sq.lines.forEach((l, i) => { l.count = saved[i]; });
+    // expected rally Power: you + the allies a timer this long usually gathers (avg ally strength)
+    const avg = (RALLY.allyPower[0] + RALLY.allyPower[1]) / 2;
+    out.expected = Math.round(out.power * (1 + Math.max(out.allies * avg, RALLY.warden.power)));
+    out.odds = odds(out.expected, out.enemy);
+    out.can = !out.reason;
+    return out;
+  }
+  startRally(squadId, targetId, timer = RALLY.defaultTimer) {
+    const info = this.rallyInfo(squadId, targetId, timer);
+    if (!info.can) return { ok: false, reason: info.reason };
+    this.refillSquad(squadId, { silent: true });
+    const army = squadArmy(this.state, squadId);
+    const r = this.world.startRally({ owner: LOCAL_OWNER, squadId, army, targetId, duration: this.rallyDuration(timer), timer, speed: this.mods.march, name: 'You',
+      meta: { power: info.power, enemy: info.enemy, stamina: RALLY.stamina } });
+    if (!r.ok) return r;
+    this.state.hunt.stamina -= RALLY.stamina;
+    const ra = this.rallyDayRoll(); ra.today++; ra.led++;
+    this.track('rally', 1, { level: info.target.level });
+    if (!this.simulating) { this.save(); this.emit('rallyStart', r.rally); this.emit('change'); }
+    return { ok: true, rally: r.rally, march: r.march };
+  }
+  launchRallyNow() {
+    const r = this.myRally();
+    if (!r) return { ok: false, reason: 'No rally' };
+    if (r.members.length < 2) return { ok: false, reason: 'Wait for at least one ally' };
+    const out = this.world.launchRally(r.id);
+    if (out.ok && !this.simulating) { this.save(); this.emit('rallyLaunch', out); this.emit('change'); }
+    return out;
+  }
+  cancelRally() {
+    const r = this.myRally();
+    if (!r) return { ok: false, reason: 'No rally' };
+    const m = this.world.w.marches.find((x) => x.id === r.marchId);
+    const out = this.world.cancelRally(r.id);
+    if (!out.ok) return out;
+    this.state.hunt.stamina = Math.min(STAMINA.overCap, this.state.hunt.stamina + (m?.meta?.stamina ?? RALLY.stamina));
+    const ra = this.rallyDayRoll(); ra.today = Math.max(0, ra.today - 1); // a cancelled rally does not use up a daily slot
+    this.save(); this.emit('change');
+    return { ok: true };
+  }
+  onRallyCancel({ rally }) {
+    if (!rally || rally.owner !== LOCAL_OWNER) return;
+    this.state.hunt.stamina = Math.min(STAMINA.overCap, this.state.hunt.stamina + RALLY.stamina);
+    if (!this.simulating) this.emit('rallyCancel', rally);
+  }
+  rallyRewards(e) {
+    const m = RALLY.rewardMult * this.mods.loot;
+    return { energy: Math.round(HUNT_REWARDS.energy(e.level) * m), alloy: Math.round(HUNT_REWARDS.alloy(e.level) * m), shards: Math.round(HUNT_REWARDS.shards(e.level) * m) };
+  }
+  trophyFor(level) { return RALLY.trophies.find((t) => t.level === level) ?? RALLY.trophies[0]; }
+  rollTrophy(level, seed) {
+    const T = this.trophyFor(level), tot = T.rolls.reduce((n, [, w]) => n + w, 0);
+    let x = wrng(seed)() * tot;
+    for (const [b, w] of T.rolls) { if ((x -= w) < 0) return { id: T.id, name: T.name, bundle: b }; }
+    return { id: T.id, name: T.name, bundle: T.rolls[0][0] };
+  }
+  onRallyBattle({ rally, march, target, defender, result, shares }) {
+    const h = this.state.hunt, ra = this.state.rally;
+    const win = result.winner === 'attacker';
+    const before = this.power.total;
+    const casualties = this.applyCasualties(march.squadId, march.army, result, win);
+    const loot = { energy: 0, alloy: 0, shards: 0, cores: 0 };
+    let firstKill = false, trophy = null, daily = null;
+    if (win) {
+      Object.assign(loot, this.rallyRewards(target));
+      this.state.resources.energy += loot.energy; this.state.resources.alloy += loot.alloy; this.state.resources.shards += loot.shards;
+      if (!ra.firstKills.includes(target.level)) { ra.firstKills.push(target.level); loot.cores = this.grantCores(RALLY.firstKillCores, 'battle'); firstKill = true; }
+      trophy = this.rollTrophy(target.level, hashSeed(this.world.w.seed, rally.id, target.id));
+      this.grantBundle(trophy.bundle, 'rally');
+      ra.trophies[trophy.id] = (ra.trophies[trophy.id] ?? 0) + 1;
+      if (ra.total === 0 || ra.lastWinDay !== this.dayIndex()) { daily = RALLY.dailyFirst; this.grantBundle(daily, 'rally'); ra.lastWinDay = this.dayIndex(); }
+      ra.total += 1;
+      h.kills += 1;
+      this.track('rallyKill', 1, { level: target.level });
+    } else h.losses += 1;
+    const contrib = rally.members.map((m, i) => ({ name: m.name, kind: m.kind, power: Math.round(m.power), share: Math.round((shares[i] ?? 0) * 100) }));
+    const report = {
+      id: `r${++h.reportSeq}`, at: Date.now(), squadId: march.squadId, win, seed: result.seed, rounds: result.rounds, rally: true,
+      target: { id: target.id, kind: target.kind, type: target.type, level: target.level, x: target.x, y: target.y },
+      power: { squad: march.meta?.power ?? combatPower(march.army), enemy: this.creaturePowerOf(target) },
+      attacker: march.army, defender, casualties, loot, firstKill, trophy, daily, contrib, auto: false, offline: this.simulating,
+    };
+    h.reports.unshift(report);
+    if (h.reports.length > WORLD.reportsKept) h.reports.length = WORLD.reportsKept;
+    const acc = this.simAcc;
+    if (acc) { acc.fights++; if (win) acc.wins++; for (const k of ['energy', 'alloy', 'shards', 'cores']) acc[k] += loot[k]; acc.dead += casualties.deadTotal ?? 0; acc.wounded += casualties.woundedTotal ?? 0; }
+    if (!this.simulating) { this.emit('hunt', report, { before, after: this.power.total }); this.emit('rallyDone', report); }
     return report;
   }
   // Re-runs the (deterministic) battle of a stored report for the replay.
