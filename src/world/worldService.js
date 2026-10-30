@@ -218,7 +218,7 @@ export class LocalWorldService {
         if (j.ok) events.push({ type: 'rallyJoin', rally: r, member: j.member });
       }
       const W = RALLY.warden;
-      if (!r.warden && w.clock >= r.launchAt - W.before && r.members.filter((x) => x.kind === 'bot').length < W.minAllies) {
+      if (!r.warden && w.clock >= r.launchAt - W.before * (r.duration / (r.timer || r.duration)) && r.members.filter((x) => x.kind === 'bot').length < W.minAllies) {
         r.warden = true;
         const j = this.joinRally(r.id, { id: 'warden', kind: 'npc', name: 'Rift Warden', color: 0x2fe0c8, from: null, army: scaleArmy(lead.army, W.power, { owner: 'npc', name: 'Rift Warden' }), frac: W.power });
         if (j.ok) events.push({ type: 'rallyJoin', rally: r, member: j.member });
