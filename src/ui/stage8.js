@@ -142,25 +142,26 @@ export function openMissions(ui) {
       c.add(text(ui, x0, ty + 50, `Tasks reset at local midnight. The 100-point chest holds 1 Beacon Core.`, 16, PALETTE.textDim));
       // tasks
       const list = store.missionList();
+      const P = list.length > 7 ? 80 : 92, H = P - 10; // stage 19: 8 tasks → tighter rows so Claim all stays clear of Close
       list.forEach((t, i) => {
-        const y = ty + 86 + i * 92, w = r.w - 56;
-        drawCard(g, x0, y, w, 82, { state: t.claimed ? 'done' : t.done ? 'ready' : 'normal', cut: 8 });
+        const y = ty + 86 + i * P, w = r.w - 56;
+        drawCard(g, x0, y, w, H, { state: t.claimed ? 'done' : t.done ? 'ready' : 'normal', cut: 8 });
         c.add(text(ui, x0 + 14, y + 8, `${t.claimed ? '✓ ' : ''}${t.name}`, 19, t.claimed ? PALETTE.textDim : PALETTE.text, { fontStyle: 'bold', wordWrap: { width: w - 220 } }));
-        const bw = 260, by = y + 56;
+        const bw = 260, by = y + H - 26;
         drawBar(g, x0 + 14, by, bw, 12, t.progress / t.goal, { color: t.done ? PALETTE.gold : SKIN.teal });
         c.add(text(ui, x0 + 24 + bw, by - 5, `${t.progress}/${t.goal}`, 16, PALETTE.textDim));
-        c.add(text(ui, xr - 196, y + 30, `+${t.pts}`, 20, PALETTE.textCyan ?? '#5ff3ff', { fontStyle: 'bold' }).setOrigin(0.5));
-        if (t.claimed) c.add(text(ui, xr - 74, y + 30, 'Claimed', 17, PALETTE.textDim).setOrigin(0.5));
+        c.add(text(ui, xr - 196, y + H / 2 - 11, `+${t.pts}`, 20, PALETTE.textCyan ?? '#5ff3ff', { fontStyle: 'bold' }).setOrigin(0.5));
+        if (t.claimed) c.add(text(ui, xr - 74, y + H / 2 - 11, 'Claimed', 17, PALETTE.textDim).setOrigin(0.5));
         else if (t.done) {
-          const b = button(ui, xr - 74, y + 41, 128, 50, 'Claim', () => { const res = store.claimMission(t.id); if (res.ok) audio.play('reward'); reopen(); }, { style: 'gold', size: 20 });
+          const b = button(ui, xr - 74, y + H / 2, 128, 50, 'Claim', () => { const res = store.claimMission(t.id); if (res.ok) audio.play('reward'); reopen(); }, { style: 'gold', size: 20 });
           b.chip = `mission-${t.id}`; c.add(b);
         } else {
-          const b = button(ui, xr - 74, y + 41, 128, 50, 'Go', () => goFor(ui, t.id), { style: 'ghost', size: 20 });
+          const b = button(ui, xr - 74, y + H / 2, 128, 50, 'Go', () => goFor(ui, t.id), { style: 'ghost', size: 20 });
           b.chip = `mission-go-${t.id}`; c.add(b);
         }
       });
       const n = store.missionsReady();
-      const yb = ty + 86 + list.length * 92 + 40;
+      const yb = ty + 86 + list.length * P + 36;
       const all = button(ui, r.x + r.w / 2, yb, 320, 62, n ? `Claim all (${n})` : 'Nothing to claim', () => {
         const res = store.claimAllMissions();
         if (res.ok) { audio.play('reward'); ui.toast(`+${res.pts} activity${Object.keys(res.reward).length ? `\n${fmtBundle(res.reward)}` : ''}`, 2400); }
