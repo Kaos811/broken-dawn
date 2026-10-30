@@ -2362,17 +2362,18 @@ async function runStage18(url, label, takeShots = true) {
         edge: st.canTeleport(1, 40).reason, edge2: st.canTeleport(84, 40).reason, cit: st.canTeleport(43, 47).reason, bot: st.canTeleport(bot.x, bot.y).reason, crt: st.canTeleport(cr.x, cr.y).reason,
         cost: [st.teleportCost('targeted'), st.teleportCost('random')],
       };
+      const F = (() => { for (let y = 55; y < 75; y++) for (let x = 12; x < 32; x++) if (st.canTeleport(x, y).ok) return { x, y }; return { x: 20, y: 60 }; })(); // a free spot (stage 19 Behemoths can sit on any fixed tile)
       // squads out
       const t = st.creatures().filter((e) => e.level === 1 && !e.busy)[0]; st.state.hunt.stamina = 100; st.attack('alpha', t.id);
-      r.out = st.canTeleport(20, 60).reason;
+      r.out = st.canTeleport(F.x, F.y).reason;
       st.recall('alpha'); for (let i = 0; i < 80 && st.squadMarch('alpha'); i++) st.tick(1);
       // tutorial: no teleport before the first hunt
       const k = st.state.hunt.kills, l = st.state.hunt.losses, done = st.state.tutorial.done;
       window.__BD_TEST.noTutorial = false; st.state.tutorial.done = false; st.state.hunt.kills = 0; st.state.hunt.losses = 0;
-      r.tut = st.canTeleport(20, 60).reason; r.tutRnd = st.randomTeleport().reason;
-      st.state.hunt.kills = 1; r.tutAfter = st.canTeleport(20, 60).ok;
+      r.tut = st.canTeleport(F.x, F.y).reason; r.tutRnd = st.randomTeleport().reason;
+      st.state.hunt.kills = 1; r.tutAfter = st.canTeleport(F.x, F.y).ok;
       st.state.tutorial.done = done; st.state.hunt.kills = k; st.state.hunt.losses = l; window.__BD_TEST.noTutorial = true;
-      r.free = st.canTeleport(20, 60).ok; r.b0 = B0;
+      r.free = st.canTeleport(F.x, F.y).ok; r.b0 = B0;
       return r;
     });
     check('stage 18: teleport refused at the map edge, inside the Citadel area ("The Citadel is sealed") and on an occupied spot', /edge/.test(tr.edge) && /edge/.test(tr.edge2) && tr.cit === 'The Citadel is sealed' && tr.bot === 'That spot is occupied' && tr.crt === 'That spot is occupied', JSON.stringify(tr));
@@ -2444,7 +2445,7 @@ async function runStage18(url, label, takeShots = true) {
       const st = __BD.store, b = st.basePos(), out = [];
       for (const type of ['any', 'scuttler', 'drone', 'hound', 'golem', 'wyrm']) for (let L = 1; L <= 7; L++) {
         const got = st.searchWorld({ type, level: L });
-        const all = st.creatures().filter((e) => e.level === L && !e.busy && (type === 'any' || e.type === type)).sort((a, c) => __BD.dev.dist(a, b) - __BD.dev.dist(c, b) || (a.id < c.id ? -1 : 1));
+        const all = st.creatures().filter((e) => e.level === L && !e.busy && (type === 'any' ? e.type !== 'behemoth' : e.type === type)).sort((a, c) => __BD.dev.dist(a, b) - __BD.dev.dist(c, b) || (a.id < c.id ? -1 : 1));
         out.push((got?.id ?? null) === (all[0]?.id ?? null) || (got && all[0] && __BD.dev.dist(got, b) === __BD.dev.dist(all[0], b)));
       }
       const nodes = [1, 2, 3, 4, 5].every((L) => { const got = st.searchWorld({ kind: 'node', level: L }); const all = st.nodes().filter((n) => n.level === L && !n.busy && n.amount >= 1).sort((a, c) => __BD.dev.dist(a, b) - __BD.dev.dist(c, b)); return (got && all[0] && __BD.dev.dist(got, b) === __BD.dev.dist(all[0], b)) || (!got && !all[0]); });
