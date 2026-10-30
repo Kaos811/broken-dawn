@@ -146,7 +146,7 @@ tick(dt) events += { type: 'rallyJoin', rally, member } | { type: 'rallyLaunch',
 1. **Timer options:** **1 / 5 / 10 min**, or full Ants parity with 30 and 60 min added.
 2. **Stamina cost:** **20 per rally**, versus 10 like a normal attack.
 3. **Daily rally limit:** **5**, versus Ants' 10.
-4. **Behemoth as a new rally-only boss, with Wyrms staying soliable**, versus making Wyrms rally-only.
+4. **Behemoth as a new rally-only boss, with Wyrms still soloable**, versus making Wyrms rally-only.
 5. **Bot power at 55–85% of the leader** (≈3× combined), so rallies are about 2 levels above your solo level.
 6. **Rift Warden NPC fallback at T-3 s: yes.**
 7. **Rewards:** **leader keeps full rewards; bots' share shown only in the report**, versus splitting even with bots.
