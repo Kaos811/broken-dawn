@@ -3,7 +3,7 @@ import { GAME_WIDTH as W, GAME_HEIGHT as H, RES, REDUCED_MOTION, PALETTE, BEACON
 import { fmtClock } from '../ui/widgets.js';
 import { store } from '../state/store.js';
 import { buildingPower } from '../systems/power.js';
-import { text, fmt, fmtDuration, panelBg, button } from '../ui/widgets.js';
+import { text, fmt, fmtDuration, panelBg, button, TITLE_FONT } from '../ui/widgets.js';
 import { SKIN, drawBar, drawCard, drawFrame, drawBadge, glyph, diamond, oct, lerpC, bake } from '../ui/skin.js';
 import { statLine, priceTag, sectionHeader, tile } from '../ui/kit.js';
 import { installScrolling, scrollify } from '../ui/scroll.js';
@@ -898,7 +898,7 @@ export default class UIScene extends Phaser.Scene {
     const block = this.add.rectangle(x + w / 2, y + h / 2, w, h, 0, 0.001).setInteractive();
     c.add([dim, g, block]);
     if (title) {
-      const tt = text(this, x + 30, y + 22, title, 32, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
+      const tt = text(this, x + 30, y + 22, title, 30, '#ffd27f', { fontFamily: TITLE_FONT, fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
       if (tt.width > w - 120) tt.setScale((w - 120) / tt.width);
       c.add(tt);
       const rg = this.add.graphics(); c.add(rg);
@@ -1437,7 +1437,7 @@ export default class UIScene extends Phaser.Scene {
     const c = this.add.container(0, 0).setDepth(100);
     const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x020305, 0.7).setInteractive();
     const w = 620, x = (W - w) / 2;
-    const t = text(this, x + 32, 0, title, 36, '#ffd27f', { fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
+    const t = text(this, x + 32, 0, title, 34, '#ffd27f', { fontFamily: TITLE_FONT, fontStyle: 'bold', stroke: '#2e1e06', strokeThickness: 4 });
     if (t.width > w - 64) t.setScale((w - 64) / t.width);
     const b = text(this, x + 32, 0, body, 23, PALETTE.text, { wordWrap: { width: w - 64 }, lineSpacing: 6 });
     // grow with the message (long bodies were cut off by the fixed 420 px sheet)
@@ -1515,7 +1515,7 @@ export default class UIScene extends Phaser.Scene {
         }, { style: 'gold', size: 22 }); rep.chip = 'replay-tutorial'; c.add(rep);
         // game
         sectionHeader(this, c, x0, r.y + 650, 'GAME', { w: r.w - 64 });
-        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.14.0 (stage 19: Rift Behemoth rallies)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
+        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.15.0 (stage 20: Ants-style map labels + living creatures)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
         const rs = button(this, r.x + r.w / 2, r.y + 836, 300, 64, 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
         this.refreshSettings = () => {
           if (!c.active) { this.refreshSettings = null; return; }

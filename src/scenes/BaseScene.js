@@ -11,7 +11,7 @@ const TAP_SLOP = 10;       // px (screen) before a press becomes a pan/drag
 const EDGE_PAN = 80;       // px from screen edge that auto-pans while dragging a building
 const HUD_TOP = TOP_H;     // UI top bar height (incl. safe-area inset)
 const BAKE = 0.5;          // terrain is baked at half resolution (soft painterly ground, saves GPU memory)
-const FONT = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+import { FONT } from '../ui/fonts.js';
 
 function mulberry32(a) {
   return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };

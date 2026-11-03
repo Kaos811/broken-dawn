@@ -2679,8 +2679,8 @@ async function runStage19(url, label, takeShots = true) {
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     const g5 = await ev(() => __BD.store.state.goals?.i);
     check('stage 19: goal index below the new goal is unchanged by the migration', g5 === 5, String(g5));
-    const ver = await ev(async () => { for (const s of document.querySelectorAll('script[src]')) { const t = await (await fetch(s.src)).text(); if (t.includes('v0.14.0')) return 'v0.14.0'; } return null; });
-    check('stage 19: version reads v0.14.0', !!ver, String(ver));
+    const ver = await ev(async () => { for (const s of document.querySelectorAll('script[src]')) { const t = await (await fetch(s.src)).text(); if (t.includes('v0.15.0')) return 'v0.15.0'; } return null; });
+    check('stage 19: version reads (now) v0.15.0', !!ver, String(ver));
     check('stage 19: no page errors', errors.length === 0, errors.join(' | '));
   } finally { await browser.close(); }
 }

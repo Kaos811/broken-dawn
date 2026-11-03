@@ -19,6 +19,8 @@ import * as gridMath from './systems/grid.js';
 import * as layout from './ui/layout.js';
 import { BUILDINGS, BEACON, MAP, TUTORIAL } from './config.js';
 
+import { loadFonts, fontsLoaded } from './ui/fonts.js';
+loadFonts();
 store.load();
 installHiDpi(Phaser, RES);
 
