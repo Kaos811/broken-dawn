@@ -1,10 +1,12 @@
 import Phaser from 'phaser';
-import { WORLD, PALETTE, CREATURES, SQUADS, BASE_TIERS, baseTier, RES, GAME_WIDTH as LW, GAME_HEIGHT as LH } from '../config.js';
+import { WORLD, PALETTE, CREATURES, SQUADS, BASE_TIERS, baseTier, RES, GAME_WIDTH as LW, GAME_HEIGHT as LH, REDUCED_MOTION } from '../config.js';
 import { installCamFeel } from '../ui/camfeel.js';
 import { store } from '../state/store.js';
 import { mulberry32 } from '../world/battle.js';
 import { LOCAL_OWNER, BASE_ID, CENTER, dist } from '../world/worldState.js';
 import { attachLeadIcon } from '../ui/widgets.js';
+import { FONT, TITLE_FONT } from '../ui/fonts.js';
+import { LevelTag, BasePlate } from '../ui/levelTag.js';
 
 const T = WORLD.tile;
 const SIZE = WORLD.size * T;
@@ -21,7 +23,32 @@ const TIER_W = [180, 205, 230, 250, 275]; // on-map width in px (world units)
 // stage 12b painted lairs: sandworm burrow, bat roost, crawler nest, crystal tower (+ a concept crater)
 const LAIR_OF = { wyrm: 'lair-burrow', drone: 'lair-roost', scuttler: 'lair-nest', golem: 'lair-tower', hound: 'lair-crater' };
 const LAIR_W = { 'lair-burrow': 190, 'lair-roost': 150, 'lair-nest': 140, 'lair-tower': 130, 'lair-crater': 120 };
-const FONT = 'system-ui, sans-serif';
+// stage 20: on-map body widths (world px) and singular names for the Ants-style tags
+export const CR_W = { scuttler: 90, drone: 100, hound: 115, golem: 130, wyrm: 160, behemoth: 300 };
+const CR_NAME = { scuttler: 'Husk Scuttler', drone: 'Rift Drone', hound: 'Void Hound', golem: 'Shard Golem', wyrm: 'Dusk Wyrm', behemoth: 'Behemoth' };
+// Idle motion: per-creature randomized breathing (+ type extras), evaluated per frame for on-screen creatures only.
+const TAU = Math.PI * 2;
+export function newIdle(type) {
+  const heavy = type === 'golem' || type === 'behemoth';
+  return { type, ph: Math.random() * TAU, per: heavy ? 3.2 + Math.random() * 0.8 : 2 + Math.random() * 1.4, amp: heavy ? 0.026 + Math.random() * 0.006 : 0.015 + Math.random() * 0.01,
+    bob: 1.2 + Math.random() * 0.6, flut: 0.07 + Math.random() * 0.02, sway: 4.5 + Math.random() * 1.5,
+    next: 1 + Math.random() * 5, dx: 0, da: 0, tdx: 0, tda: 0 };
+}
+export function idlePose(I, t, dt) {
+  // returns { sx, sy, dx, dy, ang, sh } multipliers/offsets for the creature at time t (s)
+  const b = Math.sin(TAU * t / I.per + I.ph);
+  let sx = 1 - b * I.amp * 0.5, sy = 1 + b * I.amp, dx = 0, dy = 0, ang = 0, sh = 1;
+  if (I.type === 'drone') {
+    const h = Math.sin(TAU * t / I.bob + I.ph); dy = -3.5 * h; sh = 1 - 0.1 * h;          // hover bob; shadow pulses opposite
+    sx *= 1 + 0.012 * Math.sin(TAU * t / I.flut);                                        // tiny wing flutter
+  } else if (I.type === 'hound' || I.type === 'scuttler') {
+    if (t > I.next) { I.next = t + 3 + Math.random() * 5; I.tdx = (Math.random() * 2 - 1) * 3; I.tda = (Math.random() * 2 - 1) * 0.03; }
+    const k = Math.min(1, dt * 3); I.dx += (I.tdx - I.dx) * k; I.da += (I.tda - I.da) * k; dx = I.dx; ang = I.da; // weight shift / small turn
+  } else if (I.type === 'wyrm') {
+    const w = Math.sin(TAU * t / I.sway + I.ph); ang = 0.025 * w; dx = 2 * w;              // slow coil sway
+  }
+  return { sx, sy, dx, dy, ang, sh };
+}
 export default class WorldScene extends Phaser.Scene {
   constructor() { super('World'); }
 
@@ -41,6 +68,7 @@ export default class WorldScene extends Phaser.Scene {
     this.marchSprites = new Map(); // id -> { img, label }
     this.nodeSprites = new Map();  // stage 16: Alloy nodes, id -> { img, badge, e, tex }
     this.selected = null;
+    this.reducedMotion = REDUCED_MOTION || !!window.__BD_TEST?.reducedMotion;
     this.tileSel = null;           // stage 18: an empty tile you tapped {x,y}
     this.markG = this.add.graphics().setDepth(7);
     this.gesture = null; this.pinch = null;
@@ -78,6 +106,9 @@ export default class WorldScene extends Phaser.Scene {
     this.fitLabel(this.labels[this.labels.length - 1]);
     return t;
   }
+  // stage 20: Ants-style level tag (creatures, nodes) and base nameplate; zoom-fitted like plaques
+  levelTag(x, y, o = {}) { const t = new LevelTag(this, x, y, o); this.labels.push({ t, min: o.min ?? 0 }); this.fitLabel(this.labels[this.labels.length - 1]); return t; }
+  basePlate(x, y, o = {}) { const t = new BasePlate(this, x, y, o); this.labels.push({ t, min: o.min ?? 0 }); this.fitLabel(this.labels[this.labels.length - 1]); return t; }
   fitLabel(l, z = this.zl) { l.t.setScale(1 / z); l.t.setVisible(z >= l.min && !l.t.hiddenByGame); }
   fitLabels(force = false) {
     const z = this.zl;
@@ -187,7 +218,7 @@ export default class WorldScene extends Phaser.Scene {
       const level = local ? store.state.beacon.level : e.level ?? 1;
       const tier = baseTier(level), color = local ? PALETTE.teal : e.color ?? 0x8a96a8;
       let s = this.baseSprites.get(e.id);
-      const key = `${tier}|${color}|${e.x},${e.y}|${e.name}`;
+      const key = `${tier}|${level}|${color}|${e.x},${e.y}|${e.name}|${e.tag}`;
       if (s && s.key === key) continue;
       if (s) s.parts.forEach((o) => o.destroy());
       const p = tileToWorld(e.x, e.y), parts = [];
@@ -202,10 +233,9 @@ export default class WorldScene extends Phaser.Scene {
       parts.push(flag);
       const below = p.y + img.displayHeight * 0.38 + 2;
       const name = local ? 'YOUR BASE' : `${e.tag ? `[${e.tag}] ` : ''}${e.name}`;
-      const nt = this.plaque(p.x, below, name, { size: local ? 26 : 22, color: local ? PALETTE.textGold : '#f2ead8', min: local ? 0 : 0.42, bg: local ? '#2a1b06dd' : '#07090dcc' });
-      const lt = this.plaque(p.x, below, `Lv ${level} · ${BASE_TIERS[tier].name}`, { size: 18, bold: false, color: local ? '#7ff6ee' : '#c3ccd8', min: 0.42 });
-      lt.setData('stackUnder', nt);
-      parts.push(nt, lt);
+      // stage 20: round gold level medal over "(TAG)Name"; Lv + tier live in the tap panel
+      const nt = this.basePlate(p.x, below - 4, { min: local ? 0 : 0.42 }).set(level, local ? '' : e.tag, local ? 'YOUR BASE' : e.name, { mine: local });
+      parts.push(nt);
       s = { parts, tier, color, key, e };
       this.baseSprites.set(e.id, s);
     }
@@ -234,28 +264,36 @@ export default class WorldScene extends Phaser.Scene {
       let s = this.crSprites.get(e.id);
       const p = tileToWorld(e.x, e.y);
       if (!s) {
-        const elite = !!CREATURES[e.type].elite, boss = !!CREATURES[e.type].rallyOnly;
+        // stage 20: natural scale, feet on the tile centre, soft contact shadow, smaller faded lair, idle motion
+        const boss = !!CREATURES[e.type].rallyOnly, W = CR_W[e.type] ?? 110, hover = e.type === 'drone' ? 16 : 0;
         const lf = LAIR_OF[e.type] ?? 'lair-crater';
-        const lair = this.add.image(p.x, p.y + 4, 'wmap', lf).setOrigin(0.5, 0.6).setDepth(0.9);
-        lair.setScale((LAIR_W[lf] ?? 160) * (boss ? 1.6 : 1) / lair.width);
-        const img = this.add.image(p.x, p.y - (boss ? 34 : 14), `cr-${e.type}`).setScale(boss ? 1.25 : elite ? 0.8 : 0.6).setDepth(10 + p.y / SIZE);
+        const lair = this.add.image(p.x, p.y + 4, 'wmap', lf).setOrigin(0.5, 0.6).setDepth(0.9).setAlpha(0.8);
+        lair.setScale(W * 1.1 / lair.width).setAlpha(0.65);
+        const fy = p.y + W * 0.12;
+        const shadow = this.add.image(p.x + W * 0.04, fy, 'wmap', 'shadow').setDepth(9.99 + p.y / SIZE).setAlpha(0.5);
+        const img = this.add.image(p.x, fy - hover, `cr-${e.type}`).setOrigin(0.5, 0.97).setDepth(10 + p.y / SIZE);
+        const base = W / img.width;
+        img.setScale(base);
+        shadow.setScale(W * 0.8 / 96, W * 0.24 / 96);
         if (boss) img.setData('boss', true);
-        const badge = this.plaque(p.x, p.y + 30, '', { size: 22, depth: 11, min: 0.33 });
-        const lock = this.add.text(p.x + 30, p.y - 54, '', { fontSize: '1px' }).setVisible(false); // lock shown in the plaque
-        s = { img, badge, lock, lair, e };
+        let shimmer = null;
+        if (boss) shimmer = this.add.image(img.x, img.y, `cr-${e.type}`).setOrigin(0.5, 0.97).setScale(base).setBlendMode('ADD').setTint(0x2fe0c8).setAlpha(0).setDepth(img.depth + 0.0001);
+        const badge = this.levelTag(p.x, fy + 16, { depth: 11, min: 0.33 });
+        const lock = this.add.text(p.x + 30, p.y - 54, '', { fontSize: '1px' }).setVisible(false); // kept for old hooks; the lock is drawn in the tag
+        s = { img, badge, lock, lair, shadow, shimmer, e, base, x0: img.x, y0: img.y, sx0: shadow.scaleX, sy0: shadow.scaleY, idle: newIdle(e.type) };
         this.crSprites.set(e.id, s);
-        if (!force) { img.setAlpha(0).setScale(0.2); this.tweens.add({ targets: img, alpha: 1, scale: boss ? 1.25 : elite ? 0.8 : 0.6, duration: 500, ease: 'Back.easeOut' }); }
+        if (!force) { img.setAlpha(0); this.tweens.add({ targets: img, alpha: 1, duration: 500 }); }
       }
       if (CREATURES[e.type].rallyOnly) { // stage 19: world boss: never "locked", rallied -> crossed swords
-        s.badge.setText(`${e.busy ? '⚔ ' : ''}BEHEMOTH Lv ${e.level}`).setColor('#7ff5e2');
+        s.badge.set(e.level, 'Behemoth', { color: '#8ff7e6', busy: !!e.busy });
         continue;
       }
       const locked = e.level > maxL;
-      s.badge.setText(`${locked ? '🔒 ' : e.busy ? '⚔ ' : ''}Lv ${e.level}`).setColor(locked ? '#9aa6b8' : (CREATURES[e.type].elite ? '#ffb347' : '#ffffff'));
+      s.badge.set(e.level, CR_NAME[e.type] ?? CREATURES[e.type].name, { color: locked ? '#aab3c0' : (CREATURES[e.type].elite ? '#ffb347' : '#f4efe4'), locked, busy: !!e.busy });
       s.img.setTint(locked ? 0x9a9a9a : 0xffffff);
     }
     this.syncNodes(force);
-    for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
+    for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); s.shadow.destroy(); s.shimmer?.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
   }
 
   // Stage 16: Alloy nodes: full crystal, drained stump, or the gathering camp while a squad mines it.
@@ -268,7 +306,7 @@ export default class WorldScene extends Phaser.Scene {
       let s = this.nodeSprites.get(e.id);
       if (!s) {
         const img = this.add.image(p.x, p.y + 6, 'node-full').setOrigin(0.5, 0.72).setDepth(10 + p.y / SIZE);
-        const badge = this.plaque(p.x, p.y + 34, '', { size: 22, depth: 11, min: 0.33 });
+        const badge = this.levelTag(p.x, p.y + 34, { depth: 11, min: 0.33 });
         s = { img, badge, e, tex: 'node-full' };
         this.nodeSprites.set(e.id, s);
         if (!force) { img.setAlpha(0); this.tweens.add({ targets: img, alpha: 1, duration: 400 }); }
@@ -279,8 +317,7 @@ export default class WorldScene extends Phaser.Scene {
       const tex = e.amount < 1 ? 'node-depleted' : gathering ? 'node-camp' : 'node-full';
       if (tex !== s.tex) { s.tex = tex; s.img.setTexture(tex); }
       s.img.setScale((tex === 'node-camp' ? 128 : 96 + e.level * 8) / s.img.width).setAlpha(e.amount < 1 ? 0.8 : 1);
-      s.badge.setText(e.amount < 1 ? `Lv ${e.level} · drained` : gathering ? `${SQUADS[m.squadId].name} ${Math.floor(m.gather.load)}/${m.gather.cap}` : `Lv ${e.level} Alloy`)
-        .setColor(e.amount < 1 ? '#9aa6b8' : '#7ff5e2');
+      s.badge.set(e.level, e.amount < 1 ? 'Alloy · drained' : gathering ? `${SQUADS[m.squadId].name} ${Math.floor(m.gather.load)}/${m.gather.cap}` : 'Alloy', { color: e.amount < 1 ? '#9aa6b8' : '#9ff3e6' });
     }
     for (const [id, s] of this.nodeSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); this.nodeSprites.delete(id); if (this.selected === id) this.select(null); }
   }
@@ -369,7 +406,7 @@ export default class WorldScene extends Phaser.Scene {
     const sp = this.add.particles(p.x, p.y - 10, 'spark', { speed: { min: 60, max: 260 }, lifespan: 800, scale: { start: 1.4, end: 0 }, tint: report.win ? [PALETTE.gold, 0xffffff] : [0xff4d5e, 0x9b7bff], blendMode: 'ADD', emitting: false }).setDepth(30);
     sp.explode(report.win ? 50 : 24);
     this.time.delayedCall(900, () => sp.destroy());
-    const t = this.add.text(p.x, p.y - 60, report.win ? 'VICTORY' : 'DEFEAT', { fontFamily: 'system-ui, sans-serif', fontSize: '34px', fontStyle: 'bold', color: report.win ? PALETTE.textGold : '#ff6f7b', stroke: '#000', strokeThickness: 7 }).setOrigin(0.5).setDepth(31);
+    const t = this.add.text(p.x, p.y - 60, report.win ? 'VICTORY' : 'DEFEAT', { fontFamily: TITLE_FONT, fontSize: '34px', fontStyle: 'bold', color: report.win ? PALETTE.textGold : '#ff6f7b', stroke: '#000', strokeThickness: 7 }).setOrigin(0.5).setDepth(31);
     this.tweens.add({ targets: t, y: t.y - 70, alpha: 0, duration: 1600, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
   }
 
@@ -510,8 +547,27 @@ export default class WorldScene extends Phaser.Scene {
     this.gesture = null;
   }
 
+  // stage 20: idle motion for on-screen creatures only (math per frame, no tweens to manage or leak)
+  animateIdle() {
+    const t = this.time.now / 1000, dt = Math.min(0.1, (this.game.loop.delta || 16) / 1000);
+    this.idleAnimated = 0;
+    if (this.reducedMotion) return;
+    const v = this.cameras.main.worldView, m = 200;
+    for (const s of this.crSprites.values()) {
+      const vis = s.x0 > v.x - m && s.x0 < v.right + m && s.y0 > v.y - m && s.y0 < v.bottom + m;
+      s.img.setVisible(vis); s.shadow.setVisible(vis); s.shimmer?.setVisible(vis);
+      if (!vis) continue;
+      this.idleAnimated++;
+      const q = idlePose(s.idle, t, dt);
+      s.img.setScale(s.base * q.sx, s.base * q.sy).setPosition(s.x0 + q.dx, s.y0 + q.dy).setRotation(q.ang);
+      s.shadow.setScale(s.sx0 * q.sh * (1 + (q.sx - 1)), s.sy0 * q.sh).setAlpha(0.5 * (0.85 + 0.15 * q.sh));
+      if (s.shimmer) s.shimmer.setScale(s.img.scaleX, s.img.scaleY).setPosition(s.img.x, s.img.y).setAlpha(0.07 + 0.07 * Math.sin(TAU * t / 2.7 + s.idle.ph));
+    }
+  }
+
   update() {
     this.cull();
+    this.animateIdle();
     this.fitLabels();
     this.stackLabels();
     if (!this.lastSync || this.time.now - this.lastSync > 250) { this.lastSync = this.time.now; this.syncAll(); }

@@ -2679,9 +2679,108 @@ async function runStage19(url, label, takeShots = true) {
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
     const g5 = await ev(() => __BD.store.state.goals?.i);
     check('stage 19: goal index below the new goal is unchanged by the migration', g5 === 5, String(g5));
-    const ver = await ev(async () => { for (const s of document.querySelectorAll('script[src]')) { const t = await (await fetch(s.src)).text(); if (t.includes('v0.14.0')) return 'v0.14.0'; } return null; });
-    check('stage 19: version reads v0.14.0', !!ver, String(ver));
+    const ver = await ev(async () => { for (const s of document.querySelectorAll('script[src]')) { const t = await (await fetch(s.src)).text(); if (t.includes('v0.15.0')) return 'v0.15.0'; } return null; });
+    check('stage 19: version reads (now) v0.15.0', !!ver, String(ver));
     check('stage 19: no page errors', errors.length === 0, errors.join(' | '));
+  } finally { await browser.close(); }
+}
+
+// Stage 20 (v0.15.0): Ants-style map labels (bundled Source Sans 3 + Cinzel), base medal nameplate,
+// natural-scale grounded creatures with contact shadows, and subtle per-creature idle motion.
+async function runStage20(url, label, takeShots = true) {
+  console.log(`\n=== stage 20 · ${label}: ${url}`);
+  const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => { window.__BD_TEST = { noTutorial: true, fast: true }; });
+    const page = await ctx.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+    const ev = (fn, arg) => page.evaluate(fn, arg);
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.ui()?.panel && window.__BD.world(), null, { timeout: 60000 }); await sleep(600); };
+    const shot = async (name) => { if (!takeShots) return; await sleep(450); await ev(() => { const u = __BD.ui(); u.tweens.killTweensOf(u.toastBox); u.toastBox.setVisible(false); }); await sleep(60); await page.screenshot({ path: join(ROOT, 'screens', name) }); console.log(`      saved screens/${name}`); };
+    const tab = async (id) => { const p = await ev((id) => __BD.tabToPage(id), id); await page.mouse.click(p.x, p.y); await sleep(500); };
+    await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
+    await ev(() => localStorage.clear()); await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+
+    // --- 1. fonts
+    const f = await ev(() => ({ ok: __BD.dev.fontsLoaded.ok, F: __BD.dev.FONT, W: __BD.dev.WFONT, T: __BD.dev.TITLE_FONT,
+      ss: document.fonts.check('600 20px "Source Sans 3"'), cz: document.fonts.check('700 20px Cinzel') }));
+    check('stage 20: Source Sans 3 (400/600/700) and Cinzel 700 are bundled and loaded before the scenes start', ['Source Sans 3:400', 'Source Sans 3:600', 'Source Sans 3:700', 'Cinzel:700'].every((k) => f.ok.some((o) => o.replace(/"/g, '') === k)) && f.ss && f.cz, JSON.stringify(f.ok));
+    check('stage 20: one font definition (widgets FONT === fonts FONT, Source Sans 3 first)', f.F === f.W && /^"Source Sans 3"/.test(f.F), f.F);
+    const ff = await ev(() => { const fam = (sc) => [...new Set(sc.children.list.flatMap((o) => o.type === 'Text' ? [o.style.fontFamily] : o.list ? o.list.filter((c) => c.type === 'Text').map((c) => c.style.fontFamily) : []))]; return { base: fam(__BD.base()), ui: fam(__BD.ui()) }; });
+    check('stage 20: Base and UI text use Source Sans 3 (no bare system-ui stacks left)', [...ff.base, ...ff.ui].every((x) => /Source Sans 3|Cinzel/.test(x)), JSON.stringify(ff));
+    await ev(() => __BD.ui().openModal({ title: 'Your Base', body: 'x', buttons: [{ label: 'OK' }] })); await sleep(300);
+    const mt = await ev(() => { const m = __BD.ui().modal; const all = (c) => c.list.flatMap((o) => o.list ? all(o) : [o]); return all(m).filter((o) => o.type === 'Text' && o.text === 'Your Base').map((o) => o.style.fontFamily); });
+    check('stage 20: modal titles use Cinzel (titles/banners only)', mt.length > 0 && mt.every((x) => /^Cinzel/.test(x)), JSON.stringify(mt));
+    await ev(() => __BD.ui().closeModal(true));
+
+    // --- 2. map labels
+    await tab('world'); await sleep(800);
+    const lab = await ev(() => {
+      const W = __BD.world(), st = __BD.store, maxL = st.maxAttackLevel();
+      const cr = [...W.crSprites.values()].map((s) => ({ type: s.e.type, lv: s.e.level, st: { ...s.badge.st }, box: s.badge.lvT.text, name: s.badge.nameT.text, ff: s.badge.nameT.style.fontFamily, locked: s.e.level > maxL && s.e.type !== 'behemoth' }));
+      const emoji = W.children.list.filter((o) => o.type === 'Text' && /🔒/.test(o.text)).length;
+      const nodes = [...W.nodeSprites.values()].map((s) => s.badge.text);
+      return { cr, emoji, nodes };
+    });
+    const names = { scuttler: 'Husk Scuttler', drone: 'Rift Drone', hound: 'Void Hound', golem: 'Shard Golem', wyrm: 'Dusk Wyrm', behemoth: 'Behemoth' };
+    check('stage 20: every creature has an Ants-style tag: dark level box (number) + singular name', lab.cr.length > 20 && lab.cr.every((c) => c.box === String(c.lv) && c.name === names[c.type] && /Source Sans 3/.test(c.ff)), JSON.stringify(lab.cr.slice(0, 3)));
+    check('stage 20: locked creatures get a drawn padlock (grey box), no 🔒 emoji on the map', lab.cr.filter((c) => c.locked).length > 0 && lab.cr.every((c) => c.st.locked === c.locked) && lab.emoji === 0, String(lab.emoji));
+    check('stage 20: the Behemoth tag reads "Behemoth" in teal', lab.cr.filter((c) => c.type === 'behemoth').every((c) => c.st.color === '#8ff7e6'));
+    check('stage 20: Alloy nodes use the same tag ("Lv N Alloy")', lab.nodes.length > 0 && lab.nodes.every((t) => /^Lv \d+ Alloy/.test(t)), lab.nodes.slice(0, 3).join(','));
+    const bp = await ev(() => { const W = __BD.world(); return [...W.baseSprites.values()].map((s) => { const p = s.parts.find((o) => o.medal); return p && { id: s.e.id, txt: p.text, lv: p.lvT.text, tag: s.e.tag, name: s.e.name, level: s.e.id === 'base-local' ? __BD.store.state.beacon.level : s.e.level }; }); });
+    check('stage 20: every base has a medal nameplate with its level', bp.length > 3 && bp.every((b) => b && b.lv === String(b.level)), JSON.stringify(bp.slice(0, 2)));
+    check('stage 20: rival plates read "(TAG)Name"; yours reads YOUR BASE', bp.filter((b) => b.id !== 'base-local').every((b) => b.txt === `${b.tag ? `(${b.tag})` : ''}${b.name}`) && bp.find((b) => b.id === 'base-local').txt === 'YOUR BASE', JSON.stringify(bp.slice(0, 3).map((b) => b.txt)));
+    const tierTxt = await ev(() => __BD.world().children.list.filter((o) => o.type === 'Text' && /· (Outpost|Walled Camp|Stronghold|Fortress|Citadel)/.test(o.text)).length);
+    check('stage 20: "Lv N · Tier" is gone from the map', tierTxt === 0, String(tierTxt));
+    const prof = await ev(async () => { const W = __BD.world(), s = [...W.baseSprites.values()].find((s) => s.e.id !== 'base-local'); W.select(s.e.id); await new Promise((r) => setTimeout(r, 400)); const m = __BD.ui().modal; const all = (c) => c.list.flatMap((o) => o.list ? all(o) : [o]); const t = m ? all(m).filter((o) => o.type === 'Text').map((o) => o.text).join(' | ') : ''; __BD.ui().closeModal(true); return { t, lv: s.e.level }; });
+    check('stage 20: Lv + tier moved to the base tap panel', prof.t.includes(`Beacon Lv ${prof.lv} · `), prof.t.slice(0, 160));
+    const zs = await ev(async () => { const W = __BD.world(); const cam = W.cameras.main, R = cam.zoom / W.zl, z0 = cam.zoom; cam.setZoom(1.5 * R); await new Promise((r) => setTimeout(r, 300)); const t = [...W.crSprites.values()][0].badge, p = [...W.baseSprites.values()][0].parts.find((o) => o.medal);
+      const a = { t: t.scaleX, p: p.scaleX }; cam.setZoom(0.3 * R); await new Promise((r) => setTimeout(r, 300)); const hid = !t.visible; cam.setZoom(z0); await new Promise((r) => setTimeout(r, 300)); return { ...a, hid }; });
+    check('stage 20: tags and plates are zoom-fitted (constant on-screen size: scale = 1/zoom)', Math.abs(zs.t - 1 / 1.5) < 1e-3 && Math.abs(zs.p - 1 / 1.5) < 1e-3, JSON.stringify(zs));
+    check('stage 20: creature tags hide when zoomed far out', zs.hid);
+
+    // --- 3. creatures: art, scale, grounding, shadows, lairs
+    const art = await ev(() => Object.keys(__BD.dev.CR_W).map((id) => { const img = __BD.world().textures.get(`cr-${id}`).getSourceImage(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); const d = x.getImageData(0, 0, img.width, img.height).data;
+      let mag = 0, op = 0; for (let i = 0; i < d.length; i += 4) { if (d[i + 3] > 200) { op++; if (d[i] > 200 && d[i + 2] > 200 && d[i + 1] < 80) mag++; } } return { id, w: img.width, corner: d[3], mag: mag / op, op }; }));
+    check('stage 20: new painted art for all 6 creatures (256², transparent background)', art.length === 6 && art.every((a) => a.w === 256 && a.corner === 0 && a.op > 6000), JSON.stringify(art));
+    check('stage 20: magenta keyed out (<0.5% magenta pixels)', art.every((a) => a.mag < 0.005), JSON.stringify(art.map((a) => a.mag.toFixed(4))));
+    const cs = await ev(() => { const W = __BD.world(), CW = __BD.dev.CR_W, T = 64; return [...W.crSprites.values()].map((s) => ({ type: s.e.type, w: s.base * s.img.width, CW: CW[s.e.type], oy: s.img.originY, feetDy: s.y0 - ((s.e.y + 0.5) * (W.crSprites && __BD.dev ? 1 : 1)), sh: !!s.shadow && s.shadow.depth < s.img.depth && s.shadow.frame.name === 'shadow', lairA: s.lair.alpha, lairW: s.lair.displayWidth / CW[s.e.type], add: s.img.blendMode })); });
+    check('stage 20: creatures drawn at natural scale (Scuttler 90 … Wyrm 160, Behemoth 300)', cs.every((c) => Math.abs(c.w - c.CW) < 0.5), JSON.stringify([...new Set(cs.map((c) => `${c.type}:${c.w}`))]));
+    const sizes = await ev(() => { const CW = __BD.dev.CR_W; return { order: CW.scuttler < CW.drone && CW.drone < CW.hound && CW.hound < CW.golem && CW.golem < CW.wyrm && CW.wyrm < CW.behemoth, smallerThanBase: CW.golem < 180 }; });
+    check('stage 20: normal creatures are smaller than the smallest base; the Behemoth stays dominant', sizes.order && sizes.smallerThanBase);
+    const gr = await ev(() => { const W = __BD.world(), T = __BD.dev.CR_W && 64; return [...W.crSprites.values()].map((s) => { const cx = s.lair.x, cy = s.lair.y - 4; return { ox: s.img.originX, oy: s.img.originY, dx: s.x0 - cx, dy: s.y0 + (s.e.type === 'drone' ? 16 : 0) - cy, W: s.base * s.img.width }; }); });
+    check('stage 20: creatures stand on their tile centre (feet origin, no floating lift; Drone hovers 16px)', gr.every((g) => g.ox === 0.5 && g.oy === 0.97 && g.dx === 0 && Math.abs(g.dy - g.W * 0.12) < 1e-6), JSON.stringify(gr[0]));
+    check('stage 20: every creature casts a soft contact shadow beneath it', cs.every((c) => c.sh));
+    check('stage 20: lairs are smaller (≈1.1× body) and faded (alpha 0.65)', cs.every((c) => Math.abs(c.lairA - 0.65) < 1e-6 && Math.abs(c.lairW - 1.1) < 0.01), JSON.stringify(cs[0]));
+    const halo = await ev(() => __BD.world().children.list.filter((o) => o.blendMode === 1 && /^cr-/.test(o.texture?.key ?? '') && o.texture.key !== 'cr-behemoth').length);
+    check('stage 20: no additive halo on normal creatures', halo === 0 && cs.every((c) => c.add === 0), String(halo));
+
+    // --- 4. idle motion
+    const pure = await ev(() => { const P = __BD.dev.idlePose; const mk = (type) => ({ ...__BD.dev.newIdle(type), ph: 0, next: 99 });
+      const span = (type, key) => { const I = mk(type); let lo = 9, hi = -9; for (let t = 0; t < 10; t += 0.01) { const q = P(I, t, 0.016); lo = Math.min(lo, q[key]); hi = Math.max(hi, q[key]); } return [lo, hi]; };
+      const D = mk('drone'); let corr = 0; for (let t = 0; t < 6; t += 0.01) { const q = P(D, t, 0.016); corr += q.dy * (q.sh - 1); }
+      const H = mk('hound'); H.next = 0; let mx = 0, ma = 0; for (let t = 0; t < 30; t += 0.016) { const q = P(H, t, 0.016); mx = Math.max(mx, Math.abs(q.dx)); ma = Math.max(ma, Math.abs(q.ang)); }
+      return { sy: span('scuttler', 'sy'), gy: span('golem', 'sy'), dy: span('drone', 'dy'), wa: span('wyrm', 'ang'), corr, mx, ma };
+    });
+    check('stage 20: breathing is a small squash (scaleY ±1.5–3%)', pure.sy[1] - 1 >= 0.015 && pure.sy[1] - 1 <= 0.03 && 1 - pure.sy[0] >= 0.015 && 1 - pure.gy[0] <= 0.033, JSON.stringify(pure));
+    check('stage 20: Drone hover-bobs a few px and its shadow pulses opposite (shadow shrinks as it rises)', pure.dy[1] - pure.dy[0] > 5 && pure.dy[1] - pure.dy[0] < 9 && pure.corr > 0, JSON.stringify(pure));
+    check('stage 20: Hound/Scuttler weight shifts stay within 3 px and ~2°', pure.mx > 0.3 && pure.mx <= 3 && pure.ma <= 0.031, JSON.stringify(pure));
+    check('stage 20: Wyrm coil sway is slow and small (≤1.5°)', pure.wa[1] > 0.01 && pure.wa[1] <= 0.026, JSON.stringify(pure.wa));
+    const per = await ev(() => { const xs = [...__BD.world().crSprites.values()].map((s) => s.idle); const heavy = xs.filter((i) => i.type === 'golem' || i.type === 'behemoth'); return { uniq: new Set(xs.map((i) => i.ph.toFixed(3))).size, n: xs.length, per: xs.every((i) => i.per >= 2 && i.per <= 4), heavy: heavy.every((i) => i.per >= 3.2) }; });
+    check('stage 20: randomized phases and 2–4 s periods (no lockstep; Golem/Behemoth breathe slowest)', per.uniq === per.n && per.per && per.heavy, JSON.stringify(per));
+    const live = await ev(async () => { const W = __BD.world(), s = [...W.crSprites.values()].find((s) => s.img.visible && s.e.type !== 'drone'); const ys = []; for (let i = 0; i < 12; i++) { ys.push(s.img.scaleY / s.base); await new Promise((r) => setTimeout(r, 120)); } return { min: Math.min(...ys), max: Math.max(...ys) }; });
+    check('stage 20: on-map creatures actually breathe', live.max - live.min > 0.004 && live.max < 1.035 && live.min > 0.965, JSON.stringify(live));
+    const bm = await ev(async () => { const W = __BD.world(), b = [...W.crSprites.values()].find((s) => s.e.type === 'behemoth'); W.focusTile(b.e.x, b.e.y); await new Promise((r) => setTimeout(r, 300)); const as = []; for (let i = 0; i < 10; i++) { as.push(b.shimmer.alpha); await new Promise((r) => setTimeout(r, 150)); } return { tint: b.shimmer.tintTopLeft, add: b.shimmer.blendMode, min: Math.min(...as), max: Math.max(...as) }; });
+    check('stage 20: Behemoth has a faint teal crystal shimmer (≤14% additive overlay)', bm.add === 1 && bm.max <= 0.141 && bm.max > bm.min, JSON.stringify(bm));
+    const cull = await ev(() => { const W = __BD.world(); return { n: W.crSprites.size, a: W.idleAnimated, off: [...W.crSprites.values()].filter((s) => !s.img.visible).length }; });
+    check('stage 20: only on-screen creatures animate (off-screen ones are culled)', cull.a > 0 && cull.a < cull.n && cull.off > 0, JSON.stringify(cull));
+    const cost = await ev(() => { const W = __BD.world(); const cam = W.cameras.main, R = cam.zoom / W.zl, z0 = cam.zoom; cam.setZoom(0.35 * R); W.cull(true); const t0 = performance.now(); for (let i = 0; i < 200; i++) W.animateIdle(); const ms = (performance.now() - t0) / 200; cam.setZoom(z0); return { ms, a: W.idleAnimated }; });
+    check('stage 20: idle motion is cheap (<1 ms/frame even zoomed out)', cost.ms < 1, JSON.stringify(cost));
+    const rm = await ev(async () => { const W = __BD.world(); W.reducedMotion = true; const s = [...W.crSprites.values()].find((s) => s.img.visible); s.img.setScale(s.base); const a = s.img.scaleY; await new Promise((r) => setTimeout(r, 500)); const b = s.img.scaleY; W.reducedMotion = false; return { a, b, n: W.idleAnimated }; });
+    check('stage 20: reduced motion turns idle motion off', rm.a === rm.b && rm.n === 0, JSON.stringify(rm));
+    await shot('stage20-test-map.png');
+    check('stage 20: no page errors', errors.length === 0, errors.join(' | '));
   } finally { await browser.close(); }
 }
 
@@ -3697,6 +3796,7 @@ try {
   if (!process.env.ONLY || process.env.ONLY === '16') await runStage16(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '18') await runStage18(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '19') await runStage19(`http://localhost:${srv.address().port}/`, 'dist/ build');
+  if (!process.env.ONLY || process.env.ONLY === '20') await runStage20(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '17') await runStage17(`http://localhost:${srv.address().port}/`, 'dist/ build');
   if (!process.env.ONLY || process.env.ONLY === '9c') await runStage9c(`http://localhost:${srv.address().port}/`, 'dist/ build');
 } finally { srv.close(); }

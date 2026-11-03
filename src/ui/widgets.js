@@ -3,7 +3,8 @@ import { PALETTE, RES, REDUCED_MOTION } from '../config.js';
 import { audio } from '../audio/audio.js';
 import { SKIN, drawFrame, lerpC, bake, drawButtonSkin, BUTTON_STYLES } from './skin.js';
 
-export const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+import { FONT } from './fonts.js';
+export { FONT, TITLE_FONT } from './fonts.js';
 
 export function text(scene, x, y, str, size = 24, color = PALETTE.text, opts = {}) {
   return attachLeadIcon(scene.add.text(x, y, str, { fontFamily: FONT, fontSize: `${size}px`, color, ...opts }));

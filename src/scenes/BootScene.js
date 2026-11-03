@@ -1,3 +1,4 @@
+import { loadFonts } from '../ui/fonts.js';
 import { ART_URLS } from '../art/baseArt.js';
 import { UI_ART_URLS } from '../art/uiArt.js';
 import worldAtlasPng from '../art/world/world-atlas.webp';
@@ -207,8 +208,7 @@ export default class BootScene extends Phaser.Scene {
       g.fillStyle(0xfff1c9, 1); g.fillCircle(c.x - 3, ty - 47, 6);
     });
 
-    this.scene.start('Base');
-    this.scene.launch('UI');
+    loadFonts().then(() => { this.scene.start('Base'); this.scene.launch('UI'); });
   }
 
   makeBuilding(key, drawFn) {
