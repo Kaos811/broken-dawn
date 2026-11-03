@@ -28,7 +28,7 @@ export const CR_W = { scuttler: 90, drone: 100, hound: 115, golem: 130, wyrm: 16
 const CR_NAME = { scuttler: 'Husk Scuttler', drone: 'Rift Drone', hound: 'Void Hound', golem: 'Shard Golem', wyrm: 'Dusk Wyrm', behemoth: 'Behemoth' };
 // Idle motion: per-creature randomized breathing (+ type extras), evaluated per frame for on-screen creatures only.
 const TAU = Math.PI * 2;
-function newIdle(type) {
+export function newIdle(type) {
   const heavy = type === 'golem' || type === 'behemoth';
   return { type, ph: Math.random() * TAU, per: heavy ? 3.2 + Math.random() * 0.8 : 2 + Math.random() * 1.4, amp: heavy ? 0.026 + Math.random() * 0.006 : 0.015 + Math.random() * 0.01,
     bob: 1.2 + Math.random() * 0.6, flut: 0.07 + Math.random() * 0.02, sway: 4.5 + Math.random() * 1.5,

@@ -6,7 +6,9 @@ import { store } from './state/store.js';
 import BootScene from './scenes/BootScene.js';
 import BaseScene from './scenes/BaseScene.js';
 import UIScene from './scenes/UIScene.js';
-import WorldScene from './scenes/WorldScene.js';
+import WorldScene, { CR_W, idlePose, newIdle } from './scenes/WorldScene.js';
+import { FONT as WFONT } from './ui/widgets.js';
+import { FONT, TITLE_FONT } from './ui/fonts.js';
 import { resolveBattle, combatPower, mergeArmies } from './world/battle.js';
 import { creatureArmy, squadArmy, scaleArmy } from './world/armies.js';
 import { BotRallyAgent } from './world/rallyBots.js';
@@ -80,7 +82,7 @@ window.__BD = {
   world: () => game.scene.getScene('World'),
   // pure world/battle helpers (tests + debugging)
   dev: { resolveBattle, combatPower, creatureArmy, squadArmy, createWorld, gradientLevel, levelAtTile, dist, BASE_POS, CENTER, seedBotBases,
-    mergeArmies, scaleArmy, BotRallyAgent, RALLY, typePower, openRallyPanel, openReport, playReplay, eventScore },
+    mergeArmies, scaleArmy, BotRallyAgent, RALLY, typePower, openRallyPanel, openReport, playReplay, eventScore, fontsLoaded, FONT, TITLE_FONT, WFONT, CR_W, idlePose, newIdle },
   // creature / tile -> page (CSS px) coordinates on the World map
   tileToPage(x, y) {
     const s = game.scene.getScene('World').tileToScreen(x, y);
