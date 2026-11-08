@@ -84,7 +84,7 @@ export function panelBg(g, x, y, w, h, { fill = null, alpha = 0.97, stroke = PAL
 // .setStyle(style). Styles: gold (primary), cyan (teal secondary), ghost (metal), danger, disabled.
 // The hit area is at least 80 game px (about 44 CSS px on a phone) in each direction, centred on the button.
 export const MIN_TAP = 80;
-export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size = 26 } = {}) {
+export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size = 26, allow = null } = {}) {
   const c = scene.add.container(x, y);
   const W = Math.round(w), Hh = Math.round(h);
   const skin = scene.add.image(0, 1, '__DEFAULT').setOrigin(0.5).setScale(1 / RES); // skins bake at RES x
@@ -110,17 +110,18 @@ export function button(scene, x, y, w, h, label, onClick, { style = 'gold', size
   const live = () => { for (let p = c; p; p = p.parentContainer) if (!p.active) return false; return true; };
   const springTo = (s, ms, ease) => { if (!c.active) return; scene.tweens.killTweensOf(c); if (REDUCED_MOTION) { c.setScale(1); return; } scene.tweens.add({ targets: c, scale: s, duration: ms, ease }); };
   const glowTo = (a, ms) => { scene.tweens.killTweensOf(glow); scene.tweens.add({ targets: glow, alpha: a, duration: ms, ease: 'Quad.easeOut' }); };
-  hit.on('pointerdown', () => {
+  hit.on('pointerdown', (pointer) => {
     if (!live()) return; // a closing panel/modal fading out ignores taps
+    if (allow && allow(pointer) === false) { pressed = false; return; }
     pressed = true; springTo(0.93, 70, 'Quad.easeOut'); if (enabled) glowTo(0.28, 60);
     if (enabled) { audio.play('tap'); audio.haptic(8); } else audio.play('error');
   });
   hit.on('pointerout', () => { pressed = false; springTo(1, 120, 'Quad.easeOut'); glowTo(0, 160); });
-  hit.on('pointerup', () => {
+  hit.on('pointerup', (pointer) => {
     springTo(1, 220, 'Back.easeOut'); glowTo(0, 260);
     if (!live()) { pressed = false; return; }
     // defer so handlers can safely destroy this button (e.g. closing a modal)
-    if (pressed && enabled && !scene.scrollDragged) scene.time.delayedCall(0, () => onClick?.());
+    if (pressed && enabled && !scene.scrollDragged) scene.time.delayedCall(0, () => onClick?.(pointer));
     pressed = false;
   });
   c.setEnabled = (v) => { if (enabled !== !!v) { enabled = !!v; draw(); } return c; };

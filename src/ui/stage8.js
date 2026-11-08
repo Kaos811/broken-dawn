@@ -10,6 +10,7 @@ import { speedupIconKey } from './speedups.js';
 import { itemById } from '../systems/items.js';
 import { TOP_H } from './layout.js';
 import { createStage14Buttons, refreshStage14 } from './stage14.js';
+import { showLoot } from './loot.js';
 
 const testFlags = () => (typeof window !== 'undefined' ? window.__BD_TEST ?? {} : {});
 
@@ -19,6 +20,36 @@ export function fmtBundle(b, sep = '  ·  ') {
   const su = (k) => SPEEDUPS.items.find((i) => `su_${i.id}` === k || `it_${i.id}` === k);
   const it = (k) => (k.startsWith('it_') ? itemById(k.slice(3)) : null);
   return Object.entries(b ?? {}).filter(([, v]) => v).map(([k, v]) => (su(k) ? `+${v}× ${su(k).short} speed-up` : it(k) ? `+${v}× ${it(k).name} bundle` : `+${fmt(v)} ${k === 'cores' ? (v === 1 ? 'Beacon Core' : 'Beacon Cores') : names[k] ?? k}`)).join(sep);
+}
+
+// One line per granted thing, for the reward panel.
+export function bundleLines(b) {
+  const s = fmtBundle(b, '\n');
+  return s ? s.split('\n').filter(Boolean) : [];
+}
+
+// Daily login / beacon / milestone claims, including Claim all (res.parts).
+export function coreRewardLines(res) {
+  if (!res?.ok && !res?.parts) return [];
+  if (res.parts) {
+    const cores = res.parts.reduce((n, p) => n + (p.cores || 0), 0);
+    const stamina = res.parts.reduce((n, p) => n + (p.stamina || 0), 0);
+    const items = {};
+    for (const p of res.parts) for (const [k, v] of Object.entries(p.items || {})) if (v) items[k] = (items[k] || 0) + v;
+    return coreRewardLines({ ok: true, cores, stamina, items });
+  }
+  const lines = [];
+  if (res.cores) lines.push(`+${fmt(res.cores)} Beacon ${res.cores === 1 ? 'Core' : 'Cores'}`);
+  if (res.stamina) lines.push(`+${res.stamina} Stamina`);
+  if (res.items) lines.push(...bundleLines(res.items));
+  if (res.reward) lines.push(...bundleLines(res.reward));
+  if (res.pts) lines.push(`+${res.pts} activity points`);
+  return lines;
+}
+
+function presentLoot(ui, title, lines, from) {
+  if (!lines.length) return;
+  showLoot(ui, { title, lines, from });
 }
 
 function drawBadge(btn, n) {
@@ -126,11 +157,12 @@ export function openMissions(ui) {
       store.missionChests().forEach((ch) => {
         const cx = tx0 + tw * (ch.at / 100) - (ch.at === 100 ? 14 : 0), cy = ty - 66;
         const ready = ch.reached && !ch.claimed;
-        const hit = button(ui, cx, cy + 10, 104, 128, '', () => {
+        const hit = button(ui, cx, cy + 10, 104, 128, '', (p) => {
           const res = store.claimChest(ch.at);
-          if (res.ok) { audio.play('reward'); ui.toast(`${ch.tier[0].toUpperCase() + ch.tier.slice(1)} chest: ${fmtBundle(res.reward)}`, 2400); }
-          else ui.toast(res.reason + (ch.claimed ? '' : `\nInside: ${fmtBundle(ch.reward)}`), 2400);
+          if (!res.ok) { ui.toast(res.reason + (ch.claimed ? '' : `\nInside: ${fmtBundle(ch.reward)}`), 2400); reopen(); return; }
+          audio.play('reward');
           reopen();
+          presentLoot(ui, `${ch.tier[0].toUpperCase() + ch.tier.slice(1)} chest`, bundleLines(res.reward), p);
         }, { style: 'ghost', size: 14 });
         hit.chip = `chest-${ch.at}`; hit.alpha = 0.01; c.add(hit);
         if (ready) { g.fillStyle(PALETTE.gold, 0.22).fillCircle(cx, cy, 56); g.lineStyle(3, PALETTE.gold, 0.9).strokeCircle(cx, cy, 56); }
@@ -153,7 +185,13 @@ export function openMissions(ui) {
         c.add(text(ui, xr - 196, y + H / 2 - 11, `+${t.pts}`, 20, PALETTE.textCyan ?? '#5ff3ff', { fontStyle: 'bold' }).setOrigin(0.5));
         if (t.claimed) c.add(text(ui, xr - 74, y + H / 2 - 11, 'Claimed', 17, PALETTE.textDim).setOrigin(0.5));
         else if (t.done) {
-          const b = button(ui, xr - 74, y + H / 2, 128, 50, 'Claim', () => { const res = store.claimMission(t.id); if (res.ok) audio.play('reward'); reopen(); }, { style: 'gold', size: 20 });
+          const b = button(ui, xr - 74, y + H / 2, 128, 50, 'Claim', (p) => {
+            const res = store.claimMission(t.id);
+            if (!res.ok) { ui.toast(res.reason); return; }
+            audio.play('reward');
+            reopen();
+            presentLoot(ui, t.name, [`+${res.pts} activity points`], p);
+          }, { style: 'gold', size: 20 });
           b.chip = `mission-${t.id}`; c.add(b);
         } else {
           const b = button(ui, xr - 74, y + H / 2, 128, 50, 'Go', () => goFor(ui, t.id), { style: 'ghost', size: 20 });
@@ -162,10 +200,15 @@ export function openMissions(ui) {
       });
       const n = store.missionsReady();
       const yb = ty + 86 + list.length * P + 36;
-      const all = button(ui, r.x + r.w / 2, yb, 320, 62, n ? `Claim all (${n})` : 'Nothing to claim', () => {
+      const all = button(ui, r.x + r.w / 2, yb, 320, 62, n ? `Claim all (${n})` : 'Nothing to claim', (p) => {
         const res = store.claimAllMissions();
-        if (res.ok) { audio.play('reward'); ui.toast(`+${res.pts} activity${Object.keys(res.reward).length ? `\n${fmtBundle(res.reward)}` : ''}`, 2400); }
+        if (!res.ok) { reopen(); return; }
+        audio.play('reward');
+        const lines = [];
+        if (res.pts) lines.push(`+${res.pts} activity points`);
+        lines.push(...bundleLines(res.reward));
         reopen();
+        presentLoot(ui, 'Rewards collected', lines, p);
       }, { style: 'cyan', size: 22 });
       all.setEnabled(n > 0); all.chip = 'missions-all'; c.add(all);
       c.tick = () => resetT.setText(`Resets in ${fmtDuration(store.missionsResetIn())}`);

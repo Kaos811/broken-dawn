@@ -680,16 +680,24 @@ async function runStage2(url, label, takeShots) {
     await shot('stage2-cores-earn.png');
     await click('Claim +1', { meta: 'daily' });
     check('UI daily claim adds 1 Core', (await state()).resources.cores === 1);
+    const dailyLoot = await ev(() => __BD.ui().loot && { sticky: __BD.ui().loot.sticky, text: __BD.ui().loot.lootText });
+    check('daily reward stays on a panel (Core, stamina, speed-up) until Collect', !!dailyLoot?.sticky && /\+1 Beacon Core/.test(dailyLoot.text) && /Stamina/.test(dailyLoot.text) && /15m speed-up/.test(dailyLoot.text), JSON.stringify(dailyLoot));
+    await page.mouse.click(40, 180); await sleep(200);
+    check('the claim tap\'s follow-up click does not dismiss the daily reward', !!(await ev(() => __BD.ui().loot?.sticky)) && (await state()).resources.cores === 1);
     check('daily button shows Claimed afterwards', !!(await ev(() => __BD.controls().find((c) => c.label === 'Claimed' && c.meta === 'daily' && !c.enabled))));
+    await click('Collect');
+    check('Collect dismisses the daily reward panel', !(await ev(() => __BD.ui().loot)));
     await click('Lv 2 · +3', { meta: 'beacon-2' });
     s = await state();
     check('Beacon Lv 2 reward claimed via UI (+3)', s.resources.cores === 4 && s.claims.beacon.includes(2));
+    await click('Collect');
     const bl = await ev(() => [__BD.store.claimBeaconLevel(2).ok, __BD.store.claimBeaconLevel(4).ok, __BD.store.claimBeaconLevel(3).ok, __BD.store.claimBeaconLevel(3).ok]);
     check('Beacon level rewards: each level once only, unreached levels refused', JSON.stringify(bl) === '[false,false,true,false]' && (await state()).resources.cores === 7, JSON.stringify(bl));
     await ev(() => __BD.ui().openRewards()); await sleep(300);
     await click('Claim +2', { meta: 'ms-cc3' });
     s = await state();
     check('milestone "Command Center Lv 3" claimed via UI (+2)', s.claims.milestones.includes('cc3') && s.resources.cores === 9);
+    await click('Collect');
     const ms = await ev(() => { const st = __BD.store; const a = st.claimMilestone('cc3').ok; const b = st.claimMilestone('troops50'); return [a, b.ok, b.reason]; });
     check('milestones: claimed once only; unfinished ones refused', ms[0] === false && ms[1] === false && /Own 50 troops/.test(ms[2]), JSON.stringify(ms));
     const t50 = await ev(() => { const st = __BD.store; const snap = JSON.stringify(st.state.troops); st.state.troops.sentinel += 50; const r = [st.claimMilestone('troops50').cores, st.claimMilestone('troops50').ok]; st.state.troops = JSON.parse(snap); return r; });
@@ -1524,6 +1532,7 @@ async function runStage5(url, label, takeShots) {
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
+  const cdp = await ctx.newCDPSession(page);
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(e.message));
@@ -1575,16 +1584,39 @@ async function runStage5(url, label, takeShots) {
     let s = await state();
     check('new game: save v13 with audio defaults (music 70%, effects 90%, sound on, haptics on)', s.version === 17 && s.settings.music === 0.7 && s.settings.sfx === 0.9 && s.settings.muted === false && s.settings.haptics === true, JSON.stringify(s.settings));
     let t = await tut();
-    check('new game: the 3-panel story intro opens first (page 1, Skip intro chip)', t.active && t.step === 0 && t.story === 0 && !!(await ctl(null, { meta: 'story-skip' })), JSON.stringify(t));
+    check('new game: the 3-panel story intro opens first (page 1, Skip intro chip, Continue)', t.active && t.step === 0 && t.story === 0 && !!(await ctl(null, { meta: 'story-skip' })) && !!(await ctl(null, { meta: 'story-continue' })), JSON.stringify(t));
     check('new game: HUD is gated (only Base; Troops/World/Armory/Squads/More/Cores/Missions locked)', ['troops', 'world', 'armory', 'squads', 'more', 'cores', 'missions'].every((k) => t.locked.includes(k)) && await waitTrue(() => __BD.ui().tabs.filter((x) => !x.hero && x.icon.visible).length === 0), JSON.stringify(t.locked));
     let a = await au();
     check('no audio before the first tap (browser autoplay rule)', a.unlocked === false && a.ctx === 'none', JSON.stringify(a));
+    // A tap on the picture used to skip the page. It stays until Continue.
+    await page.mouse.click(195, 500); await sleep(400);
+    check('story: a tap on the picture does not advance the page', (await tut()).story === 0);
+    {
+      const b = await ctl(null, { meta: 'story-continue' });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x, y: b.y, id: 0 }] });
+      await sleep(40);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await sleep(250);
+      await page.mouse.click(b.x, b.y); await sleep(400);
+      check('story: one Continue press advances a single page (the touch is not followed by an extra click)', (await tut()).story === 1, JSON.stringify(await tut()));
+    }
+    await ev(() => __BD.ui().tutorial.celebrate({ title: 'Hold this', sub: 'The Beacon makes Energy and charges your upgrades.', quick: true }));
+    const held = await ev(() => {
+      const ui = __BD.ui();
+      let now = ui.time.now;
+      for (let i = 0; i < 50; i++) { now += 50; ui.time.update(now, 50); }
+      return { open: !!ui.tutorial.celebrating, hold: !!ui.tutorial.celebrating?.sticky };
+    });
+    await page.mouse.click(40, 200); await sleep(200);
+    check('celebration stays up to be read (no auto-close, backdrop tap does nothing)', held.open && held.hold && !!(await tut()).celebrating, JSON.stringify({ held, t: await tut() }));
+    await click(null, { meta: 'celebrate-continue' });
+    check('celebration Continue dismisses it', !(await tut()).celebrating);
     await shot('stage5-tutorial-step.png', { wait: 500 });
     // Drive the onboarding like a player: story taps, celebration taps, reveal buttons, the pointer, Continue.
     const act = async () => {
       const t = await tut();
-      if (t.story != null) { await page.mouse.click(195, 500); await sleep(500); return t; }
-      if (t.celebrating) { const b = await ctl(null, { meta: 'celebrate-btn' }); if (b) await page.mouse.click(b.x, b.y); else await page.mouse.click(195, 800); await sleep(500); return t; }
+      if (t.story != null) { const b = await ctl(null, { meta: 'story-continue' }); if (b) await page.mouse.click(b.x, b.y); await sleep(500); return t; }
+      if (t.celebrating) { const b = await ctl(null, { meta: 'celebrate-btn' }) || await ctl(null, { meta: 'celebrate-continue' }); if (b) await page.mouse.click(b.x, b.y); await sleep(500); return t; }
       if (!t.visible && await ev(() => !!(__BD.ui().reveal || __BD.ui().replay))) { const b = (await ev(() => __BD.controls())).filter((c) => /^(Continue|Reveal All|Skip)$/.test(c.label) && c.enabled).pop(); if (b) await page.mouse.click(b.x, b.y); await sleep(500); return t; }
       if (t.target) { const p = await ev((g) => __BD.gameToPage(g.x, g.y), t.target); await page.mouse.click(p.x, p.y); await frames(4); await sleep(450); return t; }
       const c = t.visible ? await ctl(null, { meta: 'tutorial-continue' }) : null;
@@ -3536,17 +3568,40 @@ async function runStage8(url, label, takeShots) {
     // claim through the UI
     await click('q-missions');
     check('Missions button opens the Daily Missions screen', await waitTrue(() => !!__BD.ui().modal?.isMissions) && await modalHas(/^Resets in /));
-    await click('mission-daily');
+    {
+      const b = await ctl('mission-daily');
+      const session = await page.context().newCDPSession(page);
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x, y: b.y, id: 0 }] });
+      await sleep(40);
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await sleep(350);
+      await page.mouse.click(b.x, b.y); await sleep(250);
+    }
     check('claiming a task banks its points (+10)', (await ev(() => __BD.store.missionPoints())) === 10);
+    const taskLoot = await ev(() => __BD.ui().loot && { sticky: __BD.ui().loot.sticky, text: __BD.ui().loot.lootText });
+    check('mission reward stays visible until Collect (claim tap does not close it, no double points)', !!taskLoot?.sticky && /\+10 activity points/.test(taskLoot.text) && (await ev(() => __BD.store.missionPoints())) === 10, JSON.stringify(taskLoot));
+    await click('loot-collect');
+    check('Collect closes the mission reward', !(await ev(() => __BD.ui().loot)));
     await click('mission-kills');
+    await click('loot-collect');
     const e0 = await ev(() => ({ e: __BD.store.state.resources.energy, L: __BD.store.state.beacon.level }));
     await click('chest-20');
     check('20-point bronze chest pays Energy 300 × Beacon level', await ev((e0) => Math.round(__BD.store.state.resources.energy - e0.e) >= 300 * e0.L && __BD.store.state.missions.chests.includes(20), e0));
+    const chestLoot = await ev(() => __BD.ui().loot?.lootText ?? '');
+    check('chest reward lists what was paid and stays up', /Energy/.test(chestLoot) && /speed-up/.test(chestLoot) && !!(await ev(() => __BD.ui().loot?.sticky)), chestLoot);
+    await page.mouse.click(40, 160); await sleep(200);
+    check('a tap outside Collect leaves the chest reward up', !!(await ev(() => __BD.ui().loot?.sticky)));
+    await click('loot-collect');
+    const e1 = await ev(() => __BD.store.state.resources.energy);
+    await click('chest-20');
+    check('opening the same chest again does not pay twice', Math.round((await ev(() => __BD.store.state.resources.energy)) - e1) === 0 && !(await ev(() => __BD.ui().loot)));
     const c0 = await ev(() => __BD.store.state.resources.cores);
     await click('missions-all');
-    const all = await ev(() => ({ pts: __BD.store.missionPoints(), chests: __BD.store.state.missions.chests.slice().sort((a, b) => a - b), cores: __BD.store.state.resources.cores, ready: __BD.store.missionsReady() }));
+    const all = await ev(() => ({ pts: __BD.store.missionPoints(), chests: __BD.store.state.missions.chests.slice().sort((a, b) => a - b), cores: __BD.store.state.resources.cores, ready: __BD.store.missionsReady(), loot: __BD.ui().loot?.lootText ?? '', sticky: !!__BD.ui().loot?.sticky }));
     check('Claim all: every task claimed (110 points) and every chest opened', all.pts === 110 && all.chests.join(',') === '20,40,60,80,100' && all.ready === 0, JSON.stringify(all));
     check('the 100-point gold chest is the only Core: exactly +1', all.cores - c0 === 1, `${c0} -> ${all.cores}`);
+    check('Claim all shows activity and every chest reward together, until Collect', all.sticky && /activity points/.test(all.loot) && /Beacon Core/.test(all.loot) && /speed-up/.test(all.loot), all.loot);
+    await click('loot-collect');
     check('opened chests show their open art', await ev(() => { const keys = []; const w = (o) => { if (o.texture) keys.push(o.texture.key); (o.list ?? []).forEach(w); }; w(__BD.ui().modal); return ['chest-bronze-open', 'chest-silver-open', 'chest-gold-open'].every((k) => keys.includes(k)); }));
     await ev(() => __BD.ui().closeModal(true));
 
