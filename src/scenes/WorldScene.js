@@ -7,6 +7,8 @@ import { LOCAL_OWNER, BASE_ID, CENTER, dist } from '../world/worldState.js';
 import { attachLeadIcon } from '../ui/widgets.js';
 import { FONT, TITLE_FONT } from '../ui/fonts.js';
 import { LevelTag, BasePlate } from '../ui/levelTag.js';
+import { buildBehemothMesh, poseBehemothMesh, BH_MESH_W } from '../world/behemothMesh.js';
+import { buildCreatureMesh, poseCreatureMesh } from '../world/creatureMesh.js';
 
 const T = WORLD.tile;
 const SIZE = WORLD.size * T;
@@ -26,6 +28,18 @@ const LAIR_W = { 'lair-burrow': 190, 'lair-roost': 150, 'lair-nest': 140, 'lair-
 // stage 20: on-map body widths (world px) and singular names for the Ants-style tags
 export const CR_W = { scuttler: 90, drone: 100, hound: 115, golem: 130, wyrm: 160, behemoth: 300 };
 const CR_NAME = { scuttler: 'Husk Scuttler', drone: 'Rift Drone', hound: 'Void Hound', golem: 'Shard Golem', wyrm: 'Dusk Wyrm', behemoth: 'Behemoth' };
+// Live map keeps the stage-20 idle poses. ?motion=mesh (or __BD_TEST.motion) bends the painted art.
+// The Behemoth uses the approved A4 mesh unchanged. ?reel=1 is the judging lineup, not the live map.
+export function meshPreviewOn() {
+  if (typeof window === 'undefined') return false;
+  if (window.__BD_TEST?.motion === 'mesh') return true;
+  try { return new URLSearchParams(location.search).get('motion') === 'mesh'; } catch { return false; }
+}
+function reelRequested() {
+  if (!meshPreviewOn()) return false;
+  if (typeof window !== 'undefined' && window.__BD_TEST?.reel) return true;
+  try { return new URLSearchParams(location.search).get('reel') === '1'; } catch { return false; }
+}
 // Idle motion: per-creature randomized breathing (+ type extras), evaluated per frame for on-screen creatures only.
 const TAU = Math.PI * 2;
 export function newIdle(type) {
@@ -92,6 +106,7 @@ export default class WorldScene extends Phaser.Scene {
     ];
     this.events.once('shutdown', () => this.unsubs.forEach((u) => u()));
     this.syncAll(true);
+    if (reelRequested()) this.startReel();
   }
 
   ui() { return this.scene.get('UI'); }
@@ -102,14 +117,17 @@ export default class WorldScene extends Phaser.Scene {
     const t = this.add.text(x, y, str, { fontFamily: FONT, fontSize: `${o.size ?? 24}px`, fontStyle: o.bold === false ? 'normal' : 'bold', color: o.color ?? '#f2ead8', backgroundColor: o.bg ?? '#07090dcc', padding: { x: 10, y: 4 }, align: 'center' })
       .setOrigin(0.5, o.oy ?? 0).setDepth(o.depth ?? 41);
     attachLeadIcon(t);
-    this.labels.push({ t, min: o.min ?? 0 });
+    this.labels.push({ t, min: o.min ?? 0, reel: !!o.reel });
     this.fitLabel(this.labels[this.labels.length - 1]);
     return t;
   }
   // stage 20: Ants-style level tag (creatures, nodes) and base nameplate; zoom-fitted like plaques
   levelTag(x, y, o = {}) { const t = new LevelTag(this, x, y, o); this.labels.push({ t, min: o.min ?? 0 }); this.fitLabel(this.labels[this.labels.length - 1]); return t; }
   basePlate(x, y, o = {}) { const t = new BasePlate(this, x, y, o); this.labels.push({ t, min: o.min ?? 0 }); this.fitLabel(this.labels[this.labels.length - 1]); return t; }
-  fitLabel(l, z = this.zl) { l.t.setScale(1 / z); l.t.setVisible(z >= l.min && !l.t.hiddenByGame); }
+  fitLabel(l, z = this.zl) {
+    if (this.reelOn && !l.reel) { l.t.setVisible(false); return; }
+    l.t.setScale(1 / z); l.t.setVisible(z >= l.min && !l.t.hiddenByGame);
+  }
   fitLabels(force = false) {
     const z = this.zl;
     if (!force && z === this.labelZoom) return;
@@ -265,24 +283,32 @@ export default class WorldScene extends Phaser.Scene {
       const p = tileToWorld(e.x, e.y);
       if (!s) {
         // stage 20: natural scale, feet on the tile centre, soft contact shadow, smaller faded lair, idle motion
-        const boss = !!CREATURES[e.type].rallyOnly, W = CR_W[e.type] ?? 110, hover = e.type === 'drone' ? 16 : 0;
+        const meshOn = meshPreviewOn() && !reelRequested();
+        const boss = !!CREATURES[e.type].rallyOnly, W = (meshOn && e.type === 'behemoth') ? BH_MESH_W : (CR_W[e.type] ?? 110), hover = e.type === 'drone' ? 16 : 0;
         const lf = LAIR_OF[e.type] ?? 'lair-crater';
         const lair = this.add.image(p.x, p.y + 4, 'wmap', lf).setOrigin(0.5, 0.6).setDepth(0.9).setAlpha(0.8);
         lair.setScale(W * 1.1 / lair.width).setAlpha(0.65);
         const fy = p.y + W * 0.12;
         const shadow = this.add.image(p.x + W * 0.04, fy, 'wmap', 'shadow').setDepth(9.99 + p.y / SIZE).setAlpha(0.5);
-        const img = this.add.image(p.x, fy - hover, `cr-${e.type}`).setOrigin(0.5, 0.97).setDepth(10 + p.y / SIZE);
+        const tex = (meshOn && e.type === 'behemoth') ? 'cr-behemoth-w' : `cr-${e.type}`;
+        const img = this.add.image(p.x, fy - hover, tex).setOrigin(0.5, 0.97).setDepth(10 + p.y / SIZE);
         const base = W / img.width;
         img.setScale(base);
         shadow.setScale(W * 0.8 / 96, W * 0.24 / 96);
         if (boss) img.setData('boss', true);
         let shimmer = null;
-        if (boss) shimmer = this.add.image(img.x, img.y, `cr-${e.type}`).setOrigin(0.5, 0.97).setScale(base).setBlendMode('ADD').setTint(0x2fe0c8).setAlpha(0).setDepth(img.depth + 0.0001);
+        if (boss) shimmer = this.add.image(img.x, img.y, tex).setOrigin(0.5, 0.97).setScale(base).setBlendMode('ADD').setTint(0x2fe0c8).setAlpha(0).setDepth(img.depth + 0.0001);
         const badge = this.levelTag(p.x, fy + 16, { depth: 11, min: 0.33 });
         const lock = this.add.text(p.x + 30, p.y - 54, '', { fontSize: '1px' }).setVisible(false); // kept for old hooks; the lock is drawn in the tag
-        s = { img, badge, lock, lair, shadow, shimmer, e, base, x0: img.x, y0: img.y, sx0: shadow.scaleX, sy0: shadow.scaleY, idle: newIdle(e.type) };
+        s = { img, badge, lock, lair, shadow, shimmer, e, base, x0: img.x, y0: img.y, sx0: shadow.scaleX, sy0: shadow.scaleY, shx0: shadow.x, idle: newIdle(e.type) };
+        if (meshOn && e.type === 'behemoth') {
+          s.rig = buildBehemothMesh(this, img, shimmer); s.pose = poseBehemothMesh; img.setAlpha(0.001); s.meshMode = true;
+          shadow.setScale(W * 0.62 / 96, W * 0.17 / 96); s.sx0 = shadow.scaleX; s.sy0 = shadow.scaleY; shadow.setX(p.x + W * 0.04); s.shx0 = shadow.x;
+        } else if (meshOn) {
+          s.rig = buildCreatureMesh(this, img); s.pose = poseCreatureMesh; img.setAlpha(0.001); s.meshMode = true;
+        }
         this.crSprites.set(e.id, s);
-        if (!force) { img.setAlpha(0); this.tweens.add({ targets: img, alpha: 1, duration: 500 }); }
+        if (!force && !s.meshMode) { img.setAlpha(0); this.tweens.add({ targets: img, alpha: 1, duration: 500 }); }
       }
       if (CREATURES[e.type].rallyOnly) { // stage 19: world boss: never "locked", rallied -> crossed swords
         s.badge.set(e.level, 'Behemoth', { color: '#8ff7e6', busy: !!e.busy });
@@ -293,7 +319,7 @@ export default class WorldScene extends Phaser.Scene {
       s.img.setTint(locked ? 0x9a9a9a : 0xffffff);
     }
     this.syncNodes(force);
-    for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); s.shadow.destroy(); s.shimmer?.destroy(); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
+    for (const [id, s] of this.crSprites) if (!live.has(id)) { s.img.destroy(); s.badge.destroy(); s.lock.destroy(); s.lair.destroy(); s.shadow.destroy(); s.shimmer?.destroy(); s.rig?.all?.forEach((o) => o.destroy()); this.crSprites.delete(id); if (this.selected === id) this.select(null); }
   }
 
   // Stage 16: Alloy nodes: full crystal, drained stump, or the gathering camp while a squad mines it.
@@ -547,21 +573,44 @@ export default class WorldScene extends Phaser.Scene {
     this.gesture = null;
   }
 
-  // stage 20: idle motion for on-screen creatures only (math per frame, no tweens to manage or leak)
-  animateIdle() {
-    const t = this.time.now / 1000, dt = Math.min(0.1, (this.game.loop.delta || 16) / 1000);
-    this.idleAnimated = 0;
-    if (this.reducedMotion) return;
-    const v = this.cameras.main.worldView, m = 200;
-    for (const s of this.crSprites.values()) {
-      const vis = s.x0 > v.x - m && s.x0 < v.right + m && s.y0 > v.y - m && s.y0 < v.bottom + m;
-      s.img.setVisible(vis); s.shadow.setVisible(vis); s.shimmer?.setVisible(vis);
-      if (!vis) continue;
-      this.idleAnimated++;
+  poseCreature(s, t, dt) {
+    if (!s.rig) {
       const q = idlePose(s.idle, t, dt);
       s.img.setScale(s.base * q.sx, s.base * q.sy).setPosition(s.x0 + q.dx, s.y0 + q.dy).setRotation(q.ang);
       s.shadow.setScale(s.sx0 * q.sh * (1 + (q.sx - 1)), s.sy0 * q.sh).setAlpha(0.5 * (0.85 + 0.15 * q.sh));
       if (s.shimmer) s.shimmer.setScale(s.img.scaleX, s.img.scaleY).setPosition(s.img.x, s.img.y).setAlpha(0.07 + 0.07 * Math.sin(TAU * t / 2.7 + s.idle.ph));
+      return;
+    }
+    const q = s.pose(s, t, dt);
+    s.shadow.setScale(s.sx0 * (q.sh ?? 1), s.sy0 * (q.sh ?? 1)).setX(s.shx0 + (q.shx || 0)).setAlpha(0.5 * (0.85 + 0.15 * (q.sh ?? 1)));
+    if (s.meshMode) return;
+    if (s.shimmer) s.shimmer.setScale(s.img.scaleX, s.img.scaleY).setPosition(s.img.x, s.img.y).setAlpha(0.07 + 0.07 * Math.sin(TAU * t / 2.7 + s.idle.ph));
+  }
+
+  // stage 20: idle motion for on-screen creatures only (math per frame, no tweens to manage or leak)
+  animateIdle() {
+    const t = this.motionClock != null ? this.motionClock : this.time.now / 1000, dt = Math.min(0.1, (this.game.loop.delta || 16) / 1000);
+    this.idleAnimated = 0;
+    if (this.reelOn) {
+      this.hideLiveCreatures();
+      if (!this.reducedMotion) for (const s of this.reelSprites) { this.poseCreature(s, t, dt); this.idleAnimated++; }
+      return;
+    }
+    if (this.reducedMotion) return;
+    const v = this.cameras.main.worldView, m = 200;
+    for (const s of this.crSprites.values()) {
+      const vis = s.x0 > v.x - m && s.x0 < v.right + m && s.y0 > v.y - m && s.y0 < v.bottom + m;
+      s.img.setVisible(vis); s.shadow.setVisible(vis); s.shimmer?.setVisible(vis && !s.meshMode); s.rig?.all?.forEach((o) => o.setVisible(vis));
+      if (!vis) continue;
+      this.idleAnimated++;
+      this.poseCreature(s, t, dt);
+    }
+  }
+
+  hideLiveCreatures() {
+    for (const s of this.crSprites.values()) {
+      s.img.setVisible(false); s.shadow.setVisible(false); s.shimmer?.setVisible(false); s.lair?.setVisible(false); s.badge?.setVisible(false);
+      s.rig?.all?.forEach((o) => o.setVisible(false));
     }
   }
 
@@ -576,5 +625,96 @@ export default class WorldScene extends Phaser.Scene {
     this.drawMarks();
     this.ui()?.worldHud?.visible && this.ui().worldHud.coords?.();
     if ((this.gesture || this.pinch) && this.downPointers().length === 0) { this.gesture = null; this.pinch = null; }
+    if (this.reelOn && !this.reelLock) this.applyReel();
+  }
+
+  // Judging lineup. Not used by the live map. Camera holds game scale, then a close-up long enough to read each gait.
+  // Behemoth close-up covers the A4 roar window (first roar ~5–9s, next 7–12s later).
+  startReel() {
+    this.reelOn = true;
+    this.scene.setVisible(false, 'UI');
+    const ax = SIZE * 0.5, ay = SIZE * 0.62;
+    const ground = this.add.image(ax, ay, 'wmap-ground').setDepth(11.2).setAlpha(0.96);
+    ground.setDisplaySize(3600, 2600);
+    // Zoom 1 shows each creature at its authored world size (CR_W). Three bands so the names do not collide.
+    const spots = [
+      { type: 'behemoth', name: 'Rift Behemoth', x: ax, y: ay - 200 },
+      { type: 'scuttler', name: 'Husk Scuttler', x: ax - 220, y: ay + 130 },
+      { type: 'drone', name: 'Rift Drone', x: ax, y: ay + 130 },
+      { type: 'hound', name: 'Void Hound', x: ax + 220, y: ay + 130 },
+      { type: 'golem', name: 'Shard Golem', x: ax - 170, y: ay + 430 },
+      { type: 'wyrm', name: 'Dusk Wyrm', x: ax + 170, y: ay + 430 },
+    ];
+    this.reelSprites = spots.map((sp) => this.makeReelCreature(sp));
+    const focusOf = (sp) => ({ x: sp.x, y: sp.y - CR_W[sp.type] * 0.46 });
+    const zoomOf = (sp) => Math.min(6.2, (LW * 0.78) / CR_W[sp.type]);
+    const all = { x: ax, y: ay + 40 };
+    const shot = (t, sp, cap, who) => ({ t, zoom: sp ? zoomOf(sp) : 1, x: sp ? focusOf(sp).x : all.x, y: sp ? focusOf(sp).y : all.y, cap, who });
+    const by = Object.fromEntries(spots.map((s) => [s.type, s]));
+    this.reelShots = [
+      shot(0, null, 'Game scale', 'all'),
+      shot(9, by.behemoth, 'Close-up', 'behemoth'),
+      shot(25, by.wyrm, 'Close-up', 'wyrm'),
+      shot(33, by.scuttler, 'Close-up', 'scuttler'),
+      shot(40, by.drone, 'Close-up', 'drone'),
+      shot(47, by.hound, 'Close-up', 'hound'),
+      shot(54, by.golem, 'Close-up', 'golem'),
+      shot(62, null, 'Game scale', 'all'),
+    ];
+    this.reelEnd = 68;
+    this.reelCap = this.add.text(ax, ay, '', { fontFamily: FONT, fontSize: '26px', fontStyle: 'bold', color: '#f4efe4', backgroundColor: '#07090de8', padding: { x: 14, y: 7 } }).setOrigin(0.5, 0).setDepth(80);
+    this.labels.push({ t: this.reelCap, min: 0, reel: true });
+    this.applyReel();
+  }
+
+  makeReelCreature({ type, name, x, y }) {
+    const W = type === 'behemoth' ? BH_MESH_W : CR_W[type];
+    const hover = type === 'drone' ? 16 : 0;
+    const tex = type === 'behemoth' ? 'cr-behemoth-w' : `cr-${type}`;
+    const shadow = this.add.image(x + W * 0.04, y, 'wmap', 'shadow').setDepth(11.6).setAlpha(0.5);
+    shadow.setScale(W * (type === 'behemoth' ? 0.62 : 0.8) / 96, W * (type === 'behemoth' ? 0.17 : 0.24) / 96);
+    const img = this.add.image(x, y - hover, tex).setOrigin(0.5, 0.97).setDepth(12);
+    const base = W / img.width;
+    img.setScale(base).setAlpha(0.001);
+    let shimmer = null, rig, pose;
+    if (type === 'behemoth') {
+      shimmer = this.add.image(img.x, img.y, tex).setOrigin(0.5, 0.97).setScale(base).setBlendMode('ADD').setTint(0x2fe0c8).setAlpha(0).setDepth(img.depth + 0.0001);
+      rig = buildBehemothMesh(this, img, shimmer); pose = poseBehemothMesh;
+    } else {
+      rig = buildCreatureMesh(this, img); pose = poseCreatureMesh;
+    }
+    const tag = this.plaque(x, y - W * 0.94, name, { size: 26, oy: 1, depth: 40, reel: true, bg: '#07090de6', color: type === 'behemoth' ? '#8ff7e6' : type === 'wyrm' ? '#ffb347' : '#f4efe4' });
+    return { type, name, tag, img, shadow, shimmer, rig, pose, base, x0: img.x, y0: img.y, sx0: shadow.scaleX, sy0: shadow.scaleY, shx0: shadow.x, idle: newIdle(type), meshMode: true, e: { type } };
+  }
+
+  applyReel() {
+    const t = this.motionClock != null ? this.motionClock : this.time.now / 1000;
+    const shots = this.reelShots;
+    let i = 0;
+    while (i < shots.length - 1 && t >= shots[i + 1].t) i++;
+    const cur = shots[i], prev = shots[Math.max(0, i - 1)];
+    const u = i === 0 ? 1 : Math.max(0, Math.min(1, (t - cur.t) / 0.7));
+    const e = u * u * (3 - 2 * u);
+    const from = i === 0 ? cur : prev;
+    const zoom = from.zoom + (cur.zoom - from.zoom) * e;
+    const x = from.x + (cur.x - from.x) * e;
+    const y = from.y + (cur.y - from.y) * e;
+    this.setZl(zoom);
+    const cam = this.cameras.main;
+    cam.centerOn(x, y);
+    const who = u > 0.45 ? cur.who : from.who;
+    const cap = u > 0.45 ? cur.cap : from.cap;
+    const z = this.zl;
+    for (const s of this.reelSprites) {
+      s.tag.hiddenByGame = who !== 'all';
+      s.tag.setVisible(who === 'all').setScale(1 / z);
+    }
+    this.reelCap.setText(cap === 'Close-up' ? `Close-up  ·  ${this.reelSprites.find((s) => s.type === who)?.name ?? ''}` : 'Game scale');
+    this.reelCap.hiddenByGame = false;
+    this.reelCap.setScale(1 / z);
+    const p = this.screenToWorld(LW / 2, 36);
+    this.reelCap.setPosition(p.x, p.y);
+    this.reelWho = who;
+    this.reelT = t;
   }
 }

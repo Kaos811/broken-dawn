@@ -10,6 +10,7 @@ import crHound from '../art/world/creatures/cr-hound.webp';
 import crGolem from '../art/world/creatures/cr-golem.webp';
 import crWyrm from '../art/world/creatures/cr-wyrm.webp';
 import crBehemoth from '../art/world/creatures/cr-behemoth.webp';
+import crBehemothWinged from '../art/world/creatures/cr-behemoth-winged.webp'; // A4 mesh preview only (?motion=mesh)
 const CR_ART = { scuttler: crScuttler, drone: crDrone, hound: crHound, golem: crGolem, wyrm: crWyrm, behemoth: crBehemoth };
 // stage 19: rally art (banner on a rallying base, crossed-swords emblem, 5 trophies: bronze..dawn)
 const RALLY_ART = import.meta.glob('../art/rally/*.webp', { eager: true, import: 'default' });
@@ -88,7 +89,8 @@ export default class BootScene extends Phaser.Scene {
       const n = path.split('/').pop().replace('.webp', ''), m = /^trophy-(\d)$/.exec(n);
       this.load.image(m ? `trophy-${TROPHY_IDS[m[1] - 1]}` : n, url);
     }
-    for (const [id, url] of Object.entries(CR_ART)) this.load.image(`cr-${id}`, url); // painted map monsters (256x256)
+    for (const [id, url] of Object.entries(CR_ART)) this.load.image(`cr-${id}`, url);
+    this.load.image('cr-behemoth-w', crBehemothWinged); // painted map monsters (256x256)
   }
 
   create() {
