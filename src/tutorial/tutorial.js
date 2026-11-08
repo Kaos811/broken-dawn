@@ -9,6 +9,7 @@ import { store } from '../state/store.js';
 import { text, button, panelBg, fmt } from '../ui/widgets.js';
 import { audio } from '../audio/audio.js';
 import { TOP_H, NAV_H, HERO_RISE, SAFE } from '../ui/layout.js';
+import { syntheticClickFilter } from '../ui/gesture.js';
 
 // helpers to locate things on screen (game coordinates)
 function findButton(ui, pred) {
@@ -456,12 +457,16 @@ export class Tutorial {
     const img = ui.add.image(W / 2, H / 2, 'ob-story-1');
     const shade = ui.add.graphics();
     shade.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.92, 0.92).fillRect(0, H - 460, W, 260).fillStyle(0x000000, 0.92).fillRect(0, H - 200, W, 200);
-    const cap = text(ui, W / 2, H - 230, '', 30, '#f3e6c8', { fontStyle: 'bold', align: 'center', wordWrap: { width: W - 100 }, lineSpacing: 8, stroke: '#000', strokeThickness: 4 }).setOrigin(0.5, 0.5);
-    const hint = text(ui, W / 2, H - 110, 'Tap to continue', 20, PALETTE.textGold).setOrigin(0.5);
+    const cap = text(ui, W / 2, H - 250, '', 30, '#f3e6c8', { fontStyle: 'bold', align: 'center', wordWrap: { width: W - 100 }, lineSpacing: 8, stroke: '#000', strokeThickness: 4 }).setOrigin(0.5, 0.5);
     const dots = ui.add.graphics();
     const skip = button(ui, W - 100, 70 + SAFE.top, 150, 52, 'Skip intro', () => this.finishStory(), { style: 'ghost', size: 19 });
     skip.chip = 'story-skip';
-    c.add([bg, img, shade, cap, hint, dots, skip]);
+    // The page stays until Continue. A tap on the picture does not skip it, and a
+    // compatibility mouse click after a touch cannot turn one press into two pages.
+    const allow = syntheticClickFilter(null);
+    const cont = button(ui, W / 2, H - 118, 300, 70, 'Continue', () => c.advance(), { style: 'gold', size: 24, allow });
+    cont.chip = 'story-continue';
+    c.add([bg, img, shade, cap, dots, cont, skip]);
     const show = (i) => {
       c.page = i;
       img.setTexture(`ob-story-${i + 1}`);
@@ -469,13 +474,12 @@ export class Tutorial {
       img.setAlpha(0); ui.tweens.add({ targets: img, alpha: 1, duration: 450 });
       ui.tweens.add({ targets: img, scale: img.scale * 1.05, duration: 9000 });
       cap.setText(STORY[i]); cap.setAlpha(0); ui.tweens.add({ targets: cap, alpha: 1, duration: 600, delay: 200 });
-      hint.setText(i === STORY.length - 1 ? 'Tap to begin' : 'Tap to continue');
+      cont.setLabel(i === STORY.length - 1 ? 'Begin' : 'Continue');
       dots.clear();
-      for (let k = 0; k < STORY.length; k++) dots.fillStyle(k === i ? PALETTE.gold : 0x4a5260, 1).fillCircle(W / 2 + (k - 1) * 28, H - 66, k === i ? 8 : 6);
+      for (let k = 0; k < STORY.length; k++) dots.fillStyle(k === i ? PALETTE.gold : 0x4a5260, 1).fillCircle(W / 2 + (k - 1) * 28, H - 52, k === i ? 8 : 6);
       audio.play('tap');
     };
     c.advance = () => { if (c.page + 1 >= STORY.length) this.finishStory(); else show(c.page + 1); };
-    bg.on('pointerup', () => c.advance());
     show(0);
   }
   closeStory() {
@@ -489,7 +493,8 @@ export class Tutorial {
   }
 
   // ---------------------------------------------------------------- celebrations --
-  // Painted banner (or the open chest) with a title, a line under it, sparkles; tap (or the button) to close.
+  // Painted banner (or the open chest) with a title and a line under it. It stays until Continue
+  // (or the action button). The backdrop does not dismiss it.
   celebrate({ art = 'ob-victory-banner', title, sub = '', btn = null, onBtn = null, loot = false, chest = false, quick = false }) {
     const ui = this.ui, H = GAME_HEIGHT;
     this.closeCelebrate();
@@ -513,19 +518,20 @@ export class Tutorial {
     }
     if (loot) this.flyLoot();
     audio.play('levelup'); audio.haptic([20, 40, 30]);
-    let canClose = false;
-    ui.time.delayedCall(quick ? 300 : 650, () => { canClose = true; });
-    const close = () => { if (!canClose || this.celebrating !== c) return; this.closeCelebrate(); };
+    // Stays until an explicit button. The backdrop is not a dismiss control, and nothing
+    // auto-closes: a new player has to be able to read the line. `quick` only lightens the dim.
+    const close = () => { if (this.celebrating !== c) return; this.closeCelebrate(); };
+    const allow = syntheticClickFilter(null);
     if (btn) {
-      const b = button(ui, W / 2, chest ? cy + 360 : cy + 230, 340, 76, btn, () => { onBtn?.(); canClose = true; close(); }, { style: 'gold', size: 26 });
+      const b = button(ui, W / 2, Math.min(H - 90, chest ? cy + 360 : cy + 230), 340, 76, btn, () => { onBtn?.(); close(); }, { style: 'gold', size: 26, allow });
       b.chip = 'celebrate-btn'; c.add(b);
     } else {
-      c.add(text(ui, W / 2, chest ? cy + 330 : cy + 200, 'Tap to continue', 20, PALETTE.textGold).setOrigin(0.5, 0));
-      dim.on('pointerup', close);
-      if (quick) ui.time.delayedCall(1600, () => { canClose = true; close(); });
+      const b = button(ui, W / 2, Math.min(H - 90, chest ? cy + 380 : cy + 250), 300, 72, 'Continue', () => close(), { style: 'gold', size: 26, allow });
+      b.chip = 'celebrate-continue'; c.add(b);
     }
-    c.onBtn = btn ? () => { onBtn?.(); canClose = true; close(); } : null;
-    c.close = () => { canClose = true; close(); };
+    c.sticky = true;
+    c.onBtn = btn ? () => { onBtn?.(); close(); } : null;
+    c.close = () => close();
   }
   closeCelebrate() {
     const c = this.celebrating; if (!c) return;
@@ -548,7 +554,7 @@ export class Tutorial {
     return {
       active: this.active, step: this.step, id: STEPS[this.step]?.id ?? 'done', visible: this.card.visible, title: this.title.text, body: this.body.text,
       target: this.target && this.card.visible ? { x: Math.round(this.target.x), y: Math.round(this.target.y) } : null, cardY: this.rect.y,
-      story: this.story ? this.story.page : null, celebrating: this.celebrating ? true : false, tip: this.tip?.id ?? null,
+      story: this.story ? this.story.page : null, celebrating: this.celebrating ? true : false, hold: !!this.celebrating?.sticky, tip: this.tip?.id ?? null,
       goal: this.goal.visible ? this.goalText.text : null,
       locked: Object.keys(TUTORIAL.unlockAt).filter((id) => !this.unlocked(id)),
     };

@@ -1153,7 +1153,7 @@ class Store extends Emitter {
     this.track('daily');
     this.state.hunt.stamina = Math.min(STAMINA.overCap, this.state.hunt.stamina + STAMINA.dailyBonus); // +20 stamina too
     this.save(); this.emit('change');
-    return { ok: true, cores: info.reward, streak: info.streak, bonus: info.reward > CORES.daily.base, stamina: STAMINA.dailyBonus };
+    return { ok: true, cores: info.reward, streak: info.streak, bonus: info.reward > CORES.daily.base, stamina: STAMINA.dailyBonus, items };
   }
   beaconRewards() {
     const out = [];
@@ -1187,11 +1187,12 @@ class Store extends Emitter {
     return (this.dailyInfo().can ? 1 : 0) + this.beaconRewards().filter((r) => !r.claimed).length + this.milestones().filter((m) => m.done && !m.claimed).length;
   }
   claimAllRewards() {
-    let cores = 0;
-    if (this.dailyInfo().can) cores += this.claimDaily().cores;
-    for (const r of this.beaconRewards()) if (!r.claimed) cores += this.claimBeaconLevel(r.level).cores;
-    for (const m of this.milestones()) if (m.done && !m.claimed) cores += this.claimMilestone(m.id).cores;
-    return { ok: cores > 0, cores };
+    const parts = [];
+    if (this.dailyInfo().can) { const r = this.claimDaily(); if (r.ok) parts.push(r); }
+    for (const row of this.beaconRewards()) if (!row.claimed) { const r = this.claimBeaconLevel(row.level); if (r.ok) parts.push(r); }
+    for (const m of this.milestones()) if (m.done && !m.claimed) { const r = this.claimMilestone(m.id); if (r.ok) parts.push(r); }
+    const cores = parts.reduce((n, p) => n + (p.cores || 0), 0);
+    return { ok: parts.length > 0, cores, parts };
   }
 
   // ---- Shard upgrades: leader stars and gear levels ---------------------

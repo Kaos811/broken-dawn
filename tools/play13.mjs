@@ -25,8 +25,8 @@ for (let i = 0; i < 400; i++) {
   const key = `${t.id}|${t.story}|${t.celebrating}|${t.visible}`;
   if (key !== last) { console.log(((Date.now() - t0) / 1000).toFixed(1) + 's', key, t.title, '| locked:', t.locked.join(',')); last = key; }
   if (!t.active && !t.celebrating) break;
-  if (t.story != null) { await shot(`story-${t.story + 1}`); await page.mouse.click(195, 500); await sleep(700); continue; }
-  if (t.celebrating) { await shot(`celebrate-${t.id}`); const b = await ctl('celebrate-btn'); if (b) await page.mouse.click(b.x, b.y); else await page.mouse.click(195, 800); await sleep(700); continue; }
+  if (t.story != null) { await shot(`story-${t.story + 1}`); const b = await ctl('story-continue'); if (b) await page.mouse.click(b.x, b.y); await sleep(700); continue; }
+  if (t.celebrating) { await shot(`celebrate-${t.id}`); const b = await ctl('celebrate-btn') || await ctl('celebrate-continue'); if (b) await page.mouse.click(b.x, b.y); await sleep(700); continue; }
   if (!t.visible && await ev(() => !!(__BD.ui().reveal || __BD.ui().replay))) { await shot(`reveal-${t.id}`); const b = (await ev(() => __BD.controls())).filter((c) => /^(Continue|Reveal All|Close|Skip)$/.test(c.label) && c.enabled).pop(); if (b) await page.mouse.click(b.x, b.y); await sleep(800); continue; }
   if (t.visible) await shot(`${String(t.step).padStart(2, '0')}-${t.id}`);
   if (t.target) { const p = await ev((t) => __BD.gameToPage(t.x, t.y), t.target); await page.mouse.click(p.x, p.y); n++; await sleep(600); continue; }

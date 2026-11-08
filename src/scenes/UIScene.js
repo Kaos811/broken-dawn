@@ -16,7 +16,8 @@ import { renderInfirmary } from '../ui/screens/infirmary.js';
 import { renderArchive } from '../ui/screens/archive.js';
 import { RESEARCH } from '../config.js';
 import { createWorldHud, openReport, openReports, confirmTeleport } from '../ui/world.js';
-import { createRightColumn, refreshRightColumn, openMissions, openEvents, openExchange } from '../ui/stage8.js';
+import { createRightColumn, refreshRightColumn, openMissions, openEvents, openExchange, coreRewardLines } from '../ui/stage8.js';
+import { showLoot } from '../ui/loot.js';
 import { audio } from '../audio/audio.js';
 import { openSpeedUp, openItems, finishNow, speedupIconKey } from '../ui/speedups.js';
 import { SPEEDUPS } from '../config.js';
@@ -147,7 +148,7 @@ export default class UIScene extends Phaser.Scene {
 
   // Lets BaseScene know a screen point belongs to the UI.
   blocksPointer(x, y) {
-    if (this.modal || this.screen || this.reveal || this.replay || this.tutorial?.story || this.tutorial?.celebrating) return true;
+    if (this.modal || this.screen || this.reveal || this.replay || this.loot || this.tutorial?.story || this.tutorial?.celebrating) return true;
     if (y < TOP_H || y > H - NAV_H) return true;
     if (this.hero && (x - this.hero.x) ** 2 + (y - this.hero.y) ** 2 <= (HERO_R + 10) ** 2) return true;
     if (this.tip && this.tipBox.visible && x >= this.tipBox.x && x <= this.tipBox.x + 420 && y >= this.tipBox.y - 12 && y <= this.tipBox.y + 200) return true;
@@ -1065,7 +1066,12 @@ export default class UIScene extends Phaser.Scene {
   // Beacon Core rewards: daily login streak, Beacon level-ups, first-time milestones.
   openRewards() {
     const C = CORES, D = C.daily;
-    const claimed = (res) => { if (res.ok) { this.toast(`+${res.cores} Beacon ${res.cores === 1 ? 'Core' : 'Cores'}`, 1600); this.bump(this.coreText); } else this.toast(res.reason); this.openRewards(); };
+    const claimed = (res, from) => {
+      if (!res.ok) { this.toast(res.reason); this.openRewards(); return; }
+      this.bump(this.coreText);
+      this.openRewards();
+      showLoot(this, { title: 'Rewards collected', lines: coreRewardLines(res), from });
+    };
     this.openOverlay({
       title: 'Beacon Core Rewards', h: 1010,
       build: (c, r) => {
@@ -1087,13 +1093,13 @@ export default class UIScene extends Phaser.Scene {
           c.add(text(this, cx, cy - 10, bonus ? `+${D.base + D.streakBonus}` : `${k + 1}`, 16, done ? '#ffffff' : (bonus ? PALETTE.textGold : PALETTE.textDim), { fontStyle: 'bold' }).setOrigin(0.5, 0));
         }
         c.add(text(this, x0, r.y + 196, di.claimed ? `Claimed today · ${di.streak}-day streak · come back tomorrow` : `Day ${di.streak} of your streak: +${di.reward}${di.reward > D.base ? ' (streak bonus!)' : ''}`, 17, PALETTE.text));
-        const bd = button(this, xr - 90, r.y + 166, 180, 56, di.claimed ? 'Claimed' : `Claim +${di.reward}`, () => claimed(store.claimDaily()), { style: 'gold', size: 21 });
+        const bd = button(this, xr - 90, r.y + 166, 180, 56, di.claimed ? 'Claimed' : `Claim +${di.reward}`, (p) => claimed(store.claimDaily(), p), { style: 'gold', size: 21 });
         bd.setEnabled(di.can); bd.chip = 'daily'; c.add(bd);
         // beacon levels
         const br = store.beaconRewards(), open = br.filter((b) => !b.claimed);
         sectionHeader(this, c, x0, r.y + 240, 'BEACON LEVELS', { w: r.w - 260, color: C.hex, rule: C.color, size: 19 });
         c.add(text(this, x0, r.y + 274, `+${C.beaconLevel} Cores for each Beacon level reached, once each.\nBeacon Lv ${store.state.beacon.level}: ${br.length - open.length}/${br.length} claimed${open.length ? `, ${open.length} ready` : ''}. Next: Lv ${store.state.beacon.level + 1}.`, 17, PALETTE.text, { lineSpacing: 5 }));
-        const bb = button(this, xr - 90, r.y + 262, 180, 56, open.length ? `Lv ${open[0].level} · +${C.beaconLevel}` : 'None ready', () => claimed(store.claimBeaconLevel(open[0].level)), { style: 'gold', size: 20 });
+        const bb = button(this, xr - 90, r.y + 262, 180, 56, open.length ? `Lv ${open[0].level} · +${C.beaconLevel}` : 'None ready', (p) => claimed(store.claimBeaconLevel(open[0].level), p), { style: 'gold', size: 20 });
         bb.setEnabled(open.length > 0); bb.chip = open.length ? `beacon-${open[0].level}` : 'beacon-none'; c.add(bb);
         // milestones
         sectionHeader(this, c, x0, r.y + 336, 'FIRST-TIME MILESTONES', { w: r.w - 56, color: C.hex, rule: C.color, size: 19 });
@@ -1104,7 +1110,7 @@ export default class UIScene extends Phaser.Scene {
           c.add(text(this, x0 + 14, y + 32, m.desc, 15, PALETTE.textDim));
           if (m.claimed) c.add(text(this, xr - 16, y + 18, `+${m.cores} claimed`, 17, PALETTE.textDim).setOrigin(1, 0));
           else {
-            const b = button(this, xr - 84, y + 29, 150, 46, m.done ? `Claim +${m.cores}` : `+${m.cores}`, () => claimed(store.claimMilestone(m.id)), { style: m.done ? 'gold' : 'ghost', size: 19 });
+            const b = button(this, xr - 84, y + 29, 150, 46, m.done ? `Claim +${m.cores}` : `+${m.cores}`, (p) => claimed(store.claimMilestone(m.id), p), { style: m.done ? 'gold' : 'ghost', size: 19 });
             b.setEnabled(m.done); b.chip = `ms-${m.id}`; c.add(b);
           }
         });
@@ -1113,7 +1119,7 @@ export default class UIScene extends Phaser.Scene {
         c.add(note);
         const n = store.rewardsReady();
         // stage 17: the button sits a clear gap below the note however many lines it wraps to
-        const all = button(this, r.x + r.w / 2, yb + note.height + 46, 320, 64, n ? `Claim all (${n})` : 'Nothing to claim', () => claimed(store.claimAllRewards()), { style: 'cyan', size: 22 });
+        const all = button(this, r.x + r.w / 2, yb + note.height + 46, 320, 64, n ? `Claim all (${n})` : 'Nothing to claim', (p) => claimed(store.claimAllRewards(), p), { style: 'cyan', size: 22 });
         all.setEnabled(n > 0); c.add(all);
       },
     });
