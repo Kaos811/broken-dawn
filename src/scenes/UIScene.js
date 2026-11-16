@@ -57,6 +57,7 @@ export default class UIScene extends Phaser.Scene {
     audio.init();
     audio.setTrack('base');
     this.tutorial = new Tutorial(this);
+    this.createTestBanner();
     // idle frame cap (phones): drop to ~30 fps after a while without input
     this.lastInput = performance.now();
     const poke = () => { this.lastInput = performance.now(); };
@@ -149,6 +150,7 @@ export default class UIScene extends Phaser.Scene {
   // Lets BaseScene know a screen point belongs to the UI.
   blocksPointer(x, y) {
     if (this.modal || this.screen || this.reveal || this.replay || this.loot || this.tutorial?.story || this.tutorial?.celebrating) return true;
+    if (this.testBannerRect && x >= this.testBannerRect.x && x <= this.testBannerRect.x + this.testBannerRect.width && y >= this.testBannerRect.y && y <= this.testBannerRect.y + this.testBannerRect.height) return true;
     if (y < TOP_H || y > H - NAV_H) return true;
     if (this.hero && (x - this.hero.x) ** 2 + (y - this.hero.y) ** 2 <= (HERO_R + 10) ** 2) return true;
     if (this.tip && this.tipBox.visible && x >= this.tipBox.x && x <= this.tipBox.x + 420 && y >= this.tipBox.y - 12 && y <= this.tipBox.y + 200) return true;
@@ -1487,10 +1489,29 @@ export default class UIScene extends Phaser.Scene {
     if (this.activeTab !== want) { this.activeTab = want; this.drawNav(); }
   }
 
+  // Gold bar while Tutorial Test Mode is on: a fresh save, with Restart and a way back to the real one.
+  createTestBanner() {
+    if (!store.tutorialTest) return;
+    const y = SAFE.top + 26, h = 48, w = 668;
+    const c = this.testBanner = this.add.container(0, 0).setDepth(820);
+    const g = this.add.graphics();
+    g.fillStyle(0xffb347, 0.97).fillRoundedRect(W / 2 - w / 2, y - h / 2, w, h, 12);
+    g.lineStyle(2, 0x1a1004, 0.9).strokeRoundedRect(W / 2 - w / 2, y - h / 2, w, h, 12);
+    const label = text(this, 78, y, 'TEST MODE', 20, '#1a1004', { fontStyle: 'bold', letterSpacing: 1 }).setOrigin(0, 0.5);
+    const sub = text(this, 214, y, 'fresh save', 14, '#3a2608', { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    const restart = button(this, 430, y, 150, 40, 'Restart', () => store.restartTutorialTest(), { style: 'ghost', size: 16 });
+    restart.chip = 'tutorial-test-restart';
+    const exit = button(this, 596, y, 130, 40, 'Exit', () => store.exitTutorialTest(), { style: 'gold', size: 16 });
+    exit.chip = 'tutorial-test-exit';
+    c.add([g, label, sub, restart, exit]);
+    this.testBannerRect = { x: W / 2 - w / 2, y: y - h / 2, width: w, height: h };
+  }
+
   // Settings: audio (music / effects volume, mute), haptics, tutorial replay, version + Reset Save.
   openSettings() {
+    const testing = !!store.tutorialTest;
     this.openOverlay({
-      title: 'Settings', h: 1060, tab: 'more',
+      title: 'Settings', h: testing ? 1240 : 1140, tab: 'more',
       build: (c, r, close) => {
         const x0 = r.x + 32, xr = r.x + r.w - 32;
         const g = this.add.graphics(); c.add(g);
@@ -1512,17 +1533,27 @@ export default class UIScene extends Phaser.Scene {
         const hap = button(this, xr - 150, r.y + 400, 300, 64, '', () => { store.setSetting('haptics', !S().haptics); audio.haptic(20); }, { style: 'cyan', size: 22 }); hap.chip = 'haptics';
         c.add([mute, hap]);
         c.add(text(this, x0, r.y + 444, 'Sound starts after your first tap (browser rule) and pauses when the game is hidden. Haptics need a phone that supports vibration.', 15, PALETTE.textDim, { wordWrap: { width: r.w - 64 } }));
-        // tutorial
+        // tutorial. Replay opens a fresh test save so it can't run on top of a developed base.
         sectionHeader(this, c, x0, r.y + 520, 'TUTORIAL', { w: r.w - 64 });
         const tuS = text(this, x0, r.y + 556, '', 19, PALETTE.text); c.add(tuS);
-        const rep = button(this, xr - 150, r.y + 566, 300, 64, 'Replay Tutorial', () => {
-          store.replayTutorial(); close(); this.closeScreen(); this.hideWorld();
-          this.toast('Tutorial restarted. Follow the gold pointer.', 2200);
+        const help = testing
+          ? 'Test mode is a separate fresh save. Restart plays it from the beginning. Back to my base reloads your real save, which this mode never writes.'
+          : 'Replay runs the tutorial as a brand-new commander, on its own save. Your real base is not changed. You can also open ?tutorialtest=1.';
+        c.add(text(this, x0, r.y + 592, help, 16, PALETTE.textDim, { wordWrap: { width: r.w - 64 }, lineSpacing: 3 }));
+        const rep = button(this, r.x + r.w / 2, r.y + 720, r.w - 96, 64, testing ? 'Restart test' : 'Replay as new player', () => {
+          store.replayTutorial();
         }, { style: 'gold', size: 22 }); rep.chip = 'replay-tutorial'; c.add(rep);
+        if (testing) {
+          const back = button(this, r.x + r.w / 2, r.y + 800, r.w - 96, 64, 'Back to my base', () => store.exitTutorialTest(), { style: 'cyan', size: 22 });
+          back.chip = 'tutorial-test-exit'; c.add(back);
+        }
         // game
-        sectionHeader(this, c, x0, r.y + 650, 'GAME', { w: r.w - 64 });
-        c.add(text(this, x0, r.y + 686, 'Broken Dawn · v0.15.0 (stage 20: Ants-style map labels + living creatures)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
-        const rs = button(this, r.x + r.w / 2, r.y + 836, 300, 64, 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
+        const gy = testing ? r.y + 880 : r.y + 800;
+        sectionHeader(this, c, x0, gy, 'GAME', { w: r.w - 64 });
+        c.add(text(this, x0, gy + 36, testing
+          ? 'Broken Dawn · v0.15.0\nThis is the tutorial test save. Reset clears only this test. Your real base stays as it was.'
+          : 'Broken Dawn · v0.15.0 (stage 20: Ants-style map labels + living creatures)\nProgress saves automatically on this device. PvP: coming later.\nReset Save erases everything: base, troops, squads, leaders, gear,\nresearch and the world.', 17, PALETTE.textDim, { lineSpacing: 5 }));
+        const rs = button(this, r.x + r.w / 2, gy + 196, 300, 64, testing ? 'Reset test save' : 'Reset Save', () => this.confirmReset(), { style: 'danger', size: 22 }); c.add(rs);
         this.refreshSettings = () => {
           if (!c.active) { this.refreshSettings = null; return; }
           const s = S();
@@ -1543,8 +1574,10 @@ export default class UIScene extends Phaser.Scene {
   }
   confirmReset() {
     this.openModal({
-      title: 'Reset all progress?',
-      body: 'This permanently erases your base, troops, squads, leaders, gear and all resources. This can\'t be undone.',
+      title: store.tutorialTest ? 'Reset the test save?' : 'Reset all progress?',
+      body: store.tutorialTest
+        ? 'This erases the tutorial test save only and starts it again. Your real base is not touched.'
+        : 'This permanently erases your base, troops, squads, leaders, gear and all resources. This can\'t be undone.',
       tab: 'more',
       buttons: [
         { label: 'Cancel', style: 'ghost' },

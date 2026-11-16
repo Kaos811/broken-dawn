@@ -15,7 +15,7 @@ import { chromium } from 'playwright-core';
 }
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -1667,7 +1667,7 @@ async function runStage5(url, label, takeShots) {
     // judged on the game's own schedule (out + back in game seconds), so a stalled test box can't fail it; wall time is informational
     const hm = await ev(() => window.__huntMarch), huntWall = Date.now() - huntT0;
     check('first hunt resolves fast (march out + back ≤ 20 s of game time; well under a minute of play)', !!hm && hm.travel + hm.back <= 20, JSON.stringify({ ...hm, wallMs: huntWall }));
-    check('onboarding 7→8: first pull is a guaranteed Kael, assigned to Alpha (reveal sound)', await walkTo('beacon2', 40) && !!(await state()).leaders.kael && (await state()).squads.alpha.leader === 'kael' && ((await au()).byName.reveal ?? 0) >= 1);
+    check('onboarding 7→8: first pull is a guaranteed Kael, assigned to Alpha (reveal sound)', await walkTo('beacon2', 80) && !!(await state()).leaders.kael && (await state()).squads.alpha.leader === 'kael' && ((await au()).byName.reveal ?? 0) >= 1);
     check('onboarding 8→9: Beacon Lv 2', await walkTo('missions', 40) && (await state()).beacon.level >= 2);
     const res0 = (await state()).resources;
     check('onboarding 9→done: Missions opened, chest celebration', await walkTo('done', 40));
@@ -1702,17 +1702,38 @@ async function runStage5(url, label, takeShots) {
     check('settings shows the tutorial as Completed', await ev(() => __BD.ui().modal.list.some((o) => o.text === 'Completed')));
     await shot('stage5-settings-audio.png');
 
-    // --- 10. Replay + Skip
-    await click(null, { meta: 'replay-tutorial' });
+    // --- 10. Replay opens Tutorial Test Mode (fresh slot). Skip still works there. The real save is not written.
+    const realBefore = await ev(() => localStorage.getItem('brokenDawn.save.v1'));
+    {
+      const rep = await ctl(null, { meta: 'replay-tutorial' });
+      if (!rep) throw new Error('replay button missing');
+      await page.mouse.click(rep.x, rep.y);
+    }
+    await page.waitForFunction(() => window.__BD?.ui()?.panel && __BD.store.tutorialTest === true && __BD.saveSlot().key === 'brokenDawn.save.tutorialtest', null, { timeout: 60000 });
+    await sleep(500);
     t = await tut();
-    check('Replay Tutorial restarts with the story intro', t.active && t.step === 0 && await waitTrue(() => __BD.tutorial().story === 0), JSON.stringify(t));
+    const isolated = await ev((before) => localStorage.getItem('brokenDawn.save.v1') === before && __BD.saveSlot().test === true && !!__BD.ui().testBanner?.visible, realBefore);
+    check('Replay Tutorial opens test mode on a fresh save (story intro, TEST MODE banner) and does not write the real save', isolated && t.active && t.step === 0 && t.story === 0 && t.testMode, JSON.stringify(t));
     await click(null, { meta: 'story-skip' });
     check('Skip intro goes straight to Lyra\'s first step', await waitTrue(() => __BD.tutorial().id === 'beacon' && __BD.tutorial().visible));
     await click(null, { meta: 'tutorial-skip' });
     check('Skip asks to confirm first (tutorial still running)', await waitTrue(() => __BD.ui().modal?.list.some((o) => o.text === 'Skip the tutorial?')) && (await tut()).active);
     await click('Skip', { kind: 'button' });
     s = await state(); t = await tut();
-    check('Skip ends the tutorial (done + skipped) and hides the coach; no second reward', s.tutorial.done && s.tutorial.skipped && !t.visible && s.resources.cores === (await ev(() => __BD.store.state.resources.cores)));
+    const realUntouched = await ev((before) => localStorage.getItem('brokenDawn.save.v1') === before, realBefore);
+    check('Skip ends the test-mode tutorial (done + skipped) and hides the coach; the real save is unchanged', s.tutorial.done && s.tutorial.skipped && !t.visible && realUntouched, JSON.stringify({ tu: s.tutorial, realUntouched }));
+    {
+      const exit = await ctl(null, { meta: 'tutorial-test-exit' });
+      if (!exit) throw new Error('exit test button missing');
+      await page.mouse.click(exit.x, exit.y);
+    }
+    await page.waitForFunction(() => window.__BD?.ui()?.panel && __BD.store.tutorialTest !== true, null, { timeout: 60000 });
+    await sleep(400);
+    s = await state();
+    check('Exiting test mode reloads the real save (tutorial still completed, music still 60%)', s.tutorial.done && !s.tutorial.skipped && s.settings.music === 0.6 && await ev(() => !new URLSearchParams(location.search).has('tutorialtest')), JSON.stringify({ tu: s.tutorial, music: s.settings.music }));
+    // The exit is a new page, so audio is locked again until a gesture.
+    await page.mouse.click(200, 500); await sleep(400);
+    await waitTrue(() => __BD.audioState().unlocked && __BD.audioState().ctx === 'running', null, 30);
 
     // --- 11. pause when hidden
     await ev(() => { Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
@@ -3824,8 +3845,259 @@ async function runStage8(url, label, takeShots) {
   await browser.close();
 }
 
+// Tutorial Test Mode: a fresh save in its own localStorage key, plus a reachability pass of every
+// step (and the three post-tutorial tips) at phone and desktop sizes.
+const ART = '/opt/cursor/artifacts';
+async function runTutorialTest(url) {
+  mkdirSync(ART, { recursive: true });
+  const viewports = [
+    { width: 390, height: 844, name: '390x844', shots: true },
+    { width: 360, height: 740, name: '360x740', shots: false },
+    { width: 1280, height: 800, name: '1280x800', shots: false },
+  ].filter((v) => !process.env.VP || process.env.VP === v.name);
+  let developed = null; // exact real-save JSON after a developed base has loaded
+
+  for (const vp of viewports) {
+    console.log(`\n=== tutorial test · ${vp.name}`);
+    const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    const mobile = vp.width < 500;
+    const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: mobile ? 2 : 1, hasTouch: mobile, isMobile: mobile });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    page.on('pageerror', (e) => errors.push(e.message));
+    const ev = (fn, arg) => page.evaluate(fn, arg);
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const ready = async () => { await page.waitForFunction(() => window.__BD?.base()?.sprites && window.__BD.ui()?.panel, null, { timeout: 60000 }); await sleep(300); };
+    const frames = (n = 3) => ev((n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+    const tut = () => ev(() => __BD.tutorial());
+    const waitTrue = async (fn, arg, n = 40) => { for (let i = 0; i < n; i++) { if (await ev(fn, arg)) return true; await sleep(100); } return false; };
+    const ctl = async (meta) => {
+      for (let i = 0; i < 20; i++) {
+        const all = await ev(() => __BD.controls());
+        const m = all.filter((c) => c.meta === meta && c.enabled);
+        if (m.length) return m[m.length - 1];
+        await sleep(150);
+      }
+      return null;
+    };
+    const clickMeta = async (meta) => {
+      const c = await ctl(meta);
+      if (!c) throw new Error(`missing ${meta}`);
+      await page.mouse.click(c.x, c.y); await frames(3); await sleep(250);
+      return c;
+    };
+    const testUrl = (fresh) => { const u = new URL(url); u.searchParams.set('tutorialtest', '1'); if (fresh) u.searchParams.set('fresh', '1'); return u.toString(); };
+
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded' }); await ready();
+      if (!developed) {
+        developed = await ev(() => {
+          const st = __BD.store;
+          st.state.resources.energy = 777777;
+          st.state.beacon.level = 8;
+          st.state.buildings.barracks.level = 6;
+          st.state.buildings.barracks.gx = 4;
+          st.state.buildings.barracks.gy = 30;
+          st.state.tutorial = { done: true, step: 10, skipped: false, rewarded: true };
+          st.state.settings.music = 0.42;
+          st.save();
+          return localStorage.getItem('brokenDawn.save.v1');
+        });
+        await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+        developed = await ev(() => localStorage.getItem('brokenDawn.save.v1'));
+      } else {
+        // Suspend first: the open page's pagehide save would otherwise overwrite the seeded real save.
+        await ev((raw) => { __BD.store.saveSuspended = true; localStorage.setItem('brokenDawn.save.v1', raw); }, developed);
+        await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+      }
+      const loaded = await ev(() => ({ e: __BD.store.state.resources.energy, lv: __BD.store.state.beacon.level, music: __BD.store.state.settings.music, test: __BD.store.tutorialTest }));
+      check(`${vp.name}: developed real save loads (not test mode)`, loaded.e > 777000 && loaded.lv === 8 && loaded.music === 0.42 && loaded.test === false, JSON.stringify(loaded));
+      const realSnap = await ev(() => localStorage.getItem('brokenDawn.save.v1'));
+
+      await ev(() => { __BD.store.saveSuspended = true; sessionStorage.clear(); });
+      await page.goto(testUrl(true), { waitUntil: 'domcontentloaded' }); await ready();
+      await sleep(400);
+      let t = await tut();
+      const slot = await ev((snap) => ({
+        same: localStorage.getItem('brokenDawn.save.v1') === snap,
+        key: __BD.saveSlot().key,
+        test: __BD.saveSlot().test,
+        banner: !!__BD.ui().testBanner?.visible,
+        freshEnergy: __BD.store.state.resources.energy,
+        label: __BD.ui().testBanner?.list?.some?.((o) => o.text === 'TEST MODE') || __BD.controls().some((c) => c.meta === 'tutorial-test-exit'),
+      }), realSnap);
+      check(`${vp.name}: ?tutorialtest=1 boots a fresh save, shows TEST MODE, and leaves the real save byte-for-byte`, slot.same && slot.test && slot.key === 'brokenDawn.save.tutorialtest' && slot.banner && slot.label && t.story === 0 && t.testMode && slot.freshEnergy < 5000, JSON.stringify({ ...slot, story: t.story, energy: slot.freshEnergy }));
+
+      if (vp.shots) await page.screenshot({ path: join(ART, 'tutorial_step_story.png') });
+
+      // Drive the onboarding. At each step the pointer must be on-screen and not under the card / HUD.
+      const act = async () => {
+        const t = await tut();
+        if (t.story != null) { const b = await ctl('story-continue'); if (b) await page.mouse.click(b.x, b.y); await sleep(350); return; }
+        if (t.celebrating) { const b = await ctl('celebrate-btn') || await ctl('celebrate-continue'); if (b) await page.mouse.click(b.x, b.y); await sleep(350); return; }
+        if (!t.visible && await ev(() => !!(__BD.ui().reveal || __BD.ui().replay))) {
+          const b = (await ev(() => __BD.controls())).filter((c) => /^(Continue|Reveal All|Skip)$/.test(c.label) && c.enabled).pop();
+          if (b) await page.mouse.click(b.x, b.y); await sleep(350); return;
+        }
+        if (t.target && t.reach?.ok) { const p = await ev((g) => __BD.gameToPage(g.x, g.y), t.target); await page.mouse.click(p.x, p.y); await frames(3); await sleep(400); return; }
+        const c = t.visible ? await ctl('tutorial-continue') : null;
+        if (c) { await page.mouse.click(c.x, c.y); await sleep(300); return; }
+        await sleep(300);
+      };
+      const ids = ['beacon', 'rebuild', 'finish', 'train', 'squad', 'hunt', 'recruit', 'beacon2', 'missions'];
+      const problems = [];
+      const shot = new Set();
+      const seenSig = new Set();
+      const got = {};
+      const record = async (id) => {
+        const detail = await ev(() => {
+          const t = __BD.tutorial(), ui = __BD.ui();
+          const out = { reach: t.reach, target: t.target, title: t.title };
+          if (t.target) {
+            const p = __BD.gameToPage(t.target.x, t.target.y);
+            out.controls = __BD.controls().filter((c) => c.enabled && Math.hypot(c.x - p.x, c.y - p.y) < 42).map((c) => `${c.label}${c.meta ? `#${c.meta}` : ''}`);
+            out.tabs = ['world', 'troops', 'armory', 'squads', 'more', 'base'].filter((id) => { const q = __BD.tabToPage(id); return Math.hypot(q.x - p.x, q.y - p.y) < 56; });
+            if (!ui.screen && !ui.worldMode && !ui.modal) {
+              const b = __BD.base(), w = b.screenToWorld(t.target.x, t.target.y);
+              out.pick = b.pick(w.x, w.y);
+            }
+          }
+          return out;
+        });
+        const bucket = `${id}|${(detail.controls || []).join('+')}|${detail.pick || ''}|${Math.round((detail.target?.y ?? 0) / 90)}`;
+        if (seenSig.has(bucket)) return;
+        seenSig.add(bucket);
+        const g = got[id] ??= { controls: [], picks: [], tabs: [] };
+        g.controls.push(...(detail.controls || []));
+        g.tabs.push(...(detail.tabs || []));
+        if (detail.pick) g.picks.push(detail.pick);
+        // Prefer the step's real action (the building, Free, x10, Attack, Pull) over the nav tab that leads there.
+        const tabOnly = (detail.tabs || []).length > 0 && !(detail.controls || []).length && !detail.pick;
+        if (vp.shots && !shot.has(id) && (id === 'squad' || !tabOnly)) {
+          shot.add(id);
+          await ev(() => { const u = __BD.ui(); u.tweens.killTweensOf(u.toastBox); u.toastBox.setVisible(false); });
+          await frames(2);
+          await page.screenshot({ path: join(ART, `tutorial_step_${id}.png`) });
+        }
+      };
+
+      // Stuck-step repro: a developed camera (max zoom, corner) must still end on a tappable Beacon.
+      if (vp.shots) {
+        for (let i = 0; i < 8 && (await tut()).story != null; i++) await act();
+        await ev(() => { const b = __BD.base(); b.setZl(1.6); b.cameras.main.centerOn(80, 80); });
+        await sleep(200);
+        const recovered = await waitTrue(() => { const t = __BD.tutorial(); return t.id === 'beacon' && t.reach?.reason === 'clear' && !!t.target; }, null, 60);
+        check(`${vp.name}: zoomed-in corner camera still gets a tappable Beacon (the old stuck case)`, recovered, JSON.stringify(await tut()));
+      }
+
+      const clear = (t) => t.visible && !t.celebrating && t.reach?.ok === true && (t.id === 'squad' ? t.reach.reason === 'continue' : t.reach.reason === 'clear' && !!t.target);
+      const walked = [];
+      for (let n = 0; n < 260; n++) {
+        const t = await tut();
+        if (!t.active && !t.celebrating) break;
+        if (ids.includes(t.id) && clear(t)) { await record(t.id); if (!walked.includes(t.id)) walked.push(t.id); }
+        if (walked.length === ids.length && t.id === 'done') break;
+        await act();
+      }
+      const has = (id, re) => (got[id]?.controls || []).some((c) => re.test(c)) || (got[id]?.picks || []).some((p) => re.test(p));
+      if (!has('beacon', /^beacon$/)) problems.push(`beacon never pointed at the Beacon (${JSON.stringify(got.beacon)})`);
+      if (!has('rebuild', /barracks|panel-upgrade|Upgrade/)) problems.push(`rebuild never pointed at the Barracks or Upgrade (${JSON.stringify(got.rebuild)})`);
+      // The 10s tutorial job can finish during the rebuild celebration, so Finish is not always on screen.
+      if (walked.includes('finish') && !has('finish', /barracks|panel-free|panel-upgrade|su-free|Free|Upgrade/)) problems.push(`finish never pointed at the Barracks finish control (${JSON.stringify(got.finish)})`);
+      if (!has('train', /x10/)) problems.push(`train never pointed at x10 (${JSON.stringify(got.train)})`);
+      if (!has('hunt', /attack-alpha|World/)) problems.push(`hunt never pointed at the world or Attack (${JSON.stringify(got.hunt)})`);
+      if (!has('recruit', /Pull x1|Recruit/)) problems.push(`recruit never pointed at Pull x1 (${JSON.stringify(got.recruit)})`);
+      if (!has('beacon2', /beacon|panel-upgrade|panel-free|Upgrade|Free/)) problems.push(`beacon2 never pointed at the Beacon upgrade (${JSON.stringify(got.beacon2)})`);
+      if (!has('missions', /q-missions|Missions/)) problems.push(`missions never pointed at Missions (${JSON.stringify(got.missions)})`);
+      if (!walked.includes('squad')) problems.push('squad Continue never showed');
+      const need = ids.filter((id) => id !== 'finish' || walked.includes('finish'));
+      check(`${vp.name}: every tutorial step's target is on-screen and tappable`, problems.length === 0 && need.every((id) => walked.includes(id)), problems.concat(need.every((id) => walked.includes(id)) ? [] : [`saw ${walked.join(',')}`]).join(' | '));
+
+      if (vp.shots) {
+        // Contextual tips, after the onboarding, still have to point at a real button.
+        await ev(() => { const u = __BD.ui(); u.closeModal(true); u.closeScreen(); u.tutorial.closeCelebrate(); });
+        await waitTrue(() => !__BD.tutorial().celebrating && !__BD.tutorial().active, null, 40);
+        const tipProblems = [];
+        const showTip = async (prep, id, chip) => {
+          await ev(prep);
+          const ok = await waitTrue((id) => { const t = __BD.tutorial(); return t.tip === id && t.reach?.reason === 'clear' && !!t.target; }, id, 40);
+          const d = await tut();
+          if (!ok) tipProblems.push(`${id}: tip=${d.tip} reach=${JSON.stringify(d.reach)} target=${JSON.stringify(d.target)}`);
+          if (vp.shots && d.tip === id) await page.screenshot({ path: join(ART, `tutorial_tip_${id}.png`) });
+          // Dismiss in-game so the next tip can show even if the Got it button is under the bust.
+          await ev(() => { const t = __BD.ui().tutorial; t.endTip(); __BD.ui().closeScreen(); __BD.ui().screenState.edit = null; });
+          await sleep(200);
+        };
+        await showTip(() => {
+          const st = __BD.store.state; st.hints.tip_infirmary = false; st.hints.tip_research = true; st.hints.tip_formation = true;
+          st.infirmary.wounded.sentinel.reserve = 4;
+          const tut = __BD.ui().tutorial; tut.tip = null; tut.endTip();
+          __BD.ui().closeScreen(); __BD.ui().closeModal(true);
+        }, 'infirmary', 'q-healing');
+        await showTip(() => {
+          const st = __BD.store.state; st.beacon.level = 4; st.buildings.archive.placed = true; st.hints.tip_research = false;
+          const tut = __BD.ui().tutorial; tut.endTip();
+          __BD.ui().closeScreen();
+          __BD.base().placeId = null;
+        }, 'research', 'q-research');
+        await showTip(() => {
+          __BD.ui().openScreen('squads');
+          const st = __BD.store.state; st.hints.tip_formation = false;
+          const tut = __BD.ui().tutorial; tut.endTip();
+        }, 'formation', 'Edit Formation');
+        check(`${vp.name}: contextual tips point at a visible button`, tipProblems.length === 0, tipProblems.join(' | '));
+
+        // A target that cannot be found grows a Skip step, and pressing it advances.
+        await ev(() => sessionStorage.removeItem('bd.tutorialTest.live'));
+        await page.goto(testUrl(true), { waitUntil: 'domcontentloaded' }); await ready(); await sleep(300);
+        for (let i = 0; i < 8 && (await tut()).id !== 'beacon'; i++) await act();
+        await ev(() => { window.__BD_TEST = { ...(window.__BD_TEST || {}), tutorialMiss: true }; });
+        const showed = await waitTrue(() => __BD.tutorial().fallback === true && __BD.controls().some((c) => c.meta === 'tutorial-skip-step' && c.enabled), null, 50);
+        if (vp.shots) await page.screenshot({ path: join(ART, 'tutorial_skip_step.png') });
+        if (showed) await clickMeta('tutorial-skip-step');
+        await ev(() => { if (window.__BD_TEST) window.__BD_TEST.tutorialMiss = false; });
+        const advanced = await waitTrue(() => __BD.tutorial().id === 'rebuild', null, 30);
+        check(`${vp.name}: a missing target offers Skip step and it advances the tutorial`, showed && advanced, JSON.stringify(await tut()));
+
+        // Writes inside test mode stay on the test key.
+        const wrote = await ev((snap) => {
+          __BD.store.state.resources.energy = 42;
+          __BD.store.save();
+          const test = JSON.parse(localStorage.getItem('brokenDawn.save.tutorialtest'));
+          return { real: localStorage.getItem('brokenDawn.save.v1') === snap, testEnergy: test?.resources?.energy, realHas42: /"energy":42[,}]/.test(localStorage.getItem('brokenDawn.save.v1') || '') };
+        }, realSnap);
+        check(`${vp.name}: store.save() in test mode writes the test key only`, wrote.real && wrote.testEnergy === 42 && !wrote.realHas42, JSON.stringify(wrote));
+      }
+
+      const exit = await ctl('tutorial-test-exit');
+      if (exit) await page.mouse.click(exit.x, exit.y);
+      await page.waitForFunction(() => window.__BD?.ui()?.panel && __BD.store.tutorialTest !== true, null, { timeout: 60000 });
+      await sleep(300);
+      const back = await ev((snap) => {
+        // Energy, charge and lastSaved move on any reload (offline accrual). Everything else must match.
+        const keep = (raw) => { const s = JSON.parse(raw); return { beacon: s.beacon.level, music: s.settings.music, tutorial: s.tutorial, barracks: s.buildings.barracks, cores: s.resources.cores, troops: s.troops?.sentinel }; };
+        const now = localStorage.getItem('brokenDawn.save.v1');
+        return {
+          same: JSON.stringify(keep(now)) === JSON.stringify(keep(snap)),
+          now: keep(now),
+          test: __BD.store.tutorialTest,
+          url: location.search,
+        };
+      }, realSnap);
+      check(`${vp.name}: Exit reloads the real save unchanged`, back.same && back.test === false && !back.url.includes('tutorialtest'), JSON.stringify(back));
+      check(`${vp.name}: no console errors`, errors.length === 0, errors.slice(0, 4).join(' | '));
+    } catch (e) {
+      const diag = await ev(() => ({ tut: __BD.tutorial?.(), slot: __BD.saveSlot?.(), url: location.href })).catch(() => ({}));
+      check(`${vp.name}: tutorial test ran`, false, `${e.message} :: ${JSON.stringify(diag)}`);
+    }
+    await browser.close();
+  }
+}
+
 const srv = await serveDist();
 try {
+  if (!process.env.ONLY || process.env.ONLY === 'tutorial') await runTutorialTest(`file://${join(ROOT, 'broken-dawn.html')}`);
   if (!process.env.ONLY || process.env.ONLY === '1') {
     await run(`file://${join(ROOT, 'broken-dawn.html')}`, 'single-file build', SHOTS);
     if (!process.env.QUICK) await run(`http://localhost:${srv.address().port}/`, 'dist/ build', false);

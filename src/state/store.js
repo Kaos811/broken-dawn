@@ -2,7 +2,7 @@
 // and listen for events; they never write localStorage directly.
 import {
   BEACON, BUILDINGS, BUILDING_IDS, BUILDING_LEVEL_HEADROOM, ECONOMY,
-  SAVE_KEY, SAVE_VERSION, TROOPS, buildingUpgradeCost,
+  SAVE_KEY, TUTORIAL_TEST_KEY, SAVE_VERSION, TROOPS, buildingUpgradeCost,
   TROOP_CLASSES, TROOP_IDS, BARRACKS, SQUADS, RESOURCES, GACHA, RARITY, RARITIES,
   LEADERS, LEADER_IDS, GEAR, GEAR_IDS, CORES, UPGRADES, CONSTRUCTION, SPEEDUPS,
   INFIRMARY, CASUALTIES, STAMINA, WORLD, HUNT_REWARDS, CREATURES, creaturePower, MAP,
@@ -449,6 +449,50 @@ function mulberry32(seed) {
   };
 }
 
+// Tutorial Test Mode (a fresh new-player save that never touches the real slot).
+// `?tutorialtest=1` or the Settings button. The first boot of a tab session starts fresh;
+// a reload in that same tab (rotation) resumes. `fresh=1` forces a restart.
+const TEST_FLAG = 'bd.tutorialTest';
+const TEST_LIVE = 'bd.tutorialTest.live';
+const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
+const ssSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* private mode */ } };
+const ssDel = (k) => { try { sessionStorage.removeItem(k); } catch { /* private mode */ } };
+
+export function tutorialTestRequested() {
+  if (typeof window === 'undefined' || !window.location) return false;
+  const v = new URLSearchParams(window.location.search).get('tutorialtest');
+  return v === '1' || v === 'true' || v === 'fresh' || ssGet(TEST_FLAG) === '1';
+}
+
+// Which localStorage key this boot uses, and whether the test slot should be wiped first.
+function bootSlot() {
+  if (typeof window === 'undefined' || !window.location) return { test: false, fresh: false, key: SAVE_KEY };
+  const q = new URLSearchParams(window.location.search);
+  const queried = q.get('tutorialtest') === '1' || q.get('tutorialtest') === 'true' || q.get('tutorialtest') === 'fresh';
+  const flagged = ssGet(TEST_FLAG) === '1';
+  if (!queried && !flagged) return { test: false, fresh: false, key: SAVE_KEY };
+  const fresh = q.get('fresh') === '1' || q.get('tutorialtest') === 'fresh' || ssGet(TEST_LIVE) !== '1';
+  ssSet(TEST_FLAG, '1');
+  ssSet(TEST_LIVE, '1');
+  try {
+    if (q.get('tutorialtest') !== '1' || q.has('fresh')) {
+      q.set('tutorialtest', '1');
+      q.delete('fresh');
+      const s = q.toString();
+      const next = `${location.pathname}?${s}${location.hash}`;
+      if (next !== `${location.pathname}${location.search}${location.hash}`) history.replaceState(null, '', next);
+    }
+  } catch { /* file:// or a locked history */ }
+  return { test: true, fresh, key: TUTORIAL_TEST_KEY };
+}
+
+function go(search) {
+  const q = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
+  search(q);
+  const s = q.toString();
+  location.assign(`${location.pathname}${s ? `?${s}` : ''}${location.hash}`);
+}
+
 class Store extends Emitter {
   constructor() {
     super();
@@ -462,17 +506,29 @@ class Store extends Emitter {
     this.eventService = new LocalEventService();
     this.world = new LocalWorldService(() => this.state.world, (w) => { this.state.world = w; });
     this.simulating = false;
+    this.saveKey = SAVE_KEY;
+    this.tutorialTest = false;
+    this.saveSuspended = false; // set while navigating between the real save and the test slot
   }
 
   setSeed(seed) { this.rng = seed == null ? Math.random : mulberry32(seed); }
 
   load() {
+    const slot = bootSlot();
+    this.tutorialTest = slot.test;
+    this.saveKey = slot.key;
+    this.saveSuspended = false;
     let raw = null;
-    try { raw = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch { raw = null; }
+    if (slot.fresh) {
+      // a new test session starts from a brand-new commander; only the test key is cleared
+      try { localStorage.removeItem(slot.key); } catch { /* ignore */ }
+    } else {
+      try { raw = JSON.parse(localStorage.getItem(this.saveKey)); } catch { raw = null; }
+    }
     if (raw && num(raw.version, 1) < SAVE_VERSION) {
       this.migratedFrom = num(raw.version, 1);
-      // keep a one-time backup of the old save, just in case
-      try { localStorage.setItem(`${SAVE_KEY}.backup-v${this.migratedFrom}`, JSON.stringify(raw)); } catch { /* ignore */ }
+      // keep a one-time backup of the old save, beside the slot it came from (never the other slot)
+      try { localStorage.setItem(`${this.saveKey}.backup-v${this.migratedFrom}`, JSON.stringify(raw)); } catch { /* ignore */ }
     }
     this.state = sanitize(raw);
     this.missionsReport = null;
@@ -507,18 +563,47 @@ class Store extends Emitter {
   }
 
   save() {
+    if (this.saveSuspended) return;
+    // Test mode is a different slot. Refuse to write the real key from a test session.
+    if (this.tutorialTest && this.saveKey !== TUTORIAL_TEST_KEY) return;
+    if (!this.tutorialTest && this.saveKey !== SAVE_KEY) return;
     this.state.lastSaved = Date.now();
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(this.state)); } catch { /* storage full/blocked */ }
+    try { localStorage.setItem(this.saveKey, JSON.stringify(this.state)); } catch { /* storage full/blocked */ }
   }
 
   reset() {
     this.nearChecked = false;
-    try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
+    try { localStorage.removeItem(this.saveKey); } catch { /* ignore */ }
     this.state = defaultState();
     this.missionsRoll();
     this.save();
     this.emit('reset');
     this.emit('change');
+  }
+
+  // Leave the real save exactly as it is and boot a fresh new-player save in the test slot.
+  enterTutorialTest() {
+    if (this.tutorialTest) { this.restartTutorialTest(); return; }
+    this.saveSuspended = true;
+    ssDel(TEST_LIVE);
+    ssSet(TEST_FLAG, '1');
+    go((q) => { q.set('tutorialtest', '1'); q.set('fresh', '1'); });
+  }
+
+  restartTutorialTest() {
+    this.saveSuspended = true;
+    try { localStorage.removeItem(TUTORIAL_TEST_KEY); } catch { /* ignore */ }
+    ssDel(TEST_LIVE);
+    ssSet(TEST_FLAG, '1');
+    go((q) => { q.set('tutorialtest', '1'); q.set('fresh', '1'); });
+  }
+
+  // Drop back to the real save. The test slot stays on disk but is not loaded.
+  exitTutorialTest() {
+    this.saveSuspended = true;
+    ssDel(TEST_FLAG);
+    ssDel(TEST_LIVE);
+    go((q) => { q.delete('tutorialtest'); q.delete('fresh'); });
   }
 
   // ------------------------------------------------ stage 5: settings + tutorial --
@@ -569,11 +654,12 @@ class Store extends Emitter {
     return true;
   }
 
+  // Replay used to flip the tutorial flag on the current save, so the coach ran on top of a
+  // developed base (camera, buildings and buttons already in a non-tutorial state) and could point
+  // at something the player could not reach. It now opens Tutorial Test Mode: a fresh save.
   replayTutorial() {
-    const t = this.state.tutorial;
-    t.done = false; t.step = 0; t.skipped = false;
-    this.save();
-    this.emit('tutorial', 0, false);
+    if (this.tutorialTest) this.restartTutorialTest();
+    else this.enterTutorialTest();
     return true;
   }
 

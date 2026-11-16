@@ -4,7 +4,7 @@
 // step introduces them (ui.unlocked(id), see TUTORIAL.unlockAt). Painted celebrations mark the milestones.
 // Skip (with a confirm) unlocks everything and pays the completion reward. After it: a "Next goal" chip and
 // one-time Lyra tips (Infirmary, Research, Edit Formation). Replayable from Settings.
-import { GAME_WIDTH as W, GAME_HEIGHT, PALETTE, TUTORIAL, BEACON, TROOP_IDS, LEADERS, BUILDINGS } from '../config.js';
+import { GAME_WIDTH as W, GAME_HEIGHT, PALETTE, TUTORIAL, BEACON, TROOP_IDS, LEADERS, BUILDINGS, CREATURES } from '../config.js';
 import { store } from '../state/store.js';
 import { text, button, panelBg, fmt } from '../ui/widgets.js';
 import { audio } from '../audio/audio.js';
@@ -17,31 +17,64 @@ function findButton(ui, pred) {
   const visible = (o) => { for (let p = o; p; p = p.parentContainer) if (!p.visible || !p.active) return false; return true; };
   const walk = (o) => {
     if (hit) return;
-    if (o.isButton && visible(o) && pred(o)) { const b = o.hit.getBounds(); hit = { x: b.centerX, y: b.centerY, r: Math.max(b.width, b.height) / 2 + 8 }; return; }
+    if (o.isButton && visible(o) && pred(o)) {
+      const b = o.hit.getBounds();
+      hit = { x: b.centerX, y: b.centerY, r: Math.max(b.width, b.height) / 2 + 8, obj: o };
+      return;
+    }
     (o.list ?? []).forEach(walk);
   };
   ui.children.list.forEach(walk);
   return hit;
 }
 const label = (o) => o.labelText?.text ?? '';
-function tab(ui, id) { const t = ui.tabs.find((x) => x.id === id); return { x: t.cx, y: t.cy, r: t.hero ? 78 : 56 }; }
+const point = (hit) => (hit ? { x: hit.x, y: hit.y, r: hit.r } : null);
+function tab(ui, id) { const t = ui.tabs.find((x) => x.id === id); return t ? { x: t.cx, y: t.cy, r: t.hero ? 78 : 56 } : null; }
+
+// A button inside a scrolling sheet can sit above or below the mask. Nudge the scroller so its
+// centre is in the view, and let the next frame measure it again.
+function scrollIntoView(ui, hit) {
+  const s = ui.scroller, o = hit?.obj;
+  if (!s?.body?.active || !o) return false;
+  let inside = false;
+  for (let p = o; p; p = p.parentContainer) if (p === s.body) inside = true;
+  if (!inside) return false;
+  const b = o.hit.getBounds(), v = s.view;
+  const top = v.y + 28, bot = v.y + v.height - 28;
+  if (b.centerY >= top && b.centerY <= bot && b.centerX >= v.x + 8 && b.centerX <= v.x + v.width - 8) return false;
+  s.set(s.offset + (b.centerY - (v.y + v.height / 2)));
+  return true;
+}
+
+// Where a building tap is actually reachable: below the top HUD, above the nav / open panel,
+// and clear of the side columns (queue buttons on the left, Missions on the right).
+function buildingClear(ui, tg, loose = false) {
+  const H = GAME_HEIGHT;
+  const top = TOP_H + (loose ? 16 : 40);
+  const panelTop = ui.panel?.visible && ui.panel.active ? ui.panelRect.y : H;
+  const bot = Math.min(panelTop - 20, H - NAV_H - (loose ? 16 : HERO_RISE + 20));
+  const left = loose ? 28 : 120, right = loose ? W - 28 : W - 120;
+  return tg.x > left && tg.x < right && tg.y > top && tg.y < bot;
+}
 function buildingPos(ui, id) {
   const base = ui.scene.get('Base');
   if (ui.worldMode || ui.screen || !base?.sprites) return null;
   const img = id === BEACON.id ? base.beaconSprite : base.sprites[id]?.img;
-  if (!img) return null;
+  if (!img?.active) return null;
   const p = base.worldToScreen(img.x, img.y - img.displayHeight * 0.35);
-  const r = Math.max(50, img.displayWidth * base.zl * 0.35);
-  const H = GAME_HEIGHT;
-  // stay clear of the HUD side columns (queue / quick buttons, ~100 px wide each) and the bottom panel
-  const clear = p.y > TOP_H + 174 && p.y < H - NAV_H - 388 && p.x > 150 && p.x < W - 150;
-  if (clear) { base._tutPan = null; return { x: p.x, y: p.y, r }; }
-  // off-screen or under the HUD/panel: glide the camera over to it first, then point
+  const r = Math.max(46, Math.min(72, img.displayWidth * base.zl * 0.28));
+  const tg = { x: p.x, y: p.y, r };
   const cam = base.cameras.main;
   if (cam.panEffect.isRunning) return null;
-  if (base._tutPan !== id) { base._tutPan = id; base.focus(id, 450); return null; }
-  // already glided once (the map edge can stop the camera short): point if it's at least tappable
-  return p.y > TOP_H + 34 && p.y < H - NAV_H - 8 && p.x > 130 && p.x < W - 130 ? { x: p.x, y: p.y, r } : null;
+  if (buildingClear(ui, tg)) { base._tutAim = null; return tg; }
+  // One pan at the current zoom used to give up when the tap point stayed under the HUD
+  // (zoomed-in base, or the map edge stopping the camera short). Frame it, zooming out, a few times.
+  const n = base._tutAim?.id === id ? base._tutAim.n : 0;
+  if (n >= 3) return buildingClear(ui, tg, true) ? tg : null;
+  base._tutAim = { id, n: n + 1 };
+  const sy = TOP_H + Math.min(460, (GAME_HEIGHT - NAV_H - HERO_RISE - TOP_H) * 0.36);
+  base.frameTutorial(id, W / 2, sy, 420);
+  return null;
 }
 const goBase = (ui) => (ui.worldMode || ui.screen ? tab(ui, 'base') : null);
 const readyTroops = () => TROOP_IDS.reduce((n, t) => n + store.readyCount(t), 0);
@@ -50,28 +83,54 @@ const readyTroops = () => TROOP_IDS.reduce((n, t) => n + store.readyCount(t), 0)
 const huntTotal = () => store.state.hunt.kills + store.state.hunt.losses;
 const ensureEnergy = (n) => { if (store.state.resources.energy < n) store.state.resources.energy = n; };
 
-// nearest attackable creature on screen (pans the World camera to one once if none is visible)
+// Safe band on the World map: below the stamina strip, above the squad bar and the Lyra card,
+// and clear of the search / home buttons on the right.
+function worldBand() {
+  const H = GAME_HEIGHT;
+  const barTop = H - NAV_H - HERO_RISE - 120;
+  return { top: TOP_H + 112, bottom: barTop - 172 - 28, left: 40, right: W - 120 };
+}
+function inBand(p, band) { return p.x > band.left && p.x < band.right && p.y > band.top && p.y < band.bottom; }
+
+// nearest attackable creature (not a rally-only behemoth). Pans, and zooms out, until one sits in the band.
 function creatureTarget(ui) {
-  const atk = findButton(ui, (o) => /^attack-/.test(o.chip ?? '') && o.isEnabled());
-  if (atk) return atk;
+  const atk = findButton(ui, (o) => o.chip === 'attack-alpha' && o.isEnabled());
+  if (atk) return scrollIntoView(ui, atk) ? null : point(atk);
   const ws = ui.scene.get('World');
   if (!ws?.crSprites) return null;
+  // A sheet with no usable Attack covers the map. Close it so the creature itself can be tapped.
+  if (ui.worldHud?.sheet) { ui.worldHud.closeSheet(); return null; }
   const maxL = store.maxAttackLevel();
+  const band = worldBand();
+  const attackable = (e) => e && e.kind === 'creature' && e.level <= maxL && !e.busy && !CREATURES[e.type]?.rallyOnly;
   let best = null;
   for (const [id, s] of ws.crSprites) {
     const e = store.world.get(id);
-    if (!e || e.level > maxL || e.busy) continue;
+    if (!attackable(e)) continue;
     const p = ws.worldToScreen(s.img.x, s.img.y - 20);
-    if (p.y < TOP_H + 74 || p.y > GAME_HEIGHT - NAV_H - 170 || p.x < 30 || p.x > W - 30) continue;
-    const d = (p.x - W / 2) ** 2 + (p.y - GAME_HEIGHT / 2) ** 2;
+    if (!inBand(p, band)) continue;
+    const d = (p.x - W / 2) ** 2 + (p.y - (band.top + band.bottom) / 2) ** 2;
     if (!best || d < best.d) best = { x: p.x, y: p.y, r: 46, d };
   }
-  if (!best && !ws.tutFocused) {
-    const home = store.world.homeOf('local');
-    const near = store.creatures().filter((e) => e.level <= maxL && !e.busy).sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0];
-    if (near) { ws.tutFocused = true; ws.focusTile(near.x, near.y); }
-  }
-  return best;
+  if (best) { ws._tutAim = 0; return best; }
+  if (ui.time.now - (ws._tutAt ?? 0) < 480) return null;
+  const n = ws._tutAim ?? 0;
+  if (n >= 4) return null;
+  const home = store.world.homeOf('local');
+  const near = store.creatures().filter(attackable).sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0];
+  if (!near) return null;
+  ws._tutAim = n + 1;
+  ws._tutAt = ui.time.now;
+  // wider zoom on later tries, and a small upward bias so the body clears the squad bar
+  ws.focusTile(near.x, near.y, n === 0 ? Math.min(ws.zl, 0.62) : 0.45, 40);
+  return null;
+}
+
+// Button targets (Pull x1, x10, Free, Missions) can be scrolled off the sheet. Bring them in first.
+function present(ui, hit) {
+  if (!hit) return null;
+  if (hit.obj && scrollIntoView(ui, hit)) return null;
+  return point(hit);
 }
 
 // Step list. face = Lyra's expression; body may be a function (live text); cont = shows a Continue button.
@@ -89,16 +148,16 @@ export const STEPS = [
     body: 'Our Barracks is in ruins. Tap it, then Upgrade to rebuild it.',
     enter: () => ensureEnergy(store.upgradeInfo('barracks').cost + 50),
     done: () => store.state.construction.some((j) => j.id === 'barracks') || store.state.buildings.barracks.level > 1,
-    target: (ui) => goBase(ui) ?? (ui.panelOpenFor === 'barracks' ? findButton(ui, (o) => o === ui.pUpgrade && o.isEnabled()) : buildingPos(ui, 'barracks')),
+    target: (ui) => goBase(ui) ?? (ui.panelOpenFor === 'barracks' ? present(ui, findButton(ui, (o) => o === ui.pUpgrade && o.isEnabled())) : buildingPos(ui, 'barracks')),
   },
   {
     id: 'finish', face: 'smile', title: 'Finish it free',
     body: () => (store.canFreeFinish({ kind: 'build', id: 'barracks' }) ? 'Jobs under 5 minutes finish free. Tap Free!' : 'The builders are on it…'),
     done: () => store.state.buildings.barracks.level > 1,
     target: (ui) => {
-      if (ui.modal?.isSpeedUp) return findButton(ui, (o) => o.chip === 'su-free');
+      if (ui.modal?.isSpeedUp) return present(ui, findButton(ui, (o) => o.chip === 'su-free' && o.isEnabled()));
       if (goBase(ui)) return goBase(ui);
-      return ui.panelOpenFor === 'barracks' ? findButton(ui, (o) => o === ui.pUpgrade && o.isEnabled()) : buildingPos(ui, 'barracks');
+      return ui.panelOpenFor === 'barracks' ? present(ui, findButton(ui, (o) => o === ui.pUpgrade && o.isEnabled())) : buildingPos(ui, 'barracks');
     },
     after: (ui) => ui.tutorial.celebrate({ art: 'ob-victory-banner', title: 'Barracks rebuilt!', sub: 'New: Troops' }),
   },
@@ -111,10 +170,12 @@ export const STEPS = [
     },
     done: () => store.state.troops.sentinel >= 10 && store.lane('sentinel').count === 0,
     tick: (dt) => { if (store.queuedUnits() > 0) store.processTraining((dt / 1000) * (TUTORIAL.trainSpeed - 1)); },
+    // Training has no button to tap; the coach waits. Skip step stays hidden until this wait runs long.
+    hold: () => store.queuedUnits() > 0,
     target: (ui) => {
       if (store.queuedUnits() > 0) return null;
       if (ui.screen?.id !== 'troops') return tab(ui, 'troops');
-      return findButton(ui, (o) => o.trainType === 'sentinel' && /^x10/.test(label(o)) && o.isEnabled()) ?? findButton(ui, (o) => o.trainType === 'sentinel' && o.isEnabled());
+      return present(ui, findButton(ui, (o) => o.trainType === 'sentinel' && /^x10/.test(label(o)) && o.isEnabled()) ?? findButton(ui, (o) => o.trainType === 'sentinel' && o.isEnabled()));
     },
   },
   {
@@ -138,6 +199,8 @@ export const STEPS = [
     body: () => (store.world.marches().some((m) => m.owner === 'local') ? 'Squad Alpha is marching…' : 'A Scuttler is right outside. Open World, tap it, then Attack.'),
     enter: (ui, t) => { t.mark = huntTotal(); if (store.state.hunt.stamina < 10) store.state.hunt.stamina = 10; },
     done: (ui, t) => huntTotal() > (t.mark ?? Infinity) && !ui.replay,
+    // The march and the battle report have nothing to tap. A missing creature is not this wait.
+    hold: (ui) => !!ui.reveal || !!ui.replay || store.world.marches().some((m) => m.owner === 'local'),
     target: (ui) => {
       if (ui.reveal || ui.modal || store.world.marches().some((m) => m.owner === 'local')) return null;
       if (!ui.worldMode) return tab(ui, 'world');
@@ -158,7 +221,7 @@ export const STEPS = [
     target: (ui) => {
       if (ui.reveal) return null;
       if (ui.screen?.id !== 'armory') return tab(ui, 'armory');
-      return findButton(ui, (o) => /^Pull x1/.test(label(o))) ?? findButton(ui, (o) => o.tabLabel === 'Recruit');
+      return present(ui, findButton(ui, (o) => /^Pull x1/.test(label(o)) && o.isEnabled()) ?? findButton(ui, (o) => /^Pull x1/.test(label(o))) ?? findButton(ui, (o) => o.tabLabel === 'Recruit'));
     },
     after: (ui) => {
       const L = LEADERS[TUTORIAL.firstPull];
@@ -177,9 +240,9 @@ export const STEPS = [
     },
     done: () => store.state.beacon.level >= 2,
     target: (ui) => {
-      if (ui.modal?.isSpeedUp) return findButton(ui, (o) => o.chip === 'su-free');
+      if (ui.modal?.isSpeedUp) return present(ui, findButton(ui, (o) => o.chip === 'su-free' && o.isEnabled()));
       if (goBase(ui)) return goBase(ui);
-      return ui.panelOpenFor === BEACON.id ? findButton(ui, (o) => o === ui.pUpgrade && o.isEnabled()) : buildingPos(ui, BEACON.id);
+      return ui.panelOpenFor === BEACON.id ? present(ui, findButton(ui, (o) => o === ui.pUpgrade && o.isEnabled())) : buildingPos(ui, BEACON.id);
     },
     after: (ui) => ui.tutorial.celebrate({ art: 'ob-victory-banner', title: 'Beacon Lv 2!', sub: 'New: Squads, Missions, Builder and More', loot: true }),
   },
@@ -188,7 +251,7 @@ export const STEPS = [
     body: 'Last thing: Daily Missions fill chests every day. Tap Missions on the right.',
     enter: () => { store.state.hints.missions = false; },
     done: () => store.state.hints.missions === true,
-    target: (ui) => (ui.modal ? null : goBase(ui) ?? findButton(ui, (o) => o.chip === 'q-missions')),
+    target: (ui) => (ui.modal ? null : goBase(ui) ?? present(ui, findButton(ui, (o) => o.chip === 'q-missions' && o.visible))),
   },
 ];
 if (STEPS.length !== TUTORIAL.steps || STEPS.some((s, i) => s.id !== TUTORIAL.ids[i])) throw new Error('tutorial steps out of sync');
@@ -241,7 +304,10 @@ export class Tutorial {
     this.cardH = 172;
     const bx = 168;
     this.bg = ui.add.graphics();
-    this.block = ui.add.rectangle(W / 2, this.cardH / 2, W - 32, this.cardH, 0, 0.001).setInteractive();
+    // The painted bubble starts at x=150. A full-width invisible hit used to swallow taps on the
+    // left queue column and the right Missions button whenever the card shared their height.
+    const bubbleW = W - 166;
+    this.block = ui.add.rectangle(150 + bubbleW / 2, this.cardH / 2, bubbleW, this.cardH, 0, 0.001).setInteractive();
     this.face = ui.add.image(92, this.cardH + 4, 'ob-lyra-neutral').setOrigin(0.5, 1);
     this.kicker = text(ui, bx + 20, 14, 'LYRA', 16, PALETTE.textGold, { fontStyle: 'bold', letterSpacing: 3 });
     this.title = text(ui, bx + 20, 36, '', 25, PALETTE.text, { fontStyle: 'bold' });
@@ -287,15 +353,21 @@ export class Tutorial {
 
   onContinue() {
     if (this.tip) { this.endTip(); return; }
-    this.t.ok = true;
-    this.lastCheck = 999;
+    const S = STEPS[this.step];
+    if (S?.cont) { this.t.ok = true; this.lastCheck = 999; return; }
+    // No tappable target for a while: advance rather than leave the player stuck on the coach.
+    if (this.fallback) this.advance();
   }
 
   hide() { this.card.setVisible(false); this.pointer.setVisible(false); this.hand.setVisible(false); this.spot.setVisible(false); }
 
   blocks(x, y) {
     if (this.story || this.celebrating) return true;
-    return this.card.visible && x >= this.rect.x && x <= this.rect.x + this.rect.w && y >= this.rect.y && y <= this.rect.y + this.rect.h;
+    if (!this.card.visible) return false;
+    const y0 = this.rect.y, y1 = y0 + this.rect.h;
+    const bubble = x >= 140 && x <= W - 8 && y >= y0 && y <= y1;
+    const face = x >= 8 && x <= 185 && y >= y0 - 8 && y <= y1 + 16; // Lyra's bust hangs left of the bubble
+    return bubble || face;
   }
 
   refreshCard(force) {
@@ -312,17 +384,47 @@ export class Tutorial {
       this.ui.tweens.add({ targets: this.card, alpha: 1, duration: 220 });
     }
     if (this.body.text !== body) this.body.setText(body);
-    this.cont.setVisible(!!S.cont);
+    this.syncContinue(S);
     this.skip.setVisible(true);
   }
 
+  // Continue is the step's own button, or "Skip step" once a target has been missing long enough.
+  syncContinue(S) {
+    const own = S?.cont;
+    const show = !!own || !!this.fallback;
+    this.cont.setVisible(show);
+    if (!show) return;
+    this.cont.setLabel(own || 'Skip step');
+    this.cont.chip = own ? 'tutorial-continue' : 'tutorial-skip-step';
+  }
+
+  covers(rect, tg) {
+    if (!tg || !rect) return false;
+    const hit = (r) => {
+      const rr = (tg.r ?? 36) + 8;
+      const cx = Math.max(r.x, Math.min(tg.x, r.x + r.w));
+      const cy = Math.max(r.y, Math.min(tg.y, r.y + r.h));
+      return (tg.x - cx) ** 2 + (tg.y - cy) ** 2 < rr * rr;
+    };
+    // bubble plus Lyra's bust, which hangs off the left of the bubble
+    return hit(rect) || hit({ x: 8, y: rect.y - 8, w: 178, h: rect.h + 24 });
+  }
+
+  // Sit the card on the opposite side of the target from where it is, and on the other side
+  // when that would still cover the tap point (or the open panel / world squad bar).
   placeCard(target) {
-    const H = GAME_HEIGHT;
-    const topY = TOP_H + 34, botY = H - NAV_H - HERO_RISE - this.cardH - 10;
-    let y = topY;
-    if (target && target.y < H * 0.5) y = botY;
-    if (this.ui.panel.visible && y === botY) y = target ? Math.min(target.y + 90, botY) : topY; // keep clear of the open panel and the target
-    if (this.ui.worldMode && y === botY) y = botY - 96;
+    const ui = this.ui, H = GAME_HEIGHT;
+    const topY = TOP_H + 28;
+    let botY = H - NAV_H - HERO_RISE - this.cardH - 12;
+    if (ui.worldMode && ui.worldHud?.barRect) botY = Math.min(botY, ui.worldHud.barRect.y - this.cardH - 12);
+    if (ui.panel?.visible && ui.panel.active && target && !ui.panelRect.contains(target.x, target.y)) {
+      const above = ui.panelRect.y - this.cardH - 12;
+      if (above > topY) botY = Math.min(botY, above);
+    }
+    const slot = (y) => ({ x: 140, y, w: W - 148, h: this.cardH });
+    const preferBottom = !target || target.y < H * 0.48;
+    const ordered = preferBottom ? [botY, topY] : [topY, botY];
+    const y = ordered.find((yy) => !this.covers(slot(yy), target)) ?? ordered[0];
     this.rect.y = y;
     this.card.y = y;
     const g = this.bg; g.clear();
@@ -356,6 +458,8 @@ export class Tutorial {
     const off = tg.r * 0.55 + 6 + k * 14;
     this.hand.setFlipY(up).setOrigin(0.5, up ? 0 : 1).setPosition(tg.x, up ? tg.y + off : tg.y - off).setVisible(true);
     ui.children.bringToTop(sp); ui.children.bringToTop(g); ui.children.bringToTop(this.hand);
+    ui.children.bringToTop(this.card);
+    if (ui.testBanner) ui.children.bringToTop(ui.testBanner);
   }
 
   update(dtMs) {
@@ -370,7 +474,12 @@ export class Tutorial {
     if (this.tip) this.endTip(); // a replay starts clean
     if (this.step === 0) { this.hide(); if (!this.story) this.openStory(); return; }
     if (this.celebrating) { this.hide(); return; }
-    if (this.entered !== this.step) { this.entered = this.step; this.t = {}; STEPS[this.step]?.enter?.(ui, this.t); this.refreshCard(true); }
+    if (this.entered !== this.step) {
+      this.entered = this.step; this.t = {}; this.missT = 0; this.noTargetAt = 0; this.fallback = false;
+      const base = ui.scene.get('Base'); if (base) base._tutAim = null;
+      const ws = ui.scene.get('World'); if (ws) { ws._tutAim = 0; ws._tutAt = 0; }
+      STEPS[this.step]?.enter?.(ui, this.t); this.refreshCard(true);
+    }
     const S = STEPS[this.step];
     S?.tick?.(dtMs);
     this.lastCheck += dtMs;
@@ -380,12 +489,28 @@ export class Tutorial {
       this.refreshCard(false);
     }
     const busy = ui.reveal || ui.replay || (ui.modal && !ui.modal.isSpeedUp && !ui.modal.isMissions);
-    if (busy) { this.hide(); return; }
-    const tg = S?.target(ui) ?? null;
-    this.card.setVisible(true);
+    if (busy) { this.hide(); this.missT = 0; return; }
+    let tg = (typeof window !== 'undefined' && window.__BD_TEST?.tutorialMiss) ? null : (S?.target(ui) ?? null);
     this.placeCard(tg);
+    // A point under the card, the HUD, or another sheet is not a target. Counting it as missing
+    // is what brings up Skip step, so a bad pointer can never hard-lock the tutorial.
+    if (tg && !this.judge(tg, false).ok) tg = null;
+    const base = ui.scene.get('Base'), ws = ui.scene.get('World');
+    const seeking = !!base?.cameras?.main?.panEffect?.isRunning || (ws && ui.time.now - (ws._tutAt ?? 0) < 480);
+    if (tg || S?.cont) { this.missT = 0; this.noTargetAt = 0; }
+    else {
+      this.noTargetAt = this.noTargetAt || ui.time.now;
+      if (!seeking) this.missT = (this.missT ?? 0) + dtMs;
+    }
+    // A stuck camera pan must not hold the fallback off forever.
+    const limit = S?.hold?.(ui) ? 45000 : 3200;
+    const wall = !tg && !S?.cont && this.noTargetAt && ui.time.now - this.noTargetAt > (S?.hold?.(ui) ? 45000 : 4000);
+    this.fallback = !S?.cont && !tg && ((this.missT > limit && !seeking) || wall);
+    this.syncContinue(S);
+    this.card.setVisible(true);
     this.drawTarget(tg);
     this.target = tg;
+    this.reach = this.judge(tg, seeking);
   }
 
   // after the onboarding: Next goal chip + one-time tips
@@ -412,9 +537,33 @@ export class Tutorial {
       if (T) this.startTip(T);
       return;
     }
-    const tg = this.tip.target(ui) ?? null;
+    let tg = this.tip.target(ui) ?? null;
+    if (tg?.obj) tg = present(ui, tg);
     this.placeCard(tg);
+    if (tg && !this.judge(tg, false).ok) tg = null;
     this.drawTarget(tg);
+    this.target = tg;
+    this.reach = this.judge(tg, false);
+  }
+
+  // Is the pointer's tap point actually on screen and not under the coach, the HUD, or another sheet?
+  judge(tg, seeking) {
+    if (!tg) {
+      if (this.tip || STEPS[this.step]?.cont) return { ok: true, reason: 'continue' };
+      return { ok: !!this.fallback, reason: this.fallback ? 'fallback' : (seeking ? 'seeking' : 'no-target') };
+    }
+    const ui = this.ui, H = GAME_HEIGHT;
+    if (tg.x < 10 || tg.y < 10 || tg.x > W - 10 || tg.y > H - 10) return { ok: false, reason: 'offscreen' };
+    if (this.covers(this.rect, tg)) return { ok: false, reason: 'under-card' };
+    if (tg.y < TOP_H - 2) return { ok: false, reason: 'under-hud' };
+    if (tg.y > H - 8) return { ok: false, reason: 'under-nav' };
+    const onButton = !!findButton(ui, (o) => Math.hypot(o.hit.getBounds().centerX - tg.x, o.hit.getBounds().centerY - tg.y) < 28);
+    if (ui.panel?.visible && ui.panel.active && ui.panelRect.contains(tg.x, tg.y) && !onButton) return { ok: false, reason: 'under-panel' };
+    if (ui.worldHud?.visible && ui.worldHud.blocks?.(tg.x, tg.y) && !onButton) return { ok: false, reason: 'under-world-hud' };
+    if (!onButton && ui.sideBlocks?.(tg.x, tg.y)) return { ok: false, reason: 'under-side-button' };
+    const ban = ui.testBannerRect;
+    if (ban && tg.x >= ban.x && tg.x <= ban.x + ban.width && tg.y >= ban.y && tg.y <= ban.y + ban.height) return { ok: false, reason: 'under-test-banner' };
+    return { ok: true, reason: 'clear' };
   }
 
   startTip(T) {
@@ -423,6 +572,7 @@ export class Tutorial {
     this.setFace('smile');
     this.title.setText('A tip from Lyra');
     this.body.setText(T.text);
+    this.cont.chip = 'tutorial-continue';
     this.cont.setLabel?.('Got it'); this.cont.setVisible(true); this.skip.setVisible(false);
     this.card.setVisible(true).setAlpha(0);
     this.ui.tweens.add({ targets: this.card, alpha: 1, duration: 220 });
@@ -459,7 +609,8 @@ export class Tutorial {
     shade.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.92, 0.92).fillRect(0, H - 460, W, 260).fillStyle(0x000000, 0.92).fillRect(0, H - 200, W, 200);
     const cap = text(ui, W / 2, H - 250, '', 30, '#f3e6c8', { fontStyle: 'bold', align: 'center', wordWrap: { width: W - 100 }, lineSpacing: 8, stroke: '#000', strokeThickness: 4 }).setOrigin(0.5, 0.5);
     const dots = ui.add.graphics();
-    const skip = button(ui, W - 100, 70 + SAFE.top, 150, 52, 'Skip intro', () => this.finishStory(), { style: 'ghost', size: 19 });
+    // Test-mode banner occupies the top of the HUD; keep Skip intro below its hit area.
+    const skip = button(ui, W - 100, (store.tutorialTest ? 118 : 70) + SAFE.top, 150, 52, 'Skip intro', () => this.finishStory(), { style: 'ghost', size: 19 });
     skip.chip = 'story-skip';
     // The page stays until Continue. A tap on the picture does not skip it, and a
     // compatibility mouse click after a touch cannot turn one press into two pages.
@@ -467,6 +618,7 @@ export class Tutorial {
     const cont = button(ui, W / 2, H - 118, 300, 70, 'Continue', () => c.advance(), { style: 'gold', size: 24, allow });
     cont.chip = 'story-continue';
     c.add([bg, img, shade, cap, dots, cont, skip]);
+    if (ui.testBanner) ui.children.bringToTop(ui.testBanner);
     const show = (i) => {
       c.page = i;
       img.setTexture(`ob-story-${i + 1}`);
@@ -551,9 +703,13 @@ export class Tutorial {
   }
 
   stateForTest() {
+    const tg = this.target && (this.card.visible || this.tip) ? { x: Math.round(this.target.x), y: Math.round(this.target.y), r: Math.round(this.target.r ?? 0) } : null;
     return {
       active: this.active, step: this.step, id: STEPS[this.step]?.id ?? 'done', visible: this.card.visible, title: this.title.text, body: this.body.text,
-      target: this.target && this.card.visible ? { x: Math.round(this.target.x), y: Math.round(this.target.y) } : null, cardY: this.rect.y,
+      target: tg, cardY: this.rect.y,
+      card: this.card.visible ? { x: this.rect.x, y: Math.round(this.rect.y), w: this.rect.w, h: this.rect.h } : null,
+      reach: this.reach ?? null, fallback: !!this.fallback, missMs: Math.round(this.missT || 0),
+      testMode: !!store.tutorialTest,
       story: this.story ? this.story.page : null, celebrating: this.celebrating ? true : false, hold: !!this.celebrating?.sticky, tip: this.tip?.id ?? null,
       goal: this.goal.visible ? this.goalText.text : null,
       locked: Object.keys(TUTORIAL.unlockAt).filter((id) => !this.unlocked(id)),

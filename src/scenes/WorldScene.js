@@ -430,11 +430,11 @@ export default class WorldScene extends Phaser.Scene {
     const mx = Phaser.Math.Clamp(cam.scrollX + cam.width / 2, 0, SIZE), my = Phaser.Math.Clamp(cam.scrollY + cam.height / 2, 0, SIZE);
     cam.scrollX = mx - cam.width / 2; cam.scrollY = my - cam.height / 2;
   }
-  focusTile(x, y, zoom) {
+  focusTile(x, y, zoom, bias = 120) {
     this.stopGlide?.();
     const cam = this.cameras.main, p = tileToWorld(x, y);
     if (zoom) this.setZl(zoom);
-    this.tweens.add({ targets: cam, scrollX: p.x - cam.width / 2, scrollY: p.y - cam.height / 2 + 120, duration: 350, ease: 'Cubic.easeOut', onUpdate: () => this.clampCamera() });
+    this.tweens.add({ targets: cam, scrollX: p.x - cam.width / 2, scrollY: p.y - cam.height / 2 + bias, duration: 350, ease: 'Cubic.easeOut', onUpdate: () => this.clampCamera() });
   }
   focusBase() { const b = store.basePos(); this.focusTile(b.x, b.y); }
   // tile under the screen centre (the coordinate readout); the camera's view centre minus focusTile's offset

@@ -473,6 +473,36 @@ export default class BaseScene extends Phaser.Scene {
     if (ms) cam.pan(tx, ty, ms, 'Sine.easeInOut'); else { cam.centerOn(tx, ty); this.clampCamera(); }
   }
 
+  // Put a building's tutorial tap point (upper sprite) under screen (sx, sy). Zooms out when the
+  // current zoom, or the map-edge clamp, would leave that point under the HUD. Pans from the
+  // current view so the move is visible. Returns the screen point once the camera has settled;
+  // null while the pan is still running.
+  frameTutorial(id, sx, sy, ms = 420) {
+    const img = id === BEACON.id ? this.beaconSprite : this.sprites[id]?.img;
+    if (!img) return null;
+    const cam = this.cameras.main;
+    if (cam.panEffect.isRunning) return null;
+    const tx = img.x, ty = img.y - img.displayHeight * 0.35;
+    const old = { x: cam.scrollX + cam.width / 2, y: cam.scrollY + cam.height / 2 };
+    const options = [...new Set([this.zl, 0.95, 0.72, 0.55, this.minZoom()].map((z) => Math.max(this.minZoom(), z)))];
+    let best = null;
+    for (const z of options) {
+      this.setZoomKeeping(z, tx, ty, sx, sy);
+      const p = this.worldToScreen(tx, ty);
+      const d = Math.hypot(p.x - sx, p.y - sy);
+      if (!best || d < best.d) best = { z, d, sx: cam.scrollX, sy: cam.scrollY };
+      if (d < 36) break;
+    }
+    const destCx = best.sx + cam.width / 2, destCy = best.sy + cam.height / 2;
+    this.setZl(best.z);
+    cam.centerOn(old.x, old.y);
+    this.clampCamera();
+    const dist = Math.hypot(cam.scrollX - best.sx, cam.scrollY - best.sy);
+    if (dist < 12 || !ms) { cam.setScroll(best.sx, best.sy); this.clampCamera(); }
+    else cam.pan(destCx, destCy, ms, 'Sine.easeInOut');
+    return best;
+  }
+
   // -------------------------------------------------------- picking ------
   pos(id) {
     if (id === BEACON.id) return { gx: BEACON.gx, gy: BEACON.gy };

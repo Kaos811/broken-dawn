@@ -19,7 +19,7 @@ import { createWorld, gradientLevel, levelAtTile, dist, BASE_POS, CENTER, seedBo
 import { audio } from './audio/audio.js';
 import * as gridMath from './systems/grid.js';
 import * as layout from './ui/layout.js';
-import { BUILDINGS, BEACON, MAP, TUTORIAL } from './config.js';
+import { BUILDINGS, BEACON, MAP, TUTORIAL, SAVE_KEY, TUTORIAL_TEST_KEY } from './config.js';
 
 import { loadFonts, fontsLoaded } from './ui/fonts.js';
 loadFonts();
@@ -195,6 +195,8 @@ window.__BD = {
   audioState: () => audio.state(),
   tutorial: () => game.scene.getScene('UI')?.tutorial?.stateForTest(),
   tutorialIds: TUTORIAL.ids,
+  // which save slot is loaded (test mode must never be the real key)
+  saveSlot: () => ({ test: !!store.tutorialTest, key: store.saveKey, real: SAVE_KEY, testKey: TUTORIAL_TEST_KEY }),
   layout: () => ({ ...layout }),
   res: RES,
   H: GAME_HEIGHT,
