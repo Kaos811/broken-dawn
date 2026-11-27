@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="icon" href="favicon.png">
+  <title>Broken Dawn — Walkthrough Mockup</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage">
+    <button type="button" id="badge" title="Jump to a screen">MOCKUP</button>
+    <div id="jump">
+      <h3>Jump (mockup only)</h3>
+      <button data-jump="title">Title</button>
+      <button data-jump="story">Story beat</button>
+      <button data-jump="g-beacon">Guided: tap The Beacon</button>
+      <button data-jump="g-collect">Guided: collect Energy</button>
+      <button data-jump="g-train-tab">Guided: train Sentinels</button>
+      <button data-jump="g-hunt-creature">Guided: first World fight</button>
+      <button data-jump="hunt-reward">Victory reward screen</button>
+      <button data-jump="g-beacon2">Guided: Beacon Lv 2</button>
+      <button data-jump="g-recruit-tab">Guided: recruit Kael</button>
+      <button data-jump="goals">Goal checklist</button>
+      <button data-jump="gift">Final gift</button>
+      <button data-jump="restart">Restart from the beginning</button>
+      <p class="note">This is a tappable mockup of a new walkthrough. It is not the live game, and nothing here has been merged or deployed.</p>
+    </div>
+
+    <!-- TITLE -->
+    <section class="screen on" id="title">
+      <img class="bg" src="assets/onboarding/story-1.webp" alt="">
+      <div class="veil"></div>
+      <div class="copy">
+        <div class="sub">Walkthrough mockup</div>
+        <h1>Broken Dawn</h1>
+        <p>Tap through a new first 15 minutes: a short guided opening, then a goal chain. The live game is unchanged.</p>
+        <button class="btn gold" id="btn-begin">Begin</button>
+      </div>
+    </section>
+
+    <!-- STORY -->
+    <section class="screen" id="story">
+      <img class="art" id="story-art" src="assets/onboarding/story-1.webp" alt="">
+      <div class="veil"></div>
+      <div class="caption">
+        <div class="kicker">The Rift</div>
+        <div class="line" id="story-line"></div>
+        <div class="row">
+          <button class="skip" id="story-skip">Skip intro</button>
+          <div class="dots" id="story-dots"></div>
+          <button class="btn gold" id="story-cont">Continue</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- GAME ROOT (base / world / screens share HUD) -->
+    <section class="screen" id="game">
+      <div id="base-map">
+        <img class="ground" src="assets/base/ground.webp" alt="">
+        <div id="beacon-glow"></div>
+        <div class="prop" style="left:18%;top:28%;width:42px"><img src="assets/base/crystals0.webp" alt=""></div>
+        <div class="prop" style="left:82%;top:30%;width:40px"><img src="assets/base/crystals1.webp" alt=""></div>
+        <div class="prop" style="left:22%;top:62%;width:48px"><img src="assets/base/plants0.webp" alt=""></div>
+        <div class="prop" style="left:78%;top:66%;width:44px"><img src="assets/base/plants1.webp" alt=""></div>
+        <div class="prop" style="left:50%;top:22%;width:50px"><img src="assets/base/rocks0.webp" alt=""></div>
+        <div class="prop" style="left:14%;top:78%;width:36px"><img src="assets/base/crystals2.webp" alt=""></div>
+
+        <div class="bldg" id="b-cc" data-id="commandCenter" style="left:50%;top:28%;width:118px">
+          <img class="spr" src="assets/base/commandCenter.webp" alt="">
+          <div class="plate"><span class="pip" id="lv-cc">1</span> Command Center</div>
+          <div class="build-timer" id="tm-cc"></div>
+        </div>
+        <div class="bldg hidden" id="b-archive" data-id="archive" style="left:20%;top:42%;width:108px">
+          <img class="spr" src="assets/base/archive.webp" alt="">
+          <div class="plate"><span class="pip" id="lv-archive">1</span> Archive</div>
+          <div class="build-timer" id="tm-archive"></div>
+        </div>
+        <div class="bldg" id="b-infirmary" data-id="infirmary" style="left:80%;top:42%;width:104px">
+          <img class="spr" src="assets/base/infirmary.webp" alt="">
+          <div class="plate"><span class="pip">1</span> Infirmary</div>
+        </div>
+        <div class="bldg" id="b-beacon" data-id="beacon" style="left:50%;top:50%;width:150px;z-index:3">
+          <img class="spr" src="assets/base/beacon.webp" alt="" id="beacon-spr">
+          <div class="plate"><span class="pip" id="lv-beacon">1</span> The Beacon</div>
+          <div class="build-timer" id="tm-beacon"></div>
+        </div>
+        <div class="orb" id="energy-orb">
+          <img src="assets/ui/hud-energy.webp" alt="">
+          <span class="amt">+80</span>
+        </div>
+        <div class="bldg" id="b-barracks" data-id="barracks" style="left:22%;top:68%;width:118px">
+          <img class="spr" src="assets/base/barracks.webp" alt="">
+          <div class="plate"><span class="pip" id="lv-barracks">1</span> Barracks</div>
+        </div>
+        <div class="bldg" id="b-armory" data-id="armory" style="left:78%;top:68%;width:112px">
+          <img class="spr" src="assets/base/armory.webp" alt="">
+          <div class="plate"><span class="pip">1</span> Armory</div>
+        </div>
+        <div id="place-plot" class="bldg hidden" style="left:20%;top:42%;width:88px;height:70px">
+          <div style="width:88px;height:58px;border:2px dashed #3ff0ff;border-radius:10px;background:#3ff0ff22;transform:rotateX(50deg) rotateZ(-20deg)"></div>
+          <div class="plate" style="border-color:#3ff0ff;color:#3ff0ff"><img src="assets/ui/ic-place.webp" alt="" style="width:12px;height:12px"> Place</div>
+        </div>
+      </div>
+
+      <div id="world-map" class="hidden">
+        <img class="wg" src="assets/world/world-ground.webp" alt="">
+        <div class="w-node locked" id="w-hound" style="left:22%;top:30%">
+          <img src="assets/creatures/cr-hound.webp" alt="">
+          <div class="tag"><img src="assets/ui/ic-lock.webp" alt="" style="width:10px;height:10px;display:inline;vertical-align:-1px"> <span class="lv">Lv 3</span></div>
+        </div>
+        <div class="w-node locked" id="w-drone" style="left:78%;top:28%">
+          <img src="assets/creatures/cr-drone.webp" alt="">
+          <div class="tag"><img src="assets/ui/ic-lock.webp" alt="" style="width:10px;height:10px;display:inline;vertical-align:-1px"> <span class="lv">Lv 2</span></div>
+        </div>
+        <div class="w-node creature" id="w-scuttler" data-id="scuttler" style="left:68%;top:52%">
+          <img src="assets/creatures/cr-scuttler.webp" alt="">
+          <div class="tag"><span class="lv">Lv 1</span> Scuttler</div>
+        </div>
+        <div class="w-node creature hidden" id="w-scuttler2" data-id="scuttler2" style="left:30%;top:46%">
+          <img src="assets/creatures/cr-scuttler.webp" alt="">
+          <div class="tag"><span class="lv">Lv 1</span> Scuttler</div>
+        </div>
+        <div class="w-node creature hidden" id="w-scuttler3" data-id="scuttler3" style="left:54%;top:34%">
+          <img src="assets/creatures/cr-scuttler.webp" alt="">
+          <div class="tag"><span class="lv">Lv 1</span> Scuttler</div>
+        </div>
+        <div class="w-node creature hidden" id="w-scuttler4" data-id="scuttler4" style="left:80%;top:62%">
+          <img src="assets/creatures/cr-hound.webp" alt="">
+          <div class="tag"><span class="lv">Lv 1</span> Hound</div>
+        </div>
+        <div class="w-node creature hidden" id="w-scuttler5" data-id="scuttler5" style="left:18%;top:62%">
+          <img src="assets/creatures/cr-drone.webp" alt="">
+          <div class="tag"><span class="lv">Lv 1</span> Drone</div>
+        </div>
+        <div class="w-node node hidden" id="w-alloy" data-id="alloy" style="left:32%;top:58%">
+          <img src="assets/ui/node-full.webp" alt="" id="alloy-img">
+          <div class="tag"><span class="lv">Alloy</span> node</div>
+        </div>
+        <div class="w-node home" id="w-home" style="left:50%;top:72%">
+          <img src="assets/base/commandCenter.webp" alt="">
+          <div class="tag">YOUR BASE<br><span style="color:#8a96a8;font-weight:600">Lv 1 · Outpost</span></div>
+        </div>
+        <div class="squad-march" id="march"><img src="assets/ui/troop-sentinel.webp" alt=""></div>
+      </div>
+
+      <div class="world-hud" id="world-hud">
+        <div class="stam">
+          <div class="row"><span>STAMINA</span><span id="stam-txt">100 / 100</span></div>
+          <div class="bar"><i id="stam-bar"></i></div>
+        </div>
+      </div>
+
+      <!-- HUD -->
+      <div id="hud">
+        <div class="topbar">
+          <div class="avatar-wrap">
+            <img src="assets/base/avatar.webp" alt="">
+            <div class="lvl-pip" id="cmd-lv">1</div>
+          </div>
+          <div class="power">
+            <span class="lab">POWER</span>
+            <img src="assets/ui/hud-power.webp" alt="">
+            <span class="val" id="power-val">35</span>
+          </div>
+          <div class="cores hidden" id="cores-pill">
+            <img src="assets/ui/hud-core.webp" alt="">
+            <div>
+              <div class="c-lab">Beacon Cores</div>
+              <div class="c-val" id="cores-val">0</div>
+            </div>
+          </div>
+        </div>
+        <div class="resbar">
+          <div class="beacon-chip">BEACON Lv <span id="res-blv">1</span>
+            <div class="charge"><i id="charge-bar"></i></div>
+          </div>
+          <div class="res" id="res-energy"><img src="assets/ui/hud-energy.webp" alt=""><span id="energy-val">60</span><span class="inc hidden" id="energy-inc">+1.00/s</span></div>
+          <div class="res hidden" id="res-alloy"><img src="assets/ui/hud-alloy.webp" alt=""><span id="alloy-val">0</span></div>
+          <div class="res hidden" id="res-shards"><img src="assets/ui/hud-shards.webp" alt=""><span id="shards-val">0</span></div>
+          <div class="res hidden" id="res-stamina"><img src="assets/ui/hud-stamina.webp" alt=""><span id="stam-mini">100</span></div>
+        </div>
+      </div>
+
+      <div class="rail left" id="rail-left">
+        <button class="qbtn locked" id="q-builder" data-q="builder"><div class="disk"><img src="assets/ui/ic-q-builder.webp" alt=""></div>Builder</button>
+        <button class="qbtn locked" id="q-research" data-q="research"><div class="disk"><img src="assets/ui/more-research.webp" alt=""></div>Research</button>
+        <button class="qbtn locked" id="q-training" data-q="training"><div class="disk"><img src="assets/ui/ic-q-training.webp" alt=""></div>Training</button>
+        <button class="qbtn locked" id="q-healing" data-q="healing"><div class="disk"><img src="assets/ui/ic-q-healing.webp" alt=""></div>Healing</button>
+      </div>
+      <div class="rail right" id="rail-right">
+        <button class="goal-chip hidden" id="goal-chip"></button>
+        <button class="qbtn locked hidden" id="q-missions" data-q="missions"><div class="disk"><img src="assets/ui/hud-missions.webp" alt=""></div>Missions</button>
+        <button class="qbtn locked hidden" id="q-alliance" data-q="alliance"><div class="disk"><img src="assets/ui/ic-help.webp" alt=""></div>Alliance</button>
+      </div>
+
+      <!-- overlay screens -->
+      <div class="full" id="scr-troops"></div>
+      <div class="full" id="scr-armory"></div>
+      <div class="full" id="scr-missions"></div>
+      <div class="full" id="scr-research"></div>
+      <div class="full" id="scr-alliance"></div>
+      <div class="full" id="scr-squads"></div>
+      <div class="full" id="scr-infirmary"></div>
+
+      <nav id="nav">
+        <button class="tab locked" data-tab="world" id="tab-world"><img src="assets/ui/nav-world.webp" alt=""><span>World</span></button>
+        <button class="tab locked" data-tab="troops" id="tab-troops"><img src="assets/ui/nav-troops.webp" alt=""><span>Troops</span></button>
+        <button class="tab tab-base on" data-tab="base" id="tab-base">
+          <div class="ring"><img src="assets/ui/hud-base-emblem.webp" alt=""></div>
+          <span class="lab">BASE</span>
+        </button>
+        <button class="tab locked" data-tab="armory" id="tab-armory"><img src="assets/ui/nav-armory.webp" alt=""><span>Armory</span></button>
+        <button class="tab locked" data-tab="squads" id="tab-squads"><img src="assets/ui/nav-squads.webp" alt=""><span>Squads</span></button>
+        <button class="tab locked" data-tab="more" id="tab-more"><img src="assets/ui/nav-more.webp" alt=""><span>More</span></button>
+      </nav>
+
+      <div id="spot"><div class="ring-target" id="ring"></div></div>
+      <img id="hand" src="assets/onboarding/pointer.webp" alt="">
+
+      <div id="coach">
+        <div class="card frame">
+          <img class="face" id="lyra" src="assets/onboarding/lyra-neutral.webp" alt="Lyra">
+          <button class="btn ghost skip" id="coach-skip">Skip</button>
+          <div class="who">LYRA</div>
+          <div class="ttl" id="coach-title"></div>
+          <div class="bod" id="coach-body"></div>
+          <div class="row">
+            <div class="dots" id="coach-dots"></div>
+            <button class="btn gold hidden" id="coach-cont">Continue</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="shade"></div>
+    <div class="sheet frame" id="sheet"></div>
+    <div id="modal"><div class="box frame tight" id="modal-box"></div></div>
+    <div id="reveal"></div>
+    <div class="frame" id="goals"></div>
+    <div id="toast"></div>
+    <div id="confirm">
+      <div class="box frame tight">
+        <h3 id="confirm-title">Skip the tutorial?</h3>
+        <p id="confirm-body"></p>
+        <div class="actions">
+          <button class="btn ghost" id="confirm-no">Keep going</button>
+          <button class="btn gold" id="confirm-yes">Skip</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
