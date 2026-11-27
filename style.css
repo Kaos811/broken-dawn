@@ -190,9 +190,9 @@ button:disabled{opacity:.4;pointer-events:none}
 #coach.bot{bottom:90px}
 
 /* spotlight + pointer */
-#spot{position:absolute;inset:0;z-index:35;pointer-events:none;display:none}
+#spot{position:absolute;inset:0;z-index:92;pointer-events:none;display:none}
 #spot.on{display:block}
-#hand{position:absolute;z-index:46;width:56px;height:auto;display:none;pointer-events:none;filter:drop-shadow(0 0 6px #ffb347) drop-shadow(0 6px 8px #000c);transform-origin:50% 0%;animation:hand-bounce 1s ease-in-out infinite}
+#hand{position:absolute;z-index:93;width:56px;height:auto;display:none;pointer-events:none;filter:drop-shadow(0 0 6px #ffb347) drop-shadow(0 6px 8px #000c);transform-origin:50% 0%;animation:hand-bounce 1s ease-in-out infinite}
 #hand.on{display:block}
 #hand.up{transform-origin:50% 100%;animation:hand-bounce-up 1s ease-in-out infinite}
 @keyframes hand-bounce{0%,100%{transform:translate(-50%,-100%) translateY(0)}50%{transform:translate(-50%,-100%) translateY(-12px)}}
@@ -273,8 +273,8 @@ button:disabled{opacity:.4;pointer-events:none}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* mockup badge + jump */
-#badge{position:absolute;top:auto;bottom:86px;left:8px;transform:none;z-index:90;background:#ffb347ee;color:#2a1a04;font-size:8px;font-weight:700;letter-spacing:1.4px;padding:3px 8px;border-radius:7px;cursor:pointer;box-shadow:0 2px 6px #0008}
-#jump{position:absolute;top:24px;left:16px;right:16px;z-index:91;background:#0a0d12f6;border:1px solid var(--gold);border-radius:10px;padding:10px;display:none;max-height:70%;overflow:auto}
+#badge{position:absolute;top:auto;bottom:86px;left:8px;transform:none;z-index:96;background:#ffb347ee;color:#2a1a04;font-size:8px;font-weight:700;letter-spacing:1.4px;padding:3px 8px;border-radius:7px;cursor:pointer;box-shadow:0 2px 6px #0008}
+#jump{position:absolute;top:24px;left:16px;right:16px;z-index:97;background:#0a0d12f6;border:1px solid var(--gold);border-radius:10px;padding:10px;display:none;max-height:70%;overflow:auto}
 #jump.on{display:block}
 #jump h3{font-family:Cinzel,serif;font-size:13px;color:var(--gold);margin-bottom:6px}
 #jump button{display:block;width:100%;text-align:left;padding:7px 8px;font-size:13px;color:var(--text);border-bottom:1px solid #1a1f27;font-weight:600}

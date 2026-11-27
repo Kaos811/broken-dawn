@@ -240,8 +240,13 @@
     const y = (rec.top + rec.height / 2 - st.top) / scale;
     const rad = Math.min(58, opts.r != null ? opts.r : (Math.min(rec.width, rec.height) / scale / 2 + 12));
     const spot = $("#spot");
-    spot.classList.add("on");
-    spot.style.background = `radial-gradient(circle at ${x}px ${y}px, transparent ${rad}px, rgba(2,3,6,.48) ${rad + 1}px)`;
+    if (opts.noSpot) {
+      spot.classList.remove("on");
+      spot.style.background = "";
+    } else {
+      spot.classList.add("on");
+      spot.style.background = `radial-gradient(circle at ${x}px ${y}px, transparent ${rad}px, rgba(2,3,6,.48) ${rad + 1}px)`;
+    }
     const ring = $("#ring");
     ring.classList.add("on");
     ring.style.left = x + "px";
@@ -254,7 +259,7 @@
     hand.style.left = x + "px";
     hand.style.top = (nearTop ? y + rad + 8 : y - rad - 4) + "px";
     S.allow = opts.allow || el;
-    placeCoach(y);
+    if (!opts.keepCoach) placeCoach(y);
   }
   function setFace(f) {
     $("#lyra").src = `assets/onboarding/lyra-${f || "neutral"}.webp`;
@@ -281,7 +286,45 @@
       d.style.display = "flex";
     } else d.style.display = "none";
   }
-  function hideCoach() { $("#coach").classList.remove("on"); clearPoint(); }
+  function hideCoach(keepPoint) {
+    $("#coach").classList.remove("on");
+    if (!keepPoint) clearPoint();
+  }
+  function schedulePoint(el, opts) {
+    opts = opts || {};
+    const run = () => {
+      const node = typeof el === "function" ? el() : el;
+      if (node && node.isConnected) pointAt(node, opts);
+    };
+    requestAnimationFrame(() => { requestAnimationFrame(run); });
+    if (opts.retryMs) {
+      setTimeout(() => {
+        const node = typeof el === "function" ? el() : el;
+        if (node && node.isConnected && node.getClientRects().length) pointAt(node, opts);
+      }, opts.retryMs);
+    }
+  }
+  function popupActionButton() {
+    if ($("#reveal").classList.contains("on")) return $("#reveal-cont");
+    if ($("#modal").classList.contains("on")) return $("#modal-btn");
+    if ($("#goals").classList.contains("on")) return $("[data-claim]", $("#goals")) || $("[data-go]", $("#goals"));
+    if ($("#sheet").classList.contains("on")) {
+      const ids = ["act-relight", "act-free-beacon", "act-up-beacon", "act-free-cc", "act-up-cc", "act-attack", "act-gather", "act-open-troops", "act-open-armory", "act-open-inf", "act-open-res"];
+      for (const id of ids) {
+        const el = $("#" + id);
+        if (el && !el.disabled) return el;
+      }
+      const sh = $("#sheet");
+      return $("button.btn.gold:not([data-close])", sh) || $("button.btn.green:not([data-close])", sh) || $("button.btn.cyan:not([data-close])", sh);
+    }
+    return null;
+  }
+  function pointAtPopup(btn) {
+    if (!btn) return false;
+    const inDimmed = $("#modal").classList.contains("on") || $("#reveal").classList.contains("on");
+    schedulePoint(btn, { allow: btn.id ? "#" + btn.id : btn, noSpot: inDimmed, retryMs: inDimmed ? 500 : 0 });
+    return true;
+  }
   function placeCoach(targetY) {
     const c = $("#coach");
     c.classList.remove("top", "bot");
@@ -309,10 +352,11 @@
       (cfg.loot ? `<div class="loot">${lootHtml(cfg.loot)}</div>` : "") +
       (cfg.extra || "") +
       `<button class="btn gold" id="modal-btn">${cfg.btn || "Continue"}</button>`;
-    hideCoach();
+    hideCoach(true);
     $("#modal").classList.add("on");
     S.modal = "modal";
-    $("#modal-btn").onclick = (e) => { e.stopPropagation(); closeModal(); if (cfg.onBtn) cfg.onBtn(); };
+    $("#modal-btn").onclick = (e) => { e.stopPropagation(); closeModal(); clearPoint(); if (cfg.onBtn) cfg.onBtn(); };
+    pointAtPopup($("#modal-btn"));
   }
   function closeSheet() {
     $("#sheet").classList.remove("on");
@@ -437,8 +481,11 @@
         <p style="font-size:13px;color:#d7dde6;margin-bottom:14px">Bearer affinity \u00b7 +25% Bearer ATK</p>
         <button class="btn gold" id="reveal-cont">Continue</button>
       </div>`;
+    hideCoach(true);
+    pointAtPopup($("#reveal-cont"));
     $("#reveal-cont").onclick = () => {
       $("#reveal").classList.remove("on");
+      clearPoint();
       showModal({
         art: "assets/ui/leader-kael.webp",
         banner: false,
@@ -582,7 +629,7 @@
     if (h) h.addEventListener("click", () => {
       const cost = S.wounded * 3;
       if (S.energy < cost) { toast("Need more Energy"); return; }
-      S.energy -= cost; S.healing = true; hud(); fillInfirmary();
+      S.energy -= cost; S.healing = true; hud(); fillInfirmary(); syncGuide();
     });
     const fr = $("#btn-free-heal");
     if (fr) fr.addEventListener("click", () => {
@@ -754,6 +801,7 @@
       </div>`, { id: "alloy" });
     const g = $("#act-gather"); if (g) g.addEventListener("click", () => startMarch("w-alloy", "gather"));
     const cl = $("[data-close]", $("#sheet")); if (cl) cl.addEventListener("click", () => { closeSheet(); syncGuide(); });
+    syncGuide();
   }
   function startMarch(targetId, kind, name) {
     closeSheet();
@@ -815,6 +863,10 @@
 
 
   function maybeTip(id) {
+    if (S.tip) {
+      schedulePoint($("#coach-cont"), { allow: "#coach-cont", noSpot: true, keepCoach: true });
+      return;
+    }
     let T = null;
     if (id === "world" && S.phase === "goals" && S.goalIndex === 0 && !S.tips.gather)
       T = { title: "A tip from Lyra", body: "Alloy nodes on the World map send resources home. Tap a full node, then Gather.", face: "smile", key: "gather" };
@@ -833,7 +885,7 @@
     S.tip = T.key;
     showCoach({ title: T.title, body: T.body, face: T.face, cont: "Got it", skip: false, dots: null });
     placeCoach(400);
-    clearPoint();
+    schedulePoint($("#coach-cont"), { allow: "#coach-cont", noSpot: true, keepCoach: true });
     $("#coach-cont").onclick = () => { S.tip = null; hideCoach(); syncGuide(); };
   }
 
@@ -886,9 +938,10 @@
       <div class="blurb">One goal at a time, each with a reward. New systems only get a one-screen tip the first time you open them.</div>
       ${rows}`;
     box.classList.add("on");
-    $("#goals-close").onclick = () => { box.classList.remove("on"); syncGuide(); };
-    box.querySelectorAll("[data-go]").forEach((b) => { b.onclick = () => { box.classList.remove("on"); goGoal(b.dataset.go); }; });
+    $("#goals-close").onclick = () => { box.classList.remove("on"); clearPoint(); syncGuide(); };
+    box.querySelectorAll("[data-go]").forEach((b) => { b.onclick = () => { box.classList.remove("on"); clearPoint(); goGoal(b.dataset.go); }; });
     box.querySelectorAll("[data-claim]").forEach((b) => { b.onclick = () => claimGoal(); });
+    pointAtPopup($("[data-claim]", box) || $("[data-go]", box));
   }
   function claimGoal() {
     const G = GOALS[S.goalIndex];
@@ -959,11 +1012,48 @@
     syncGuide();
   }
 
+  function pointAtScreenAction() {
+    const map = {
+      troops: ["btn-free-train", "btn-x20", "btn-x10"],
+      research: ["btn-free-res", "btn-start-res"],
+      infirmary: ["btn-free-heal", "btn-heal"],
+      missions: ["btn-daily"],
+      alliance: ["btn-viewed-alliance"],
+      armory: ["btn-pull"],
+    };
+    const ids = map[S.screen];
+    if (!ids) return false;
+    for (const id of ids) {
+      const el = $("#" + id);
+      if (el && !el.disabled) { schedulePoint(el, { allow: "#" + id }); return true; }
+    }
+    return false;
+  }
   function syncGuide() {
-    if (S.view !== "game") return;
-    if (S.modal) { hideCoach(); return; }
+    if (S.view !== "game") { clearPoint(); return; }
+    if ($("#confirm").classList.contains("on")) { clearPoint(); return; }
+    // Modals / reveal / chapter-goal list: hide the coach and point at the button on the popup.
+    // Building sheets during the guided opening still use the switch below so Lyra's line can update.
+    if ($("#reveal").classList.contains("on") && $("#reveal-cont")) {
+      hideCoach(true);
+      pointAtPopup($("#reveal-cont"));
+      return;
+    }
+    if (S.modal && $("#modal-btn")) {
+      hideCoach(true);
+      pointAtPopup($("#modal-btn"));
+      return;
+    }
+    if ($("#goals").classList.contains("on")) {
+      hideCoach(true);
+      pointAtPopup($("[data-claim]", $("#goals")) || $("[data-go]", $("#goals")));
+      return;
+    }
     if (S.tip) return;
     if (S.phase !== "guide") {
+      const sheetBtn = $("#sheet").classList.contains("on") ? popupActionButton() : null;
+      if (sheetBtn) { hideCoach(true); pointAtPopup(sheetBtn); return; }
+      if (pointAtScreenAction()) return;
       hideCoach();
       if (S.phase === "goals" && !S.screen && !$("#goals").classList.contains("on") && !S.panel) {
         const G = GOALS[S.goalIndex];
@@ -1074,8 +1164,9 @@
     $("#confirm-title").textContent = "Skip the guided opening?";
     $("#confirm-body").textContent = "You\u2019ll jump to the goal chain with The Beacon at Lv 2, Squad Alpha already formed, and Kael in command. You still get the opening rewards. You can restart from the MOCKUP badge.";
     $("#confirm").classList.add("on");
+    clearPoint();
     $("#confirm-yes").onclick = () => { $("#confirm").classList.remove("on"); skipGuide(); };
-    $("#confirm-no").onclick = () => $("#confirm").classList.remove("on");
+    $("#confirm-no").onclick = () => { $("#confirm").classList.remove("on"); syncGuide(); };
   }
   function skipGuide() {
     S.beaconLit = true; S.energyRate = true; S.orb = false;
