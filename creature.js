@@ -37,14 +37,14 @@ class Path {
 
 // ---- rig layout in creature-local units (k = 1): x = right, y = forward ----
 const RIG = {
-  shellW: 58, shellPivotY: 20, shellPivotV: 0.06,
-  headW: 34, headY: 24, headOriginV: 0.8,
-  mandY: 44, mandX: 5.5, mandLen: 15,
-  antY: 33, antX: 9, antSeg: [11, 9, 7],
-  hipsY: [14, 5, -5, -15], hipX: 15,
-  legAng: [0.62, 1.2, 1.85, 2.45],     // splay from forward (rad)
-  reach: [46, 46, 46, 50],
-  L1: 29, L2: 35, femW: 8, tibW: 7,
+  shellW: 56, shellLen: 85, shellCY: -12, shellPivotY: 22,
+  headW: 40, headY: 22, headTopY: 60,
+  mandY: 54, mandX: 7.5, mandLen: 16, mandSplay: 0.22,
+  antY: 50, antX: 7, antSeg: [13, 12],
+  hipsY: [14, 5, -5, -15], hipX: 14,
+  legAng: [0.62, 1.2, 1.85, 2.45],
+  reach: [60, 58, 58, 62],
+  L1: 34, L2: 44, femW: 7.4, tibW: 6.4,
 };
 const GROUP = (side, i) => ((i + (side > 0 ? 1 : 0)) % 2); // alternating tetrapod: L1 R2 L3 R4 | R1 L2 R3 L4
 
@@ -54,7 +54,7 @@ class Creature {
     this.v = 0; this.vx = 0; this.vy = 0; this.maxV = (o.speed || 46) * this.k; this.turnRate = o.turnRate || 2.6;
     this.r = rng(o.seed || 1); this.seed = (o.seed || 1) * 7.3; this.t = 0; this.dist = 0;
     this.tint = o.tint || 0xffffff; this.name = o.name; this.level = o.level;
-    this.path = o.path; this.script = o.script || []; this.si = 0; this.act = null; this.carrot = null; this.sCarrot = o.s0 || 0;
+    this.path = o.path; this.script = o.script || []; this.attackSeq = o.attackSeq; this.attackEvery = o.attackEvery; this.si = 0; this.act = null; this.carrot = null; this.sCarrot = o.s0 || 0;
     this.shellAng = this.th; this.yaw = 0; this.yawT = 0; this.lookAt = 0; this.breath = this.r() * TAU;
     this.mand = 0.1; this.mandT = 0.1; this.chewAt = 1; this.lunge = 0; this.bodyZx = 0; this.crouch = 0;
     this.ant = [-1, 1].map((side) => ({ side, tw: 0, tv: 0, next: 0.5 + this.r() * 1.5 }));
@@ -62,19 +62,22 @@ class Creature {
     this.g0 = scene.add.graphics();           // ground shadows
     this.legs = [];
     for (const side of [-1, 1]) for (let i = 0; i < 4; i++) {
-      const fem = scene.add.image(0, 0, 'femur').setOrigin(0.5, 0.04).setTint(this.tint).setFlipX(side < 0);
-      const tib = scene.add.image(0, 0, 'tibia').setOrigin(0.5, 0.03).setTint(this.tint).setFlipX(side < 0);
+      const fem = scene.add.image(0, 0, 'v2-femur').setOrigin(0.5, 0.06).setTint(this.tint).setFlipX(side < 0);
+      const tib = scene.add.image(0, 0, 'v2-tibia').setOrigin(0.5, 0.04).setTint(this.tint).setFlipX(side < 0);
       const leg = { side, i, fem, tib, group: GROUP(side, i), stepping: false, st: 0, dur: 0.18, from: null, foot: null, z: 0, forceLift: 0 };
       this.legs.push(leg);
     }
-    this.mandL = scene.add.image(0, 0, 'mand').setOrigin(0.5, 1).setFlipX(true).setTint(this.tint);
-    this.mandR = scene.add.image(0, 0, 'mand').setOrigin(0.5, 1).setTint(this.tint);
-    this.head = scene.add.image(0, 0, 'head').setOrigin(0.5, RIG.headOriginV).setTint(this.tint);
-    this.shell = scene.add.image(0, 0, 'shell').setOrigin(0.5, RIG.shellPivotV).setTint(this.tint);
-    this.g1 = scene.add.graphics();           // antennae
-    this.shellBase = (RIG.shellW * K) / 200; this.headBase = (RIG.headW * K) / 112;
+    // painted v2 parts. mandL art = left-side mandible (tip curls inward); right side is its mirror
+    this.mandL = scene.add.image(0, 0, 'v2-mandL').setOrigin(0.62, 0.96).setTint(this.tint);
+    this.mandR = scene.add.image(0, 0, 'v2-mandL').setOrigin(0.38, 0.96).setFlipX(true).setTint(this.tint);
+    const headH = RIG.headW * 304 / 200;
+    this.head = scene.add.image(0, 0, 'v2-head').setOrigin(0.5, (RIG.headTopY - RIG.headY) / headH).setTint(this.tint);
+    const shellFront = RIG.shellCY + RIG.shellLen / 2;
+    this.shell = scene.add.image(0, 0, 'v2-body').setOrigin(0.5, (shellFront - RIG.shellPivotY) / RIG.shellLen).setTint(this.tint);
+    this.antImg = [-1, 1].map(() => [scene.add.image(0, 0, 'v2-antA').setOrigin(0.5, 0.02).setTint(this.tint), scene.add.image(0, 0, 'v2-antB').setOrigin(0.5, 0.02).setTint(this.tint)]);
+    this.shellBase = (RIG.shellW * K) / 256; this.headBase = (RIG.headW * K) / 200;
     this.shell.setScale(this.shellBase); this.head.setScale(this.headBase);
-    this.mandL.setScale((RIG.mandLen * K) / 40); this.mandR.setScale((RIG.mandLen * K) / 40);
+    this.mandL.setScale((RIG.mandLen * K) / 120); this.mandR.setScale((RIG.mandLen * K) / 120);
     // label (Ants-style level tag)
     if (o.name) {
       this.tag = scene.add.container(0, 0);
@@ -93,7 +96,33 @@ class Creature {
   restLocal(L) { const a = RIG.legAng[L.i], R = RIG.reach[L.i] * this.k, h = this.hipLocal(L); return { x: h.x + L.side * Math.sin(a) * R * 0.92, y: h.y + Math.cos(a) * R * 0.92 }; }
   restWorld(L, lead = 0) { const p = this.restLocal(L); const w = this.lw(p.x, p.y); return { x: w.x + this.vx * lead, y: w.y + this.vy * lead }; }
 
-  nextAct() { if (!this.script.length) return null; const a = { ...this.script[this.si % this.script.length], t: 0 }; this.si++; return a; }
+  nextAct() {
+    if (this.si < this.script.length) { const a = { ...this.script[this.si], t: 0 }; this.si++; return a; }
+    return this.roamAct();
+  }
+  // roaming: random waypoints in a ring around the lair, pauses, sometimes turn to face a neighbour
+  roamAct() {
+    const S = this.s, lair = S.lair, r = this.r;
+    this.roamN = (this.roamN || 0) + 1;
+    if (this.attackEvery && this.roamN % this.attackEvery === 0 && this.attackSeq) { this.script = this.script.concat(this.attackSeq.map((x) => ({ ...x }))); return this.nextAct(); }
+    if (this.lastType === 'goto') {
+      if (r() < 0.4) {
+        let best = null, bd = 1e9; for (const o of S.creatures) if (o !== this) { const d = Math.hypot(o.x - this.x, o.y - this.y); if (d < bd) { bd = d; best = o; } }
+        if (best && bd < 220) { this.lastType = 'face'; return { type: 'face', target: best, t: 0, max: 1.4, then: true }; }
+      }
+      this.lastType = 'idle'; return { type: 'idle', dur: 0.7 + r() * 2.0, t: 0 };
+    }
+    for (let tries = 0; tries < 20; tries++) {
+      const ang = r() * TAU, rad = lerp(lair.rMin, lair.rMax, Math.sqrt(r()));
+      const x = lair.x + Math.cos(ang) * rad * 1.4, y = lair.y + Math.sin(ang) * rad;
+      if (x < 34 || x > 356 || y < 100 || y > 740) continue;
+      const d = Math.hypot(x - this.x, y - this.y); if (d < 70) continue;
+      if (S.sent && Math.hypot(x - S.sent.x, y - S.sent.y) < 90) continue;
+      if (S.creatures.some((o) => o !== this && o.act && o.act.type === 'goto' && Math.hypot(o.act.x - x, o.act.y - y) < 60)) continue;
+      this.lastType = 'goto'; return { type: 'goto', x, y, t: 0 };
+    }
+    this.lastType = 'idle'; return { type: 'idle', dur: 1, t: 0 };
+  }
   update(dt) {
     this.t += dt; const K = this.k;
     if (!this.act || this.act.done) { this.act = this.nextAct(); if (this.act && this.act.onStart) this.act.onStart(this); }
@@ -112,13 +141,28 @@ class Creature {
         if (ahead <= 0.5 && d < 3 * K) { a.done = true; }
         if (d < 2 * K) wantTh = this.th;
         this.lookAt = clamp(angDiff(this.th, wantTh) * 0.9, -0.4, 0.4);
+      } else if (a.type === 'goto') {
+        let dx = a.x - this.x, dy = a.y - this.y; const d = Math.hypot(dx, dy) || 1;
+        let ux = dx / d, uy = dy / d;
+        // steer around the burrow and lightly away from neighbours (they may still brush past / under each other)
+        const L = this.s.lair; if (L) { const lx = (this.x - L.x) * 0.62, ly = (this.y - L.y), dl = Math.hypot(lx, ly) || 1, edge = L.r + 26 * K;
+          if (dl < edge) { const w = (edge - dl) / (26 * K) * 1.6, tx = -ly / dl, ty = lx / dl, sgn = (tx * ux + ty * uy) >= 0 ? 1 : -1; ux += (lx / dl) * w + tx * sgn * w; uy += (ly / dl) * w + ty * sgn * w; } }
+        const Sn = this.s.sent; if (Sn && !a.near) { const ox = this.x - Sn.x, oy = this.y - Sn.y, dd = Math.hypot(ox, oy) || 1, R = 70 * K;
+          if (dd < R) { const w = (R - dd) / R * 1.4; ux += ox / dd * w; uy += oy / dd * w; } }
+        for (const o of this.s.creatures) if (o !== this) { const ox = this.x - o.x, oy = this.y - o.y, dd = Math.hypot(ox, oy) || 1, R = 34 * (K + o.k) / 2;
+          if (dd < R) { const w = (R - dd) / R * 0.6; ux += ox / dd * w; uy += oy / dd * w; } }
+        wantTh = Math.atan2(uy, ux) + noise(this.t * 0.6, this.seed) * 0.22 * clamp(d / 80, 0, 1);
+        const turnErr = Math.abs(angDiff(this.th, wantTh));
+        wantV = this.maxV * (a.slow || 1) * clamp(d / (36 * K), 0.12, 1) * clamp(1.15 - turnErr * 0.9, 0.15, 1);
+        if (d < 4 * K) { a.done = true; wantV = 0; }
+        this.lookAt = clamp(angDiff(this.th, wantTh) * 0.9, -0.4, 0.4);
       } else if (a.type === 'idle') {
         if (a.t > a.dur) a.done = true;
         if (this.t > (this.nextLook || 0)) { this.lookAt = (this.r() - 0.5) * 0.7; this.nextLook = this.t + 0.6 + this.r() * 1.2; }
         if (this.t > (this.nextShuffle || 0) && a.t > 0.5) { const L = this.legs[Math.floor(this.r() * 8)]; if (!L.stepping) this.startStep(L, 0.22, (this.r() - 0.5) * 7 * K); this.nextShuffle = this.t + 0.5 + this.r() * 0.9; }
       } else if (a.type === 'face') {
         const tg = a.target; wantTh = Math.atan2(tg.y - this.y, tg.x - this.x); turn = 1.7; this.lookAt = clamp(angDiff(this.th, wantTh), -0.4, 0.4);
-        if (Math.abs(angDiff(this.th, wantTh)) < 0.04 && a.t > 0.3) a.done = true;
+        if ((Math.abs(angDiff(this.th, wantTh)) < 0.04 && a.t > 0.3) || (a.max && a.t > a.max)) a.done = true;
       } else if (a.type === 'lunge') {
         this.doLunge(a, dt);
       }
@@ -222,8 +266,8 @@ class Creature {
     const c = Math.cos(this.shellAng), sn = Math.sin(this.shellAng);
     for (let i = 5; i >= 1; i--) {
       const f = 0.6 + i * 0.12; g0.fillStyle(0x000000, 0.075);
-      const cx = shp.x + c * (-8 * K), cy = shp.y + sn * (-8 * K);
-      this.ellipseRot(g0, cx, cy, 33 * K * f, 26 * K * f * 0.85, this.shellAng);
+      const cx = shp.x + c * (RIG.shellCY * K), cy = shp.y + sn * (RIG.shellCY * K);
+      this.ellipseRot(g0, cx, cy, 44 * K * f, 29 * K * f * 0.85, this.shellAng);
     }
     // legs (IK) + leg shadows
     const hipZ = z * 0.85;
@@ -232,15 +276,12 @@ class Creature {
       const F = { x: L.foot.x, y: L.foot.y };
       let dx = F.x - H.x, dy = F.y - H.y, d = Math.hypot(dx, dy) || 1;
       const L1 = RIG.L1 * K, L2 = RIG.L2 * K, dd = clamp(d, Math.abs(L1 - L2) + 1, L1 + L2 - 0.5);
-      const ca = clamp((L1 * L1 + dd * dd - L2 * L2) / (2 * L1 * dd), -1, 1), A = Math.acos(ca);
-      const base = Math.atan2(dy, dx), bend = L.side * (L.i < 2 ? -1 : 1);
-      // knee bends away from body: choose sign so knee is on the outer side
-      const outer = th + L.side * Math.PI / 2;
-      const k1 = { x: H.x + Math.cos(base + A) * L1, y: H.y + Math.sin(base + A) * L1 }, k2 = { x: H.x + Math.cos(base - A) * L1, y: H.y + Math.sin(base - A) * L1 };
-      const dot = (p) => (p.x - H.x) * Math.cos(outer) + (p.y - H.y) * Math.sin(outer);
-      const Kn = dot(k1) > dot(k2) ? k1 : k2;
-      const Fe = d > dd ? { x: H.x + dx / d * dd, y: H.y + dy / d * dd } : F; // clamp (no stretching)
-      const kneeZ = z * 1.35 + L.z * 0.6;
+      // knee bends UP (3D leg), seen from a tilted camera: it sits near the hip-foot line, a little outward and raised
+      const ux = dx / d, uy = dy / d, outer = th + L.side * Math.PI / 2;
+      const a1 = clamp((L1 * L1 - L2 * L2 + dd * dd) / (2 * dd), 0, L1), hK = Math.sqrt(Math.max(0, L1 * L1 - a1 * a1));
+      const Kn = { x: H.x + ux * a1 + Math.cos(outer) * hK * 0.3, y: H.y + uy * a1 + Math.sin(outer) * hK * 0.3 };
+      const Fe = d > dd ? { x: H.x + ux * dd, y: H.y + uy * dd } : F; // clamp (no stretching)
+      const kneeZ = hipZ + hK * 0.7 + L.z * 0.6;
       // screen positions lift toward camera a little with height
       const up = 0.35;
       const Hs = { x: H.x, y: H.y - hipZ * up }, Ks = { x: Kn.x, y: Kn.y - kneeZ * up }, Fs = { x: Fe.x, y: Fe.y - L.z * up };
@@ -248,8 +289,8 @@ class Creature {
       g0.lineStyle(3.2 * K, 0x000000, 0.22);
       g0.beginPath(); g0.moveTo(H.x + LX * hipZ, H.y + LY * hipZ); g0.lineTo(Kn.x + LX * kneeZ, Kn.y + LY * kneeZ); g0.lineTo(Fe.x + LX * L.z, Fe.y + LY * L.z); g0.strokePath();
       g0.fillStyle(0x000000, 0.18); g0.fillCircle(Fe.x + LX * L.z, Fe.y + LY * L.z, 1.6 * K);
-      this.seg(L.fem, Hs, Ks, RIG.femW * K, 106, depth + 0.1 + (L.i === 0 ? 0.01 : 0));
-      this.seg(L.tib, Ks, Fs, RIG.tibW * K, 140, depth + 0.11 + (L.i === 0 ? 0.01 : 0));
+      this.seg(L.fem, Hs, Ks, RIG.femW * K, depth + 0.1 + (L.i === 0 ? 0.01 : 0));
+      this.seg(L.tib, Ks, Fs, RIG.tibW * K, depth + 0.11 + (L.i === 0 ? 0.01 : 0));
     }
     // head (pivots at neck, leads into turns)
     const hy = this.headAng = th + this.yaw * 0.8;
@@ -257,40 +298,35 @@ class Creature {
     this.head.setPosition(neck.x, neck.y).setRotation(hy + Math.PI / 2).setDepth(depth + 0.2).setScale(this.headBase * (1 + this.crouch * -0.02));
     // mandibles
     const mL = this.lw(-RIG.mandX * K, RIG.mandY * K - RIG.headY * K, hy, neck.x, neck.y), mR = this.lw(RIG.mandX * K, RIG.mandY * K - RIG.headY * K, hy, neck.x, neck.y);
-    this.mandL.setPosition(mL.x, mL.y).setRotation(hy + Math.PI / 2 - this.mand).setDepth(depth + 0.21);
-    this.mandR.setPosition(mR.x, mR.y).setRotation(hy + Math.PI / 2 + this.mand).setDepth(depth + 0.21);
+    this.mandL.setPosition(mL.x, mL.y).setRotation(hy + Math.PI / 2 - this.mand - RIG.mandSplay).setDepth(depth + 0.21);
+    this.mandR.setPosition(mR.x, mR.y).setRotation(hy + Math.PI / 2 + this.mand + RIG.mandSplay).setDepth(depth + 0.21);
     // shell (abdomen): pivots at waist, lags on turns, breathes, rolls with sway
     const waist = this.lw(0, RIG.shellPivotY * K, th, bp.x, bp.y - z * 0.4);
     const br = this.br, bs = this.v > 5 ? 0.008 : 0.022;
     this.shell.setPosition(waist.x, waist.y).setRotation(this.shellAng + Math.PI / 2 + this.roll).setDepth(depth + 0.3)
       .setScale(this.shellBase * (1 + br * bs + this.bodyZx * 0.008) * (1 - Math.abs(this.roll) * 0.6), this.shellBase * (1 + br * bs * 0.5 + this.bodyZx * 0.008));
-    // antennae
-    const g1 = this.g1; g1.clear(); g1.setDepth(depth + 0.4);
+    // antennae: two painted segments each, springy twitch + noise
     const speedF = clamp(this.v / this.maxV, 0, 1);
-    for (const A of this.ant) {
+    this.ant.forEach((A, ai) => {
       let p = this.lw(A.side * RIG.antX * K, RIG.antY * K - RIG.headY * K, hy, neck.x, neck.y);
       let ang = hy + A.side * (0.42 + 0.12 * noise(this.t * 0.9, this.seed + A.side * 3)) + A.tw * A.side
         + Math.sin(this.t * 7 + (A.side > 0 ? Math.PI : 0)) * 0.22 * speedF + (this.attacking ? -A.side * 0.25 : 0);
       const pts = [p];
       RIG.antSeg.forEach((len, j) => {
-        ang += A.side * (0.18 + 0.1 * noise(this.t * (1.6 + j), this.seed + j + A.side)) * (j ? 1 : 0.3);
+        ang += A.side * (0.22 + 0.12 * noise(this.t * (1.6 + j), this.seed + j + A.side)) * (j ? 1 : 0.3);
         p = { x: p.x + Math.cos(ang) * len * K, y: p.y + Math.sin(ang) * len * K }; pts.push(p);
       });
-      // shadow
-      g1.lineStyle(1.4 * K, 0x000000, 0.18); g1.beginPath(); g1.moveTo(pts[0].x + LX * z * 1.1, pts[0].y + LY * z * 1.1); for (let j = 1; j < pts.length; j++) g1.lineTo(pts[j].x + LX * z * (1.1 + j * 0.25), pts[j].y + LY * z * (1.1 + j * 0.25)); g1.strokePath();
-      for (let j = 1; j < pts.length; j++) {
-        const w = (2.3 - j * 0.45) * K;
-        g1.lineStyle(w, 0x2a1d10, 1).lineBetween(pts[j - 1].x, pts[j - 1].y, pts[j].x, pts[j].y);
-        g1.lineStyle(w * 0.4, 0xd8b878, 0.7).lineBetween(pts[j - 1].x - 0.3, pts[j - 1].y - 0.3, pts[j].x - 0.3, pts[j].y - 0.3);
-        g1.fillStyle(0x1a120a, 1).fillCircle(pts[j].x, pts[j].y, w * 0.55);
-      }
-      g1.fillStyle(0x5ff2dc, 0.9).fillCircle(pts[pts.length - 1].x, pts[pts.length - 1].y, 1.1 * K); // teal tip glow
-    }
-    if (this.tag) this.tag.setPosition(this.x - this.tagW / 2 + 18, this.y + 54 * K);
+      g0.lineStyle(1.5 * K, 0x000000, 0.16); g0.beginPath(); g0.moveTo(pts[0].x + LX * z * 1.1, pts[0].y + LY * z * 1.1);
+      for (let j = 1; j < pts.length; j++) g0.lineTo(pts[j].x + LX * z * (1.1 + j * 0.25), pts[j].y + LY * z * (1.1 + j * 0.25)); g0.strokePath();
+      const [ia, ib] = this.antImg[ai];
+      this.seg(ia, pts[0], pts[1], 3.4 * K, depth + 0.22);
+      this.seg(ib, pts[1], pts[2], 3.1 * K, depth + 0.22);
+    });
+    if (this.tag) this.tag.setPosition(this.x - this.tagW / 2 + 18, this.y + 54 * K).setDepth(depth + 0.45);
   }
-  seg(img, a, b, w, texH, depth) {
+  seg(img, a, b, w, depth) {
     const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
-    img.setPosition(a.x, a.y).setRotation(Math.atan2(dy, dx) - Math.PI / 2).setScale(w / img.width, (len * 1.06) / texH).setDepth(depth);
+    img.setPosition(a.x, a.y).setRotation(Math.atan2(dy, dx) - Math.PI / 2).setScale(w / img.width, (len * 1.08) / img.height).setDepth(depth);
   }
   ellipseRot(g, cx, cy, rx, ry, ang) {
     const n = 20, pts = [];

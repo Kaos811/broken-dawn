@@ -5,7 +5,8 @@ const CAPTURE = Q.has('capture');
 class Mock extends Phaser.Scene {
   constructor() { super('mock'); }
   preload() {
-    for (const k of ['ground', 'shell', 'head', 'femur', 'tibia', 'lair-burrow', 'crystal-1', 'crystal-3', 'ruin-1', 'fissure-1', 'glow-teal']) this.load.image(k, `art/${k}.webp`);
+    for (const k of ['body', 'head', 'femur', 'tibia', 'mandL', 'antA', 'antB']) this.load.image(`v2-${k}`, `art/v2/${k}.webp`);
+    for (const k of ['ground', 'lair-burrow', 'crystal-1', 'crystal-3', 'ruin-1', 'fissure-1', 'glow-teal']) this.load.image(k, `art/${k}.webp`);
   }
   makeTextures() {
     // mandible: curved hook, gold to dark-red tip (right side; left is flipped)
@@ -28,13 +29,14 @@ class Mock extends Phaser.Scene {
     this.makeTextures();
     const cam = this.cameras.main; cam.setZoom(2); cam.centerOn(W / 2, H / 2); cam.setBackgroundColor('#15110c');
     this.add.tileSprite(W / 2, H / 2, W * 2, H * 2, 'ground').setTileScale(0.5).setScale(0.5).setTint(0xd8c8b0);
-    // decor in the game's painted style
-    this.add.image(104, 236, 'fissure-1').setScale(0.42).setAlpha(0.7).setAngle(-12);
-    this.add.image(300, 760, 'fissure-1').setScale(0.38).setAlpha(0.55).setAngle(18);
-    this.add.image(96, 226, 'lair-burrow').setScale(0.5).setDepth(200);
-    this.add.image(340, 640, 'crystal-1').setScale(0.36).setDepth(640 + 1000);
-    this.add.image(58, 520, 'crystal-3').setScale(0.3).setDepth(520 + 1000);
-    this.add.image(352, 120, 'ruin-1').setScale(0.36).setDepth(120 + 1000).setAlpha(0.95);
+    // decor in the game's painted style; the burrow lair sits mid-map and the Scuttlers roam around it
+    this.lair = { x: 192, y: 404, r: 66, rMin: 104, rMax: 210 };
+    this.add.image(84, 196, 'fissure-1').setScale(0.4).setAlpha(0.6).setAngle(-12);
+    this.add.image(300, 772, 'fissure-1').setScale(0.38).setAlpha(0.5).setAngle(18);
+    this.add.image(this.lair.x, this.lair.y, 'lair-burrow').setScale(0.6).setDepth(200);
+    this.add.image(352, 470, 'crystal-1').setScale(0.3).setDepth(470 + 1000);
+    this.add.image(40, 640, 'crystal-3').setScale(0.28).setDepth(640 + 1000);
+    this.add.image(350, 128, 'ruin-1').setScale(0.34).setDepth(128 + 1000).setAlpha(0.95);
     this.add.image(W / 2, H / 2, 'vig').setDepth(9000);
     // header + caption
     const hdr = this.add.graphics().setDepth(9500); hdr.fillStyle(0x07090d, 0.78).fillRect(0, 0, W, 54); hdr.lineStyle(1, 0xc9a45a, 0.5).lineBetween(0, 54, W, 54);
@@ -48,42 +50,34 @@ class Mock extends Phaser.Scene {
     btn.on('pointerdown', () => { this.ts = this.ts === 1 ? 0.35 : 1; btn.setText(this.ts === 1 ? 'Slow-mo' : 'Normal'); });
     if (CAPTURE) btn.setVisible(false);
 
-    // sentinels target (squad marker)
-    this.sent = this.makeSentinels(146, 388);
-    // creature A: walks the main loop, pauses, turns and lunges at the Sentinels
-    const pA = new Path([[118, 712], [196, 622], [160, 512], [214, 428], [306, 462], [334, 576], [292, 694], [206, 772]]);
-    const sStart = this.sNear(pA, 196, 622), sPause = this.sNear(pA, 214, 428);
-    const self = this;
-    const scriptA = [
-      { type: 'walk', to: sPause, onStart: () => this.say('Walking: legs plant and step in alternating groups, body sways, shell swings on turns') },
-      { type: 'idle', dur: 1.8, onStart: () => this.say('Idle: breathing, antenna twitches, head looks around, legs shuffle') },
+    // sentinels target (squad marker) at the edge of the lair's territory
+    this.sent = this.makeSentinels(306, 662);
+    const self = this, R = (x, y) => ({ type: 'goto', x, y });
+    const attack = [
+      { ...R(256, 570), near: true, onStart: () => this.say('A Sentinel squad strays too close…') },
       { type: 'face', target: this.sent, onStart: () => this.say('Turns in place: feet re-plant as it rotates') },
       { type: 'lunge', target: this.sent, onStart: () => this.say('Attack: crouch, front legs rise, lunge, mandibles snap'), onHit: () => self.hitSentinels() },
-      { type: 'idle', dur: 1.2 },
-      { type: 'walk', to: sStart + pA.len, onStart: () => this.say('Walking: legs plant and step in alternating groups, body sways, shell swings on turns') },
-      { type: 'walk', to: sPause },
-      { type: 'idle', dur: 1.8, onStart: () => this.say('Idle: breathing, antenna twitches, head looks around, legs shuffle') },
-      { type: 'face', target: this.sent },
-      { type: 'lunge', target: this.sent, onHit: () => self.hitSentinels() },
-      { type: 'idle', dur: 1.2 },
-      { type: 'walk', to: sStart + pA.len },
+      { type: 'idle', dur: 1.0, onStart: () => this.say('Roaming: each Scuttler picks spots around its burrow, pauses, and eyes its neighbours') },
     ];
-    const a0 = pA.at(sStart), a1 = pA.at(sStart + 6);
-    this.A = new Creature(this, { x: a0.x, y: a0.y, heading: Math.atan2(a1.y - a0.y, a1.x - a0.x), k: 1.15, speed: 62, seed: 11, path: pA, s0: sStart, script: scriptA, name: 'Husk Scuttler', level: 3 });
-    // creature B: smaller, wanders around the burrow, pauses
-    const pB = new Path([[196, 196], [282, 160], [338, 236], [286, 300], [194, 286]]);
-    const b1 = this.sNear(pB, 282, 160), b2 = this.sNear(pB, 286, 300), b0 = this.sNear(pB, 194, 286);
-    const scriptB = [{ type: 'walk', to: b1 }, { type: 'idle', dur: 1.3 }, { type: 'walk', to: b2 }, { type: 'idle', dur: 0.9 }, { type: 'walk', to: b0 + pB.len }];
-    const bs = pB.at(b0), bn = pB.at(b0 + 6);
-    this.B = new Creature(this, { x: bs.x, y: bs.y, heading: Math.atan2(bn.y - bs.y, bn.x - bs.x), k: 0.82, speed: 50, seed: 5, path: pB, s0: b0, script: scriptB, tint: 0xe0d2bc, name: 'Husk Scuttler', level: 2 });
+    this.creatures = [];
+    // A: big one; roams, then breaks off to hit the Sentinels (repeats every few stops)
+    this.A = new Creature(this, { x: 96, y: 560, heading: -0.5, k: 1.15, speed: 60, seed: 11, name: 'Husk Scuttler', level: 3,
+      script: [{ ...R(170, 548), onStart: () => this.say('Roaming: each Scuttler picks spots around its burrow, pauses, and eyes its neighbours') }, { type: 'idle', dur: 1.1 }, ...attack],
+      attackSeq: attack, attackEvery: 7 });
+    this.B = new Creature(this, { x: 300, y: 300, heading: 2.4, k: 1.0, speed: 54, seed: 5, name: 'Husk Scuttler', level: 2,
+      script: [R(118, 268), { type: 'idle', dur: 0.8 }] });
+    this.C = new Creature(this, { x: 330, y: 470, heading: -1.9, k: 0.9, speed: 50, seed: 23, tint: 0xe6d6bf, name: 'Husk Scuttler', level: 1,
+      script: [R(338, 318), { type: 'idle', dur: 1.2 }, { type: 'face', target: null, max: 1.2 }, R(300, 190)] });
+    this.C.script[2].target = this.A; this.B.script.push({ type: 'face', target: this.A, max: 1.4 });
+    this.creatures.push(this.A, this.B, this.C);
     this.puffs = [];
     window.__scene = this; if (CAPTURE) { this.game.loop.sleep(); window.__ready = true; }
   }
   sNear(p, x, y) { let best = 0, bd = 1e9; for (let i = 0; i < p.pts.length; i++) { const d = Math.hypot(p.pts[i][0] - x, p.pts[i][1] - y); if (d < bd) { bd = d; best = p.acc[i]; } } return best; }
   say(t) { this.cap.setText(t); }
   makeSentinels(x, y) {
-    const g = this.add.graphics().setDepth(y + 1000);
-    const glow = this.add.image(x, y, 'glow-teal').setScale(0.55).setAlpha(0.55).setDepth(y + 999);
+    const g = this.add.graphics().setDepth(y + 1000 - 70);
+    const glow = this.add.image(x, y, 'glow-teal').setScale(0.55).setAlpha(0.55).setDepth(y + 1000 - 71);
     const draw = (flash) => {
       g.clear();
       g.fillStyle(0x000000, 0.35).fillEllipse(x + 4, y + 6, 46, 26);
@@ -95,7 +89,7 @@ class Mock extends Phaser.Scene {
       g.fillStyle(0x1a2a2e, 1).fillRect(x - 1, y - 5, 2, 10);
     };
     draw(false);
-    const hpBg = this.add.graphics().setDepth(y + 1001);
+    const hpBg = this.add.graphics().setDepth(y + 1000 - 69);
     const s = { x, y, g, draw, hp: 1, hpBg, glow };
     this.drawHp(s);
     const lbl = this.add.text(x, y + 34, 'Sentinels', { fontFamily: 'Georgia, serif', fontSize: '11px', color: '#9ff3e6' }).setOrigin(0.5).setShadow(0, 1, '#000', 4, false, true).setDepth(5000);
@@ -117,7 +111,7 @@ class Mock extends Phaser.Scene {
   }
   update(time, delta) {
     const dt = Math.min(delta / 1000, 0.05) * this.ts;
-    this.A.update(dt); this.B.update(dt);
+    for (const c of this.creatures) c.update(dt);
   }
 }
 
