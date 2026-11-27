@@ -257,7 +257,8 @@
     hand.classList.add("on");
     hand.classList.toggle("up", nearTop);
     hand.style.left = x + "px";
-    hand.style.top = (nearTop ? y + rad + 8 : y - rad - 4) + "px";
+    // Image is tip-anchored at bottom-center; rest pose puts the index tip on the target.
+    hand.style.top = (nearTop ? y + 2 : y) + "px";
     S.allow = opts.allow || el;
     if (!opts.keepCoach) placeCoach(y);
   }
