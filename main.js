@@ -41,7 +41,7 @@ class Mock extends Phaser.Scene {
     this.add.text(W / 2, 18, 'BROKEN DAWN', { fontFamily: 'Georgia, serif', fontSize: '15px', color: '#f3d27a', letterSpacing: 3 }).setOrigin(0.5).setDepth(9501);
     this.add.text(W / 2, 38, 'Creature motion mockup · not in the game yet', { fontFamily: 'Georgia, serif', fontSize: '11px', color: '#9ff3e6' }).setOrigin(0.5).setDepth(9501);
     const ft = this.add.graphics().setDepth(9500); ft.fillStyle(0x07090d, 0.72).fillRect(0, H - 62, W, 62);
-    this.cap = this.add.text(W / 2, H - 31, '', { fontFamily: 'Georgia, serif', fontSize: '11px', color: '#f4efe4', align: 'center', wordWrap: { width: 300 } }).setOrigin(0.5).setDepth(9501);
+    this.cap = this.add.text(CAPTURE ? W / 2 : 160, H - 31, '', { fontFamily: 'Georgia, serif', fontSize: '11px', color: '#f4efe4', align: 'center', wordWrap: { width: CAPTURE ? 300 : 270 } }).setOrigin(0.5).setDepth(9501);
     // slow-mo toggle
     this.ts = 1;
     const btn = this.add.text(W - 12, H - 31, 'Slow-mo', { fontFamily: 'Georgia, serif', fontSize: '11px', color: '#f3d27a', backgroundColor: '#1a2a2e', padding: { x: 7, y: 5 } }).setOrigin(1, 0.5).setDepth(9502).setInteractive({ useHandCursor: true });
