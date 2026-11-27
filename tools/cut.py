@@ -1,0 +1,15 @@
+from PIL import Image, ImageDraw, ImageFilter
+import math
+src=Image.open('/workspace/broken-dawn/src/art/world/creatures/cr-scuttler.webp').convert('RGBA').resize((512,512),Image.LANCZOS)
+cx,cy=268,212; rear=(425,100); head=(112,318)
+ang=math.degrees(math.atan2(head[1]-rear[1],head[0]-rear[0]))
+L=math.dist(rear,head)
+print(ang,L)
+# rotate so head points up (-90 deg)
+rot=src.rotate(ang+90,resample=Image.BICUBIC,center=(cx,cy),translate=(256-cx,256-cy))
+rot.save('rot.png')
+bg=Image.new('RGBA',rot.size,(90,80,60,255)); bg.alpha_composite(rot)
+d=ImageDraw.Draw(bg)
+for y in range(0,512,32): d.line([(0,y),(512,y)],fill=(255,0,0,80))
+for x in range(0,512,32): d.line([(x,0),(x,512)],fill=(255,0,0,80))
+bg.save('rot_grid.png')
