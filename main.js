@@ -5,7 +5,8 @@ const CAPTURE = Q.has('capture');
 class Mock extends Phaser.Scene {
   constructor() { super('mock'); }
   preload() {
-    for (const k of ['body', 'head', 'femur', 'tibia', 'mandL', 'antA', 'antB']) this.load.image(`v2-${k}`, `art/v2/${k}.webp`);
+    for (const k of ['body', 'femur', 'mandL']) this.load.image(`v2-${k}`, `art/v2/${k}.webp`);
+    for (const k of ['head', 'tibia', 'antA', 'antB']) this.load.image(`v2-${k}`, `art/v3/${k}.webp`);
     for (const k of ['ground', 'lair-burrow', 'crystal-1', 'crystal-3', 'ruin-1', 'fissure-1', 'glow-teal']) this.load.image(k, `art/${k}.webp`);
   }
   makeTextures() {
@@ -20,6 +21,11 @@ class Mock extends Phaser.Scene {
     const d = this.textures.createCanvas('puff', 32, 32), dc = d.getContext();
     const rg = dc.createRadialGradient(16, 16, 0, 16, 16, 16); rg.addColorStop(0, 'rgba(200,170,120,1)'); rg.addColorStop(1, 'rgba(200,170,120,0)');
     dc.fillStyle = rg; dc.fillRect(0, 0, 32, 32); d.refresh();
+    // impact flash
+    const fl = this.textures.createCanvas('flash', 64, 64), fc = fl.getContext();
+    const fg = fc.createRadialGradient(32, 32, 0, 32, 32, 32);
+    fg.addColorStop(0, 'rgba(255,248,220,1)'); fg.addColorStop(0.35, 'rgba(255,210,80,0.85)'); fg.addColorStop(1, 'rgba(255,180,40,0)');
+    fc.fillStyle = fg; fc.fillRect(0, 0, 64, 64); fl.refresh();
     // vignette
     const v = this.textures.createCanvas('vig', W, H), vc = v.getContext();
     const vg = vc.createRadialGradient(W / 2, H * 0.52, H * 0.22, W / 2, H * 0.52, H * 0.62); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
@@ -62,7 +68,7 @@ class Mock extends Phaser.Scene {
     this.creatures = [];
     // A: big one; roams, then breaks off to hit the Sentinels (repeats every few stops)
     this.A = new Creature(this, { x: 96, y: 560, heading: -0.5, k: 1.15, speed: 60, seed: 11, name: 'Husk Scuttler', level: 3,
-      script: [{ ...R(170, 548), onStart: () => this.say('Roaming: each Scuttler picks spots around its burrow, pauses, and eyes its neighbours') }, { type: 'idle', dur: 1.1 }, ...attack],
+      script: [{ ...R(170, 548), onStart: () => this.say('Roaming: each Scuttler picks spots around its burrow, pauses, and eyes its neighbours') }, { type: 'idle', dur: 1.5 }, ...attack],
       attackSeq: attack, attackEvery: 7 });
     this.B = new Creature(this, { x: 300, y: 300, heading: 2.4, k: 1.0, speed: 54, seed: 5, name: 'Husk Scuttler', level: 2,
       script: [R(118, 268), { type: 'idle', dur: 0.8 }] });
@@ -99,15 +105,17 @@ class Mock extends Phaser.Scene {
   hitSentinels() {
     const s = this.sent; s.draw(true); this.time.delayedCall(70, () => s.draw(false));
     s.hp = Math.max(0.15, s.hp - 0.22); this.drawHp(s);
-    this.cameras.main.shake(110, 0.004);
-    for (let i = 0; i < 7; i++) this.dust(s.x - 12 + Math.random() * 24, s.y + 4 + Math.random() * 10, 0.28, 0.9 + Math.random() * 0.6, true);
+    this.cameras.main.shake(200, 0.0075);
+    const flash = this.add.image(s.x, s.y, 'flash').setScale(0.4).setAlpha(1).setDepth(s.y + 9400).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: flash, scale: 2.4, alpha: 0, duration: 280, ease: 'Cubic.easeOut', onComplete: () => flash.destroy() });
+    for (let i = 0; i < 16; i++) this.dust(s.x - 18 + Math.random() * 36, s.y - 4 + Math.random() * 18, 0.4, 1.3 + Math.random() * 0.9, true);
     const t = this.add.text(s.x + 4, s.y - 30, '-126', { fontFamily: 'Georgia, serif', fontSize: '15px', color: '#ffb347', stroke: '#2a1a0c', strokeThickness: 3 }).setOrigin(0.5).setDepth(9400);
     this.tweens.add({ targets: t, y: s.y - 62, alpha: 0, duration: 900, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
     this.tweens.add({ targets: s.glow, scale: 0.75, alpha: 0.9, duration: 90, yoyo: true });
   }
   dust(x, y, a, sz, burst) {
     const p = this.add.image(x, y, 'puff').setAlpha(a).setScale(0.25 * sz).setDepth(y + 999);
-    this.tweens.add({ targets: p, scale: (burst ? 0.9 : 0.6) * sz, alpha: 0, x: x + (Math.random() - 0.3) * (burst ? 20 : 5), y: y - (burst ? 6 : 2), duration: burst ? 600 : 500, ease: 'Quad.easeOut', onComplete: () => p.destroy() });
+    this.tweens.add({ targets: p, scale: (burst ? 0.9 : 0.6) * sz, alpha: 0, x: x + (Math.random() - 0.3) * (burst ? 28 : 5), y: y - (burst ? 10 : 2), duration: burst ? 800 : 500, ease: 'Quad.easeOut', onComplete: () => p.destroy() });
   }
   update(time, delta) {
     const dt = Math.min(delta / 1000, 0.05) * this.ts;

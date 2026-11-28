@@ -38,13 +38,14 @@ class Path {
 // ---- rig layout in creature-local units (k = 1): x = right, y = forward ----
 const RIG = {
   shellW: 56, shellLen: 85, shellCY: -12, shellPivotY: 22,
-  headW: 40, headY: 22, headTopY: 60,
-  mandY: 54, mandX: 7.5, mandLen: 16, mandSplay: 0.22,
-  antY: 50, antX: 7, antSeg: [13, 12],
-  hipsY: [14, 5, -5, -15], hipX: 14,
+  // v3 head tex is 280x196 (wide face + horns); neck is 84% down so the thorax tucks under the shell
+  headW: 58, headY: 22, headTopY: 56, headTexW: 280, headTexH: 196,
+  mandY: 54, mandX: 9, mandLen: 26, mandSplay: 0.28,
+  antY: 42, antX: 11, antSeg: [15, 14],
+  hipsY: [14, 5, -5, -15], hipX: 15,
   legAng: [0.62, 1.2, 1.85, 2.45],
-  reach: [60, 58, 58, 62],
-  L1: 34, L2: 44, femW: 7.4, tibW: 6.4,
+  reach: [70, 68, 68, 74],
+  L1: 32, L2: 62, femW: 7.2, tibW: 5.8,
 };
 const GROUP = (side, i) => ((i + (side > 0 ? 1 : 0)) % 2); // alternating tetrapod: L1 R2 L3 R4 | R1 L2 R3 L4
 
@@ -60,6 +61,7 @@ class Creature {
     this.ant = [-1, 1].map((side) => ({ side, tw: 0, tv: 0, next: 0.5 + this.r() * 1.5 }));
     const K = this.k;
     this.g0 = scene.add.graphics();           // ground shadows
+    this.gGlow = scene.add.graphics();        // antenna tip glow (above the body)
     this.legs = [];
     for (const side of [-1, 1]) for (let i = 0; i < 4; i++) {
       const fem = scene.add.image(0, 0, 'v2-femur').setOrigin(0.5, 0.06).setTint(this.tint).setFlipX(side < 0);
@@ -70,12 +72,12 @@ class Creature {
     // painted v2 parts. mandL art = left-side mandible (tip curls inward); right side is its mirror
     this.mandL = scene.add.image(0, 0, 'v2-mandL').setOrigin(0.62, 0.96).setTint(this.tint);
     this.mandR = scene.add.image(0, 0, 'v2-mandL').setOrigin(0.38, 0.96).setFlipX(true).setTint(this.tint);
-    const headH = RIG.headW * 304 / 200;
+    const headH = RIG.headW * RIG.headTexH / RIG.headTexW;
     this.head = scene.add.image(0, 0, 'v2-head').setOrigin(0.5, (RIG.headTopY - RIG.headY) / headH).setTint(this.tint);
     const shellFront = RIG.shellCY + RIG.shellLen / 2;
     this.shell = scene.add.image(0, 0, 'v2-body').setOrigin(0.5, (shellFront - RIG.shellPivotY) / RIG.shellLen).setTint(this.tint);
     this.antImg = [-1, 1].map(() => [scene.add.image(0, 0, 'v2-antA').setOrigin(0.5, 0.02).setTint(this.tint), scene.add.image(0, 0, 'v2-antB').setOrigin(0.5, 0.02).setTint(this.tint)]);
-    this.shellBase = (RIG.shellW * K) / 256; this.headBase = (RIG.headW * K) / 200;
+    this.shellBase = (RIG.shellW * K) / 256; this.headBase = (RIG.headW * K) / RIG.headTexW;
     this.shell.setScale(this.shellBase); this.head.setScale(this.headBase);
     this.mandL.setScale((RIG.mandLen * K) / 120); this.mandR.setScale((RIG.mandLen * K) / 120);
     // label (Ants-style level tag)
@@ -232,7 +234,7 @@ class Creature {
     if (!this.attacking) {
       if (this.t > this.chewAt) { this.mandT = this.mandT > 0.15 ? 0.05 : 0.18 + this.r() * 0.12; this.chewAt = this.t + (this.v > 5 ? 0.6 : 0.25 + this.r() * 0.9); }
     }
-    this.mand += (this.mandT - this.mand) * clamp(dt * (this.attacking ? 30 : 9), 0, 1);
+    this.mand += (this.mandT - this.mand) * clamp(dt * (this.mandSnap ? 55 : this.attacking ? 16 : 9), 0, 1);
     // antennae twitch springs
     for (const A of this.ant) {
       if (this.t > A.next) { A.tv += (this.r() - 0.35) * (this.v > 5 ? 6 : 14); A.next = this.t + (this.v > 5 ? 0.4 + this.r() * 0.8 : 0.3 + this.r() * 1.6); }
@@ -240,20 +242,32 @@ class Creature {
     }
   }
   doLunge(a, dt) {
-    const K = this.k, t = a.t, A = 0.36, S = 0.1, R = 0.8, BACK = 10 * K, FWD = 26 * K;
+    // v3: longer windup, farther/faster strike (~50px), wide mandible snap, body stretch, then recoil
+    const K = this.k, t = a.t, WU = 0.55, ST = 0.13, RC = 0.20, STL = 0.50;
+    const BACK = 16, FWD = 50, REC = 14;
     this.attacking = true;
     const front = this.legs.filter((l) => l.i === 0);
-    if (t < A) {
-      const p = easeInOut(t / A); this.lunge = -BACK * p; this.crouch = p; this.mandT = 0.75; this.lookAt = 0;
-      for (const L of front) { L.forceLift = 1; L.z = 12 * K * p; }
-    } else if (t < A + S) {
-      const p = easeOut((t - A) / S); this.lunge = lerp(-BACK, FWD, p); this.crouch = 1 - p; this.bodyZx = 5 * p;
-      for (const L of front) { const w = this.lw(L.side * 14 * K, 56 * K); L.foot.x = lerp(L.foot.x, w.x, p); L.foot.y = lerp(L.foot.y, w.y, p); L.z = 9 * K * (1 - p * 0.6); }
-      if (!a.hit && p > 0.85) { a.hit = true; this.mandT = -0.12; if (a.onHit) a.onHit(this); }
-    } else if (t < A + S + R) {
-      const p = easeInOut((t - A - S) / R); this.lunge = lerp(FWD, 0, p); this.bodyZx = 5 * (1 - p); this.crouch = 0;
-      for (const L of front) { L.z = 4 * K * (1 - p); if (p > 0.35 && L.forceLift) { L.forceLift = 0; this.startStep(L, 0.2); } }
-    } else { this.lunge = 0; this.bodyZx = 0; this.attacking = false; this.mandT = 0.1; for (const L of front) L.forceLift = 0; a.done = true; }
+    if (t < WU) {
+      const p = easeInOut(t / WU); this.lunge = -BACK * p; this.crouch = p; this.mandT = 1.32; this.mandSnap = false; this.lookAt = 0; this.bodyZx = 0;
+      for (const L of front) {
+        if (!L._wind0) L._wind0 = { x: L.foot.x, y: L.foot.y };
+        const w = this.lw(L.side * 12 * K, 26 * K);
+        L.foot.x = lerp(L._wind0.x, w.x, p); L.foot.y = lerp(L._wind0.y, w.y, p);
+        L.forceLift = 1; L.z = 30 * K * p;
+      }
+    } else if (t < WU + ST) {
+      const p = easeOut((t - WU) / ST); this.lunge = lerp(-BACK, FWD, p); this.crouch = 1 - p; this.bodyZx = 11 * p;
+      for (const L of front) { const w = this.lw(L.side * 16 * K, 80 * K); L.foot.x = lerp(L.foot.x, w.x, p); L.foot.y = lerp(L.foot.y, w.y, p); L.z = 20 * K * (1 - p * 0.7); }
+      if (!a.hit && p > 0.72) { a.hit = true; this.mandT = -0.22; this.mandSnap = true; if (a.onHit) a.onHit(this); }
+    } else if (t < WU + ST + RC) {
+      // recoil: hop back from the strike
+      const p = easeOut((t - WU - ST) / RC); this.lunge = lerp(FWD, -REC, p); this.bodyZx = 11 * (1 - p); this.crouch = 0.15 * (1 - p);
+      this.mandT = -0.08; this.mandSnap = true;
+      for (const L of front) { L.z = 6 * K * (1 - p); if (p > 0.4 && L.forceLift) { L.forceLift = 0; this.startStep(L, 0.18); } }
+    } else if (t < WU + ST + RC + STL) {
+      const p = easeInOut((t - WU - ST - RC) / STL); this.lunge = lerp(-REC, 0, p); this.bodyZx = 0; this.crouch = 0;
+      this.mandT = 0.1; this.mandSnap = false;
+    } else { this.lunge = 0; this.bodyZx = 0; this.attacking = false; this.mandSnap = false; this.mandT = 0.1; for (const L of front) { L.forceLift = 0; L._wind0 = null; } a.done = true; }
   }
 
   draw() {
@@ -298,14 +312,15 @@ class Creature {
     this.head.setPosition(neck.x, neck.y).setRotation(hy + Math.PI / 2).setDepth(depth + 0.2).setScale(this.headBase * (1 + this.crouch * -0.02));
     // mandibles
     const mL = this.lw(-RIG.mandX * K, RIG.mandY * K - RIG.headY * K, hy, neck.x, neck.y), mR = this.lw(RIG.mandX * K, RIG.mandY * K - RIG.headY * K, hy, neck.x, neck.y);
-    this.mandL.setPosition(mL.x, mL.y).setRotation(hy + Math.PI / 2 - this.mand - RIG.mandSplay).setDepth(depth + 0.21);
-    this.mandR.setPosition(mR.x, mR.y).setRotation(hy + Math.PI / 2 + this.mand + RIG.mandSplay).setDepth(depth + 0.21);
+    this.mandL.setPosition(mL.x, mL.y).setRotation(hy + Math.PI / 2 - this.mand - RIG.mandSplay).setDepth(depth + 0.32);
+    this.mandR.setPosition(mR.x, mR.y).setRotation(hy + Math.PI / 2 + this.mand + RIG.mandSplay).setDepth(depth + 0.32);
     // shell (abdomen): pivots at waist, lags on turns, breathes, rolls with sway
     const waist = this.lw(0, RIG.shellPivotY * K, th, bp.x, bp.y - z * 0.4);
     const br = this.br, bs = this.v > 5 ? 0.008 : 0.022;
     this.shell.setPosition(waist.x, waist.y).setRotation(this.shellAng + Math.PI / 2 + this.roll).setDepth(depth + 0.3)
-      .setScale(this.shellBase * (1 + br * bs + this.bodyZx * 0.008) * (1 - Math.abs(this.roll) * 0.6), this.shellBase * (1 + br * bs * 0.5 + this.bodyZx * 0.008));
-    // antennae: two painted segments each, springy twitch + noise
+      .setScale(this.shellBase * (1 + br * bs + this.bodyZx * 0.006) * (1 - Math.abs(this.roll) * 0.6), this.shellBase * (1 + br * bs * 0.5 + this.bodyZx * 0.018));
+    // antennae: two painted segments each, springy twitch + noise, brighter teal tip glow
+    const gGlow = this.gGlow; gGlow.clear(); gGlow.setDepth(depth + 0.25);
     const speedF = clamp(this.v / this.maxV, 0, 1);
     this.ant.forEach((A, ai) => {
       let p = this.lw(A.side * RIG.antX * K, RIG.antY * K - RIG.headY * K, hy, neck.x, neck.y);
@@ -319,8 +334,11 @@ class Creature {
       g0.lineStyle(1.5 * K, 0x000000, 0.16); g0.beginPath(); g0.moveTo(pts[0].x + LX * z * 1.1, pts[0].y + LY * z * 1.1);
       for (let j = 1; j < pts.length; j++) g0.lineTo(pts[j].x + LX * z * (1.1 + j * 0.25), pts[j].y + LY * z * (1.1 + j * 0.25)); g0.strokePath();
       const [ia, ib] = this.antImg[ai];
-      this.seg(ia, pts[0], pts[1], 3.4 * K, depth + 0.22);
-      this.seg(ib, pts[1], pts[2], 3.1 * K, depth + 0.22);
+      this.seg(ia, pts[0], pts[1], 4.4 * K, depth + 0.22);
+      this.seg(ib, pts[1], pts[2], 4.0 * K, depth + 0.22);
+      const tip = pts[2];
+      gGlow.fillStyle(0x7af3e4, 0.45).fillCircle(tip.x, tip.y, 2.2 * K);
+      gGlow.fillStyle(0xe8fffc, 0.9).fillCircle(tip.x, tip.y, 1.05 * K);
     });
     if (this.tag) this.tag.setPosition(this.x - this.tagW / 2 + 18, this.y + 54 * K).setDepth(depth + 0.45);
   }
