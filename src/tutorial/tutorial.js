@@ -77,6 +77,18 @@ function buildingPos(ui, id) {
   return null;
 }
 const goBase = (ui) => (ui.worldMode || ui.screen ? tab(ui, 'base') : null);
+// Close leftover sheets so a later step or tip points at a clear target, not at a closed overlay.
+// Leave player-opened sheets (More, Missions, Events, Exchange) alone.
+function isPlayerSheet(ui) {
+  const m = ui.modal;
+  return !!(m && (m.isMore || m.isMissions || m.isEvents || m.isExchange || m.isEventSummary));
+}
+function clearIdleSheets(ui) {
+  if (ui.modal && !ui.modal.isSpeedUp && !isPlayerSheet(ui)) ui.closeModal(true);
+  if (ui.screen) ui.closeScreen();
+  if (ui.panelOpenFor || (ui.panel?.visible && ui.panel.active)) ui.closePanel(true);
+  if (ui.worldMode) ui.hideWorld();
+}
 const readyTroops = () => TROOP_IDS.reduce((n, t) => n + store.readyCount(t), 0);
 
 
@@ -299,10 +311,19 @@ export const STEPS = [
   },
   {
     id: 'missions', face: 'smile', title: 'Daily Missions',
-    body: 'Last thing: Daily Missions fill chests every day. Tap Missions on the right.',
-    enter: () => { store.state.hints.missions = false; },
+    body: 'These are Daily Missions: quick tasks that reset every day. Finish them for chests of Energy, Cores and speed-ups. Tap Missions to see today\'s list.',
+    enter: (ui) => {
+      store.state.hints.missions = false;
+      // A leftover Beacon panel would sit under the finger and hide Lyra's line.
+      if (ui.panelOpenFor || (ui.panel?.visible && ui.panel.active)) ui.closePanel(true);
+    },
     done: () => store.state.hints.missions === true,
-    target: (ui) => (ui.modal ? null : goBase(ui) ?? present(ui, findButton(ui, (o) => o.chip === 'q-missions' && o.visible))),
+    target: (ui) => {
+      if (ui.modal) return null;
+      if (goBase(ui)) return goBase(ui);
+      if (ui.panelOpenFor || (ui.panel?.visible && ui.panel.active)) ui.closePanel(true);
+      return present(ui, findButton(ui, (o) => o.chip === 'q-missions' && o.visible));
+    },
   },
 ];
 if (STEPS.length !== TUTORIAL.steps || STEPS.some((s, i) => s.id !== TUTORIAL.ids[i])) throw new Error('tutorial steps out of sync');
@@ -315,7 +336,23 @@ const STORY = [
 
 // one-time tips once the onboarding is over (and the "Next goal" chip)
 const TIPS = [
-  { id: 'infirmary', when: () => store.woundedTotal() > 0, text: 'Some of our troops came back wounded. The Infirmary heals them: tap Healing on the left.', target: (ui) => findButton(ui, (o) => o.chip === 'q-healing') },
+  {
+    id: 'infirmary',
+    when: (ui) => store.woundedTotal() > 0 && !isPlayerSheet(ui) && !ui.reveal && !ui.replay,
+    text: 'Some of our troops came back wounded. The Infirmary heals them: tap Healing on the left.',
+    enter: (ui) => clearIdleSheets(ui),
+    target: (ui) => {
+      // Once Healing is open, point at a heal button on that sheet, not at the covered queue icon.
+      if (ui.screen?.id === 'infirmary') {
+        return present(ui, findButton(ui, (o) => o.chip === 'heal-all' && o.isEnabled())
+          ?? findButton(ui, (o) => /^heal-/.test(o.chip || '') && o.isEnabled())
+          ?? findButton(ui, (o) => o.chip === 'heal-all'));
+      }
+      if (isPlayerSheet(ui) || ui.reveal || ui.replay) return null;
+      // Overlays are cleared once in enter(); do not close a panel the player opened after that.
+      return findButton(ui, (o) => o.chip === 'q-healing');
+    },
+  },
   { id: 'research', when: () => store.archiveUnlocked(), text: 'Beacon Lv 3 opens the Archive. Research there gives permanent bonuses.', target: (ui) => findButton(ui, (o) => o.chip === 'q-research') },
   { id: 'formation', when: (ui) => ui.screen?.id === 'squads', text: 'Edit Formation lets you choose which troops fill each line of a squad.', target: (ui) => findButton(ui, (o) => label(o) === 'Edit Formation') },
 ];
@@ -357,7 +394,7 @@ export class Tutorial {
       this.hand.preFX?.addShadow(0, 6, 0.08, 0.45, 0x000000, 6);
     } catch { /* FX needs WebGL; the painted hand is enough without it */ }
     const c = this.card = ui.add.container(0, 0).setDepth(CARD_DEPTH).setVisible(false);
-    this.cardH = 172;
+    this.cardH = this.cardHBase = 172;
     const bx = 168;
     this.bg = ui.add.graphics();
     // The painted bubble starts at x=150. A full-width invisible hit used to swallow taps on the
@@ -426,6 +463,20 @@ export class Tutorial {
     return bubble || face;
   }
 
+  // Grow the bubble when Lyra's line wraps past the default height, then shrink it back.
+  fitCard() {
+    const pad = this.cont.visible ? 74 : 36;
+    const need = Math.ceil((this.body.y || 74) + (this.body.height || 0) + pad);
+    const next = Math.max(this.cardHBase, Math.min(need, 260));
+    if (next === this.cardH) return;
+    this.cardH = next;
+    this.block.setSize(this.block.width, next);
+    this.block.setPosition(this.block.x, next / 2);
+    this.face.setY(next + 4);
+    this.cont.y = next - 40;
+    this.rect.h = next;
+  }
+
   refreshCard(force) {
     if (this.tip) return;
     if (!this.active) { this.hide(); return; }
@@ -442,6 +493,7 @@ export class Tutorial {
     if (this.body.text !== body) this.body.setText(body);
     this.syncContinue(S);
     this.skip.setVisible(true);
+    this.fitCard();
   }
 
   // Continue is the step's own button, or "Skip step" once a target has been missing long enough.
@@ -656,12 +708,14 @@ export class Tutorial {
 
   startTip(T) {
     this.tip = T;
+    T.enter?.(this.ui);
     store.state.hints[`tip_${T.id}`] = true; store.save();
     this.setFace('smile');
     this.title.setText('A tip from Lyra');
     this.body.setText(T.text);
     this.cont.chip = 'tutorial-continue';
     this.cont.setLabel?.('Got it'); this.cont.setVisible(true); this.skip.setVisible(false);
+    this.fitCard();
     this.card.setVisible(true).setAlpha(0);
     this.ui.tweens.add({ targets: this.card, alpha: 1, duration: 220 });
     audio.play('tap');
