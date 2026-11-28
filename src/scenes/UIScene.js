@@ -449,7 +449,18 @@ export default class UIScene extends Phaser.Scene {
       this.openScreen('archive');
       return;
     }
-    if (kind === 'training') { this.openScreen('troops'); return; }
+    if (kind === 'training') {
+      // A training batch under 5 minutes finishes free, same as the Barracks Free button.
+      const jobs = Object.keys(store.state.training)
+        .filter((id) => store.canFreeFinish({ kind: 'lane', id }))
+        .map((id) => ({ kind: 'lane', id }));
+      if (jobs.length) {
+        for (const job of jobs) finishNow(this, job);
+        return;
+      }
+      this.openScreen('troops');
+      return;
+    }
     if (kind === 'healing') { this.openScreen('infirmary'); }
   }
 
@@ -476,7 +487,9 @@ export default class UIScene extends Phaser.Scene {
     else if (!store.isPlaced('archive')) setQ(this.queueBtns.research, 'Build!', null, PALETTE.textGold);
     else setQ(this.queueBtns.research, rj ? fr(store.researchLeft()) : 'Idle', rj ? rj.progress / rj.total : null, rj ? '#d9c2ff' : PALETTE.textDim);
     const q = store.queuedUnits();
-    setQ(this.queueBtns.training, q ? fmtClock(store.trainingSecondsLeft()) : 'Idle', null, q ? '#a8c8ff' : PALETTE.textDim);
+    const tLeft = q ? store.trainingSecondsLeft() : 0;
+    const tFree = q && tLeft <= SPEEDUPS.freeSeconds;
+    setQ(this.queueBtns.training, q ? fr(tLeft) : 'Idle', null, q ? (tFree ? PALETTE.textGold : '#a8c8ff') : PALETTE.textDim);
     const hq = s.infirmary.queue.length;
     const wounded = store.woundedTotal();
     setQ(this.queueBtns.healing, hq ? fmtClock(store.healQueueSeconds()) : (wounded ? `${wounded} hurt` : 'Idle'), null, hq ? '#a8ffcc' : (wounded ? '#ff8a95' : PALETTE.textDim));

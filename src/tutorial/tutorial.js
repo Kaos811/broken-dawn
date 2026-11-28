@@ -205,17 +205,26 @@ export const STEPS = [
   },
   {
     id: 'train', face: 'neutral', title: 'Train Sentinels',
-    body: () => (store.queuedUnits() > 0 ? 'Training… our Sentinels will be ready in a moment.' : 'Open Troops and train 10 Sentinels (x10).'),
+    body: () => (store.queuedUnits() > 0
+      ? (Object.keys(store.state.training).some((id) => store.canFreeFinish({ kind: 'lane', id }))
+        ? 'Under 5 minutes left finishes free. Tap Free!'
+        : 'Training… our Sentinels will be ready in a moment.')
+      : 'Open Troops and train 10 Sentinels (x10).'),
     enter: (ui) => {
       ensureEnergy(300);
       if (!store.state.hints.tutTrainGift) { store.state.hints.tutTrainGift = true; store.grantItems(TUTORIAL.trainGift); store.save(); ui.toast('New: Items. Here are 3× 1m Speed-ups.', 2400); }
     },
     done: () => store.state.troops.sentinel >= 10 && store.lane('sentinel').count === 0,
+    // Fallback if the player never taps Free: training still runs at the tutorial's 3x speed.
     tick: (dt) => { if (store.queuedUnits() > 0) store.processTraining((dt / 1000) * (TUTORIAL.trainSpeed - 1)); },
-    // Training has no button to tap; the coach waits. Skip step stays hidden until this wait runs long.
-    hold: () => store.queuedUnits() > 0,
     target: (ui) => {
-      if (store.queuedUnits() > 0) return null;
+      if (ui.modal?.isSpeedUp) return present(ui, findButton(ui, (o) => o.chip === 'su-free' && o.isEnabled()));
+      if (store.queuedUnits() > 0) {
+        // The troops sheet covers the left queue column; close it so FREE is tappable.
+        if (ui.screen) ui.closeScreen();
+        if (goBase(ui)) return goBase(ui);
+        return present(ui, findButton(ui, (o) => o.chip === 'q-training' && o.visible));
+      }
       if (ui.screen?.id !== 'troops') return tab(ui, 'troops');
       return present(ui, findButton(ui, (o) => o.trainType === 'sentinel' && /^x10/.test(label(o)) && o.isEnabled()) ?? findButton(ui, (o) => o.trainType === 'sentinel' && o.isEnabled()));
     },
