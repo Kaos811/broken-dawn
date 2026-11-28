@@ -1,5 +1,5 @@
 // Stage 13: the new-player first 10 minutes. Ten action-driven steps narrated by Lyra (painted busts in a
-// speech bubble), with a soft spotlight and a gauntlet pointer on the one thing to tap. Each step advances
+// speech bubble), with a soft spotlight and a painted index-finger pointer on the one thing to tap. Each step advances
 // only when the player actually does it (detected from game state). HUD parts stay hidden until their
 // step introduces them (ui.unlocked(id), see TUTORIAL.unlockAt). Painted celebrations mark the milestones.
 // Skip (with a confirm) unlocks everything and pays the completion reward. After it: a "Next goal" chip and
@@ -131,6 +131,48 @@ function present(ui, hit) {
   if (!hit) return null;
   if (hit.obj && scrollIntoView(ui, hit)) return null;
   return point(hit);
+}
+
+// Pointer sits above every tutorial-relevant overlay (building panels 10, screens 50,
+// modals 100, reveals 300, story 600, celebrations 700, loot flies 710). The TEST
+// MODE banner stays above it at 820.
+const SPOT_DEPTH = 790;
+const POINTER_DEPTH = 800;
+const HAND_DEPTH = 805;
+const CARD_DEPTH = 810;
+// Painted index-finger hand from the walkthrough mockup (ee0fc46). Display width
+// matches the mockup's 56 CSS px on a 390-wide phone: 56 * (720 / 390) ≈ 103.
+const HAND_DISPLAY_W = 104;
+const HAND_ORIGIN_X = 0.5;
+const HAND_ORIGIN_Y = 1; // index fingertip is at the bottom-center of the painting
+
+function inContainer(o, root) {
+  if (!root || !o) return false;
+  for (let p = o; p; p = p.parentContainer) if (p === root) return true;
+  return false;
+}
+
+const POPUP_ACTION = /^(Free|Upgrade|Collect|Claim|Continue|Reveal All|Got it|Speed Up|Train\b|x10)|Assign|Pull x1/i;
+
+// Button on an open pop-up (celebration, reveal, report, speed-up, and so on).
+// Returns null for the Skip-tutorial confirm so the finger does not aim at Skip.
+function popupAction(ui, tut) {
+  if (ui.modal && findButton(ui, (o) => label(o) === 'Keep going' && inContainer(o, ui.modal))) return null;
+  const pick = (pred) => present(ui, findButton(ui, (o) => o.isEnabled() && pred(o)));
+  if (tut.celebrating) {
+    return pick((o) => o.chip === 'celebrate-btn' || o.chip === 'celebrate-continue');
+  }
+  if (ui.reveal) {
+    return pick((o) => inContainer(o, ui.reveal) && /^(Continue|Reveal All)$/.test(label(o)));
+  }
+  if (ui.replay) {
+    return pick((o) => inContainer(o, ui.replay) && /^(Continue|Skip)$/.test(label(o)));
+  }
+  if (ui.modal) {
+    return pick((o) => inContainer(o, ui.modal) && POPUP_ACTION.test(label(o)))
+      ?? pick((o) => inContainer(o, ui.modal) && !/^(Close|Cancel|✕|Keep going|Later)$/i.test(label(o)));
+  }
+  return null;
 }
 
 // Step list. face = Lyra's expression; body may be a function (live text); cont = shows a Continue button.
@@ -296,11 +338,16 @@ export class Tutorial {
 
   build() {
     const ui = this.ui;
-    this.spot = ui.add.graphics().setDepth(447).setVisible(false);
-    this.pointer = ui.add.graphics().setDepth(449).setVisible(false);
-    this.hand = ui.add.image(0, 0, 'ob-pointer').setDepth(449).setVisible(false);
-    this.hand.setScale(130 / this.hand.height);
-    const c = this.card = ui.add.container(0, 0).setDepth(450).setVisible(false);
+    this.spot = ui.add.graphics().setDepth(SPOT_DEPTH).setVisible(false);
+    this.pointer = ui.add.graphics().setDepth(POINTER_DEPTH).setVisible(false);
+    this.hand = ui.add.image(0, 0, 'ob-pointer').setDepth(HAND_DEPTH).setVisible(false);
+    this.hand.setOrigin(HAND_ORIGIN_X, HAND_ORIGIN_Y);
+    this.hand.setScale(HAND_DISPLAY_W / this.hand.width);
+    try {
+      this.hand.preFX?.addGlow(0xffb347, 3, 0, false, 0.15, 8);
+      this.hand.preFX?.addShadow(0, 6, 0.08, 0.45, 0x000000, 6);
+    } catch { /* FX needs WebGL; the painted hand is enough without it */ }
+    const c = this.card = ui.add.container(0, 0).setDepth(CARD_DEPTH).setVisible(false);
     this.cardH = 172;
     const bx = 168;
     this.bg = ui.add.graphics();
@@ -440,40 +487,70 @@ export class Tutorial {
     }
   }
 
-  drawTarget(tg) {
+  drawTarget(tg, opts = {}) {
     const ui = this.ui, g = this.pointer, sp = this.spot;
     g.clear(); sp.clear();
+    this.spot.setDepth(SPOT_DEPTH);
+    this.pointer.setDepth(POINTER_DEPTH);
+    this.hand.setDepth(HAND_DEPTH);
+    this.card.setDepth(CARD_DEPTH);
     if (!tg) { g.setVisible(false); this.hand.setVisible(false); sp.setVisible(false); return; }
     const k = (Math.sin(ui.time.now / 180) + 1) / 2;
-    // soft spotlight: dim everything around a box on the target (taps still go through)
+    // soft spotlight: dim everything around a box on the target (taps still go through).
+    // Skip it on already-dimmed pop-ups so the panel is not double-dimmed.
     const H = GAME_HEIGHT, R = tg.r + 14;
-    const x0 = Math.max(0, tg.x - R), x1 = Math.min(W, tg.x + R), y0 = Math.max(0, tg.y - R), y1 = Math.min(H, tg.y + R);
-    sp.fillStyle(0x020306, 0.42).fillRect(0, 0, W, y0).fillRect(0, y1, W, H - y1).fillRect(0, y0, x0, y1 - y0).fillRect(x1, y0, W - x1, y1 - y0);
-    sp.setVisible(true);
+    if (opts.noSpot) {
+      sp.setVisible(false);
+    } else {
+      const x0 = Math.max(0, tg.x - R), x1 = Math.min(W, tg.x + R), y0 = Math.max(0, tg.y - R), y1 = Math.min(H, tg.y + R);
+      sp.fillStyle(0x020306, 0.42).fillRect(0, 0, W, y0).fillRect(0, y1, W, H - y1).fillRect(0, y0, x0, y1 - y0).fillRect(x1, y0, W - x1, y1 - y0);
+      sp.setVisible(true);
+    }
     g.lineStyle(4, PALETTE.gold, 0.9).strokeCircle(tg.x, tg.y, tg.r + k * 8);
     g.lineStyle(10, PALETTE.cyan, 0.16).strokeCircle(tg.x, tg.y, tg.r + 10 + k * 8);
     g.setVisible(true);
-    // gauntlet pointer: points down at the target (flipped to point up when the target is near the top)
+    // Index fingertip is the origin: the rest pose lands on the target, then the hand bobs away.
+    // Flipped to point up when the target is near the top.
     const up = tg.y - tg.r - 150 < TOP_H - 40;
-    const off = tg.r * 0.55 + 6 + k * 14;
-    this.hand.setFlipY(up).setOrigin(0.5, up ? 0 : 1).setPosition(tg.x, up ? tg.y + off : tg.y - off).setVisible(true);
+    const bob = k * 14;
+    this.hand.setFlipY(up).setOrigin(HAND_ORIGIN_X, up ? 0 : HAND_ORIGIN_Y).setPosition(tg.x, up ? tg.y + bob : tg.y - bob).setVisible(true);
     ui.children.bringToTop(sp); ui.children.bringToTop(g); ui.children.bringToTop(this.hand);
-    ui.children.bringToTop(this.card);
+    if (this.card.visible) ui.children.bringToTop(this.card);
     if (ui.testBanner) ui.children.bringToTop(ui.testBanner);
+  }
+
+  // Point at the active control on an open pop-up, with the coach card tucked away
+  // so the hand sits on top of the sheet, modal, reveal, or celebration.
+  pointAtPopup(tg) {
+    if (!tg) return false;
+    this.card.setVisible(false);
+    this.drawTarget(tg, { noSpot: true });
+    this.target = tg;
+    this.reach = { ok: true, reason: 'popup' };
+    this.missT = 0;
+    this.noTargetAt = 0;
+    return true;
   }
 
   update(dtMs) {
     const ui = this.ui;
     if (!this.active) {
       if (this.story) this.closeStory();
-      if (this.card.visible && !this.tip) this.hide();
+      if (this.celebrating && this.pointAtPopup(popupAction(ui, this))) { this.goal.setVisible(false); return; }
+      // Once the onboarding is done, drop any pop-up pointer so it cannot linger
+      // on a dismissed celebration or the Missions sheet that just opened.
+      if (!this.tip) this.hide();
       this.updateAfter(dtMs);
       return;
     }
     this.goal.setVisible(false);
     if (this.tip) this.endTip(); // a replay starts clean
     if (this.step === 0) { this.hide(); if (!this.story) this.openStory(); return; }
-    if (this.celebrating) { this.hide(); return; }
+    if (this.celebrating) {
+      if (this.pointAtPopup(popupAction(ui, this))) return;
+      this.hide();
+      return;
+    }
     if (this.entered !== this.step) {
       this.entered = this.step; this.t = {}; this.missT = 0; this.noTargetAt = 0; this.fallback = false;
       const base = ui.scene.get('Base'); if (base) base._tutAim = null;
@@ -488,6 +565,8 @@ export class Tutorial {
       if (S?.done(ui, this.t)) { this.advance(); return; }
       this.refreshCard(false);
     }
+    const popup = popupAction(ui, this);
+    if (popup) { this.pointAtPopup(popup); this.fallback = false; return; }
     const busy = ui.reveal || ui.replay || (ui.modal && !ui.modal.isSpeedUp && !ui.modal.isMissions);
     if (busy) { this.hide(); this.missT = 0; return; }
     let tg = (typeof window !== 'undefined' && window.__BD_TEST?.tutorialMiss) ? null : (S?.target(ui) ?? null);
@@ -703,7 +782,7 @@ export class Tutorial {
   }
 
   stateForTest() {
-    const tg = this.target && (this.card.visible || this.tip) ? { x: Math.round(this.target.x), y: Math.round(this.target.y), r: Math.round(this.target.r ?? 0) } : null;
+    const tg = this.target && (this.card.visible || this.tip || this.hand.visible) ? { x: Math.round(this.target.x), y: Math.round(this.target.y), r: Math.round(this.target.r ?? 0) } : null;
     return {
       active: this.active, step: this.step, id: STEPS[this.step]?.id ?? 'done', visible: this.card.visible, title: this.title.text, body: this.body.text,
       target: tg, cardY: this.rect.y,
